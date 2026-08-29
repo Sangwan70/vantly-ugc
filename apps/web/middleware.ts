@@ -25,20 +25,30 @@ import { isExemptedEmail } from '@/lib/exempted-emails';
 const PUBLIC_ROUTES = new Set(['/', '/login', '/device', '/terms', '/privacy', '/docs', '/status', '/showcase']);
 
 /**
- * Hostname routing: the marketing site lives on the apex (vantly-ugc.com)
- * and the product surface lives on app.vantly-ugc.com. Both domains are
- * served by the same Vercel project for now; middleware enforces which
- * paths render on which host.
+ * Hostname routing: on the original hosted SaaS, the marketing site lived
+ * on the apex domain and the product surface on a separate app.<domain>
+ * subdomain, both served by the same Vercel project. This self-hosted
+ * fork ships the dashboard only (see next.config.js) and almost never has
+ * that second subdomain/DNS record/TLS cert set up — so this whole split
+ * is OFF by default. Set MARKETING_APP_HOST_SPLIT=true (and APP_HOST /
+ * MARKETING_HOSTS if your own domain differs) only if you've deliberately
+ * stood up a separate app subdomain and want this enforced.
  *
- * APP_PREFIXES is the set of routes that ONLY make sense on the app
- * subdomain. A request for one of these on the apex is permanently
- * redirected to the same path on app.vantly-ugc.com.
- *
- * The check is skipped on localhost / preview deployments so dev keeps
- * working without DNS.
+ * Bug this fixes: with the split hardcoded on, EVERY /onboarding, /login,
+ * /dashboard, /gallery, /billing, /settings, /admin, /api/onboarding/*,
+ * /api/auth/*, /api/admin/*, /api/dashboard/* request got redirected to a
+ * hardcoded "app.vantly-ugc.com" host that doesn't exist for self-hosters
+ * on their own domain — breaking onboarding, API calls, etc. with
+ * connection-refused / fetch-failed errors.
  */
-const APP_HOST = 'app.vantly-ugc.com';
-const MARKETING_HOSTS = new Set(['vantly-ugc.com', 'www.vantly-ugc.com']);
+const HOST_SPLIT_ENABLED = process.env.MARKETING_APP_HOST_SPLIT === 'true';
+const APP_HOST = process.env.APP_HOST || 'app.vantly-ugc.com';
+const MARKETING_HOSTS = new Set(
+  (process.env.MARKETING_HOSTS || 'vantly-ugc.com,www.vantly-ugc.com')
+    .split(',')
+    .map((h) => h.trim())
+    .filter(Boolean),
+);
 const APP_PREFIXES = [
   '/login',
   '/onboarding',
@@ -188,7 +198,7 @@ export async function middleware(request: NextRequest) {
   // Hostname split: marketing on the apex, product on app.*. Apply
   // this BEFORE auth so the redirect is fast and identical for every
   // user. Skip on localhost / preview URLs so dev still works.
-  if (MARKETING_HOSTS.has(host) && isAppOnlyPath(pathname)) {
+  if (HOST_SPLIT_ENABLED && MARKETING_HOSTS.has(host) && isAppOnlyPath(pathname)) {
     const target = new URL(request.url);
     target.protocol = 'https:';
     target.host = APP_HOST;

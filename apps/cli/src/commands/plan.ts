@@ -1,24 +1,24 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media plan` command.
+ * `vantly-ugc plan` command.
  *
  * Displays the authenticated user's subscription plan details including
  * plan name, status, pricing, features, and trial information. Provides
  * a link to the billing portal for plan upgrades.
  *
  * Requires a valid API key. If not logged in, prompts the user to
- * authenticate via `agent-media login`.
+ * authenticate via `vantly-ugc login`.
  */
 
 import type { Command } from 'commander';
 import chalk from 'chalk';
 import { detectOutputMode, printJson, printQuiet, createSpinner } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
-import { AgentMediaAPI } from '../lib/api.js';
+import { VantlyUgcAPI } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
 
-const BILLING_URL = 'https://agent-media.ai/billing';
+const BILLING_URL = 'https://vantly-ugc.com/billing';
 
 /** Plan feature descriptions keyed by plan slug. */
 const PLAN_FEATURES: Record<string, { price: string; features: string[] }> = {
@@ -74,7 +74,7 @@ export function registerPlanCommand(program: Command): void {
       if (!apiKey) {
         throw new CLIError('Not logged in.', {
           code: 'NOT_AUTHENTICATED',
-          suggestion: "Run 'agent-media login' to authenticate.",
+          suggestion: "Run 'vantly-ugc login' to authenticate.",
         });
       }
 
@@ -82,7 +82,7 @@ export function registerPlanCommand(program: Command): void {
         const spinner = createSpinner('Fetching plan details...');
         if (mode === 'human') spinner.start();
 
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
         const data = await api.getCredits();
 
         if (mode === 'human') spinner.stop();

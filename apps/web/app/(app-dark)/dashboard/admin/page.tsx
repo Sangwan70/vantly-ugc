@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -149,7 +149,7 @@ export default function AdminPage() {
       <div className="mx-auto w-full max-w-md px-8 py-24 text-center">
         <ShieldAlert className="mx-auto h-8 w-8" style={{ color: '#F87171' }} />
         <h1 className="mt-3 text-lg font-semibold" style={{ color: '#E9E9F0' }}>Not authorized</h1>
-        <p className="mt-1 text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>This area is restricted to agent-media admins.</p>
+        <p className="mt-1 text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>This area is restricted to vantly-ugc admins.</p>
       </div>
     );
   }

@@ -1,8 +1,8 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 import type { Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
-import { PortraitGpt2ToolInputSchema, CharacterSheetGpt2ToolInputSchema } from '@agentmedia/schema';
+import { PortraitGpt2ToolInputSchema, CharacterSheetGpt2ToolInputSchema } from '@vantly-ugc/schema';
 import { supabase } from '../../server.js';
 import { getTemporalClient } from '../../orchestrator/temporal/client.js';
 import { getTemporalConfig } from '../../orchestrator/temporal/config.js';

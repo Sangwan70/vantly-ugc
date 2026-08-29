@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * GET /v1/characters — list the auth user's saved, reusable characters.

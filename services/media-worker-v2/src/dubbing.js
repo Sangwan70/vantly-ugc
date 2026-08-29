@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Dubbing — Re-dub a video into a target language via ElevenLabs Dubbing API.

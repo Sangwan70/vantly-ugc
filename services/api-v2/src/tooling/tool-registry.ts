@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 import {
   ActorRefToolInputSchema as ActorRefToolInputSchemaFromSchema,
@@ -8,11 +8,11 @@ import {
   SceneContinuityInputSchema as SceneContinuityInputSchemaFromSchema,
   SelfieToolInputSchema as SelfieToolInputSchemaFromSchema,
   SubtitleToolInputSchema as SubtitleToolInputSchemaFromSchema,
-} from '@agentmedia/schema';
+} from '@vantly-ugc/schema';
 import { z } from 'zod';
 import type { RuntimeExecutionContext, RuntimeToolRunner } from './runtime-graph.js';
 
-const PUBLIC_API_BASE = process.env.PUBLIC_API_BASE ?? 'https://api.agent-media.ai';
+const PUBLIC_API_BASE = process.env.PUBLIC_API_BASE ?? 'https://api.vantly-ugc.com';
 const ELEVENLABS_API_BASE = process.env.ELEVENLABS_API_BASE ?? 'https://api.elevenlabs.io/v1';
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY ?? '';
 

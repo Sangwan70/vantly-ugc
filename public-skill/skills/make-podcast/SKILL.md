@@ -1,11 +1,11 @@
 ---
 name: 'Make Podcast'
 description: 'Two saved characters recording a podcast in ONE room — the camera cuts to whoever is speaking, and each actor stays in their IDENTICAL seat, desk and mic position across every cut. Provide character_a and character_b (saved char_… ids from list_characters, or https image URLs) and an ordered `script` of A/B dialogue turns (each { speaker: "A" | "B", line: "…" }). The pipeline renders ONE shared two-shot, locks a close-up per actor, animates every turn with native lip-synced Seedance voice (each actor keeps a consistent look AND voice across the whole episode), and hard-cuts the turns together as a 9:16 vertical video. Long turns auto-split into ≤15s takes. Captions are OPT-IN — ask the user first, then set subtitles:true.'
-allowed-tools: ['mcp__agent-media__make_podcast']
+allowed-tools: ['mcp__vantly-ugc__make_podcast']
 x-skill-slug: 'make_podcast'
 x-skill-version: '1.0.0'
 x-primitive: 'composed:make_podcast'
-x-mcp-tool: 'mcp__agent-media__make_podcast'
+x-mcp-tool: 'mcp__vantly-ugc__make_podcast'
 ---
 # Make Podcast
 
@@ -13,17 +13,17 @@ Two saved characters recording a podcast in ONE room — the camera cuts to whoe
 
 ## When to use this
 
-Call this skill when the user asks for the outcome described above. It runs on the agent-media vNext primitive runtime via the `mcp__agent-media__make_podcast` MCP tool. Authentication is the user's existing agent-media Bearer token (issued by `agent-media login`).
+Call this skill when the user asks for the outcome described above. It runs on the vantly-ugc vNext primitive runtime via the `mcp__vantly-ugc__make_podcast` MCP tool. Authentication is the user's existing vantly-ugc Bearer token (issued by `vantly-ugc login`).
 
 ## How to call it
 
-Preferred path: MCP tool `mcp__agent-media__make_podcast`. Schema is auto-published via `tools/list` against the same MCP server, so don't restate the schema here — trust the server's response.
+Preferred path: MCP tool `mcp__vantly-ugc__make_podcast`. Schema is auto-published via `tools/list` against the same MCP server, so don't restate the schema here — trust the server's response.
 
 Fallback path: REST.
 
 ```http
-POST https://api.agent-media.ai/v1/skills/make_podcast/run
-Authorization: Bearer $AGENT_MEDIA_API_KEY
+POST https://api.vantly-ugc.com/v1/skills/make_podcast/run
+Authorization: Bearer $VANTLY_UGC_API_KEY
 Content-Type: application/json
 Idempotency-Key: <any unique string per intent>
 
@@ -53,8 +53,8 @@ Idempotency-Key: <any unique string per intent>
 ## Polling the result
 
 ```http
-GET https://api.agent-media.ai/v1/skills/runs/<skill_run_id>
-Authorization: Bearer $AGENT_MEDIA_API_KEY
+GET https://api.vantly-ugc.com/v1/skills/runs/<skill_run_id>
+Authorization: Bearer $VANTLY_UGC_API_KEY
 ```
 
 Returns per-step status with intermediate artifact URLs as each primitive completes.
@@ -62,7 +62,7 @@ Returns per-step status with intermediate artifact URLs as each primitive comple
 ## House rules baked into this skill
 
 - See [reference/realism-rubric.md](../../reference/realism-rubric.md) for the realism doctrine baked into every prompt.
-- See [reference/auth.md](../../reference/auth.md) for first-time install and `agent-media login`.
+- See [reference/auth.md](../../reference/auth.md) for first-time install and `vantly-ugc login`.
 
 ## Source of truth
 

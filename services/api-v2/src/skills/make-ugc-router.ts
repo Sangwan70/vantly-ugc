@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * make_ugc — the ONE agent-facing UGC tool. This module is a PURE route
@@ -10,13 +10,13 @@
  * filled in by the run path; here they are placeholders so the quote can be
  * computed with no side effects.
  *
- * `countWords` / `fitDuration` are imported from @agentmedia/schema, never
+ * `countWords` / `fitDuration` are imported from @vantly-ugc/schema, never
  * reimplemented. This file used to carry private copies; they happened to agree,
  * but nothing enforced it, so a fix to the shared planner would not have reached
  * the route decision — and the route decision is what sets the price.
  */
 
-import { countWords, fitDuration } from '@agentmedia/schema';
+import { countWords, fitDuration } from '@vantly-ugc/schema';
 
 export interface MakeUgcProps {
   script?: string;

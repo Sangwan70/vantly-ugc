@@ -1,16 +1,16 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media alias` command group.
+ * `vantly-ugc alias` command group.
  *
- * Manages user-defined command aliases stored at ~/.agent-media/aliases.json.
+ * Manages user-defined command aliases stored at ~/.vantly-ugc/aliases.json.
  * Aliases expand to full CLI invocations, allowing frequently used commands
  * to be accessed with shorter names.
  *
  * Subcommands:
- *   - `agent-media alias set <name> <expansion>`  -- create or update an alias
- *   - `agent-media alias list`                    -- show all aliases
- *   - `agent-media alias delete <name>`           -- remove an alias
+ *   - `vantly-ugc alias set <name> <expansion>`  -- create or update an alias
+ *   - `vantly-ugc alias list`                    -- show all aliases
+ *   - `vantly-ugc alias delete <name>`           -- remove an alias
  *
  * Supports human, JSON, and quiet output modes via global flags.
  */
@@ -142,7 +142,7 @@ export function registerAliasCommand(program: Command): void {
     .command('alias')
     .description('Manage command aliases');
 
-  // ── agent-media alias set <name> <expansion> ──────────────────────────
+  // ── vantly-ugc alias set <name> <expansion> ──────────────────────────
   aliasCmd
     .command('set <name> <expansion>')
     .description('Create or update a command alias')
@@ -191,7 +191,7 @@ export function registerAliasCommand(program: Command): void {
       }
     });
 
-  // ── agent-media alias list ────────────────────────────────────────────
+  // ── vantly-ugc alias list ────────────────────────────────────────────
   aliasCmd
     .command('list')
     .description('List all command aliases')
@@ -214,7 +214,7 @@ export function registerAliasCommand(program: Command): void {
             default:
               console.log();
               console.log(
-                chalk.dim("  No aliases defined. Create one with 'agent-media alias set <name> <expansion>'."),
+                chalk.dim("  No aliases defined. Create one with 'vantly-ugc alias set <name> <expansion>'."),
               );
               console.log();
               break;
@@ -250,7 +250,7 @@ export function registerAliasCommand(program: Command): void {
       }
     });
 
-  // ── agent-media alias delete <name> ───────────────────────────────────
+  // ── vantly-ugc alias delete <name> ───────────────────────────────────
   aliasCmd
     .command('delete <name>')
     .description('Remove a command alias')
@@ -264,7 +264,7 @@ export function registerAliasCommand(program: Command): void {
         if (!(name in aliases)) {
           throw new CLIError(`Alias "${name}" not found.`, {
             code: 'ALIAS_NOT_FOUND',
-            suggestion: "Run 'agent-media alias list' to see all aliases.",
+            suggestion: "Run 'vantly-ugc alias list' to see all aliases.",
           });
         }
 

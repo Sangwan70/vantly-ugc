@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -10,7 +10,7 @@
  * Supabase's OAuth 2.1 server owns the tokens but delegates the consent UI to
  * us, so this is where a user actually says "yes, let this AI use my account".
  * The flow that ends here:
- *   agent hits api.agent-media.ai/mcp → 401 names our authorization server →
+ *   agent hits api.vantly-ugc.com/mcp → 401 names our authorization server →
  *   agent registers itself → browser opens /authorize → Supabase sends the user
  *   HERE → approve → back to the agent with a code → tokens.
  *
@@ -123,7 +123,7 @@ function OAuthConsentPage() {
         setState('ready');
       } catch {
         if (cancelled) return;
-        setErrorMessage('Could not reach agent-media. Check your connection and try again.');
+        setErrorMessage('Could not reach vantly-ugc. Check your connection and try again.');
         setState('error');
       }
     }
@@ -157,7 +157,7 @@ function OAuthConsentPage() {
       // Hand control back to the agent's callback.
       window.location.href = data.redirect_url;
     } catch {
-      setErrorMessage('Could not reach agent-media. Check your connection and try again.');
+      setErrorMessage('Could not reach vantly-ugc. Check your connection and try again.');
       setState('error');
     }
   }
@@ -189,7 +189,7 @@ function OAuthConsentPage() {
           <AlertTriangle className="h-8 w-8 text-amber-500" />
           <h1 className="mt-4 text-lg font-semibold">Nothing to connect</h1>
           <p className="mt-2 text-sm text-text-muted">
-            Open this page from your AI assistant when it asks to connect to agent-media.
+            Open this page from your AI assistant when it asks to connect to vantly-ugc.
           </p>
         </div>
       </div>
@@ -232,7 +232,7 @@ function OAuthConsentPage() {
         </div>
 
         <h1 className="mt-4 text-xl font-semibold">
-          Connect {clientName} to agent-media?
+          Connect {clientName} to vantly-ugc?
         </h1>
         <p className="mt-2 text-sm text-text-muted">
           It will be able to make videos on your account and spend your credits.

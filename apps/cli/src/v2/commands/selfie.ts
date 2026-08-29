@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media selfie` — generate a v2 Selfie video.
+ * `vantly-ugc selfie` — generate a v2 Selfie video.
  *
  * Two character paths:
  *   - saved character: --character char_xxxxxxxxxx
@@ -19,8 +19,8 @@ import {
   V2_VIBES,
   V2_PHONE_IN_FRAME,
   V2_POLISH_INTENSITIES,
-} from '@agentmedia/schema/v2';
-import { AgentMediaAPI } from '../../lib/api.js';
+} from '@vantly-ugc/schema/v2';
+import { VantlyUgcAPI } from '../../lib/api.js';
 import { getApiKey, resolveProfileName } from '../../lib/credentials.js';
 import { CLIError, handleError, contentPolicySuggestion } from '../../lib/errors.js';
 import { detectOutputMode, printJson, printQuiet, createSpinner } from '../../lib/output.js';
@@ -63,7 +63,7 @@ export function registerSelfieCommand(program: Command): void {
     .summary(def.summary)
     .description(def.description)
     .option('--character <id>', 'Saved character id (char_XXXXXXXXXX). Use this OR --description.')
-    .option('--description <text>', 'Character description. agent-media generates the person from this text — no photo required.')
+    .option('--description <text>', 'Character description. vantly-ugc generates the person from this text — no photo required.')
     .option('--photo <file|url>', 'Optional reference photo for an exact-likeness person. Combine with --description.')
     .option('--script <text|@file>', 'What the character says. Prefix with @ to read from a file. Optional — pair with --scene-action for non-speech clips.')
     .option('--scene-action <text>', 'What the character is DOING (overrides the default "talking to camera" template). e.g. "dancing freestyle to upbeat music".')
@@ -137,15 +137,15 @@ export function registerSelfieCommand(program: Command): void {
         const profile = resolveProfileName(globals.profile);
         const apiKey = getApiKey(profile);
         if (!apiKey) {
-          throw new CLIError('Not authenticated. Run `agent-media login` first.', {
+          throw new CLIError('Not authenticated. Run `vantly-ugc login` first.', {
             code: 'UNAUTHENTICATED',
           });
         }
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
 
         // Validation. Three valid input shapes:
         //   1. --character <char_id>            (reuse saved character)
-        //   2. --description "..."              (text-only — agent-media generates the portrait)
+        //   2. --description "..."              (text-only — vantly-ugc generates the portrait)
         //   3. --description "..." + --photo X  (exact-likeness reference)
         const character = typeof opts.character === 'string' ? opts.character : undefined;
         const photo = typeof opts.photo === 'string' ? opts.photo : undefined;

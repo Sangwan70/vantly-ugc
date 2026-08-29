@@ -1,6 +1,6 @@
 'use client';
 
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Root global error boundary. Catches errors thrown in the root layout itself

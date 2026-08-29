@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors
+// Copyright 2026 Vantly UGC contributors
 // SPDX-License-Identifier: Apache-2.0
 
 /**
@@ -58,7 +58,7 @@ export async function captureEdgeError(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Sentry-Auth': `Sentry sentry_version=7, sentry_client=agentmedia-edge/1.0, sentry_key=${parsed.key}`,
+        'X-Sentry-Auth': `Sentry sentry_version=7, sentry_client=vantly-ugc-edge/1.0, sentry_key=${parsed.key}`,
       },
       body: JSON.stringify(event),
     }).catch(() => {});

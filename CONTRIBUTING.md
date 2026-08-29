@@ -1,6 +1,6 @@
-# Contributing to agent-media
+# Contributing to vantly-ugc
 
-Thanks for your interest! agent-media is an agent-native AI UGC video
+Thanks for your interest! vantly-ugc is an agent-native AI UGC video
 platform — the server does the craft, the agent only chooses **what** to make.
 
 ## License

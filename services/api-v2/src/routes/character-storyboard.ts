@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * POST /v1/character/storyboard-suggest
@@ -22,8 +22,8 @@
 
 import type { Request, Response } from 'express';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { callAnthropicMessages, hasProviderCredential, missingCredentialEnvVar } from '../lib/anthropic-client.js';
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const OPUS_MODEL = process.env.CHARACTER_STORYBOARD_MODEL ?? 'claude-opus-4-7';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -40,25 +40,16 @@ function supabase(): SupabaseClient {
 }
 
 async function callOpus(systemPrompt: string, userMsg: string): Promise<string> {
-  if (!ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY not configured');
+  if (!hasProviderCredential()) {
+    throw new Error(`${missingCredentialEnvVar()} not configured`);
   }
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: OPUS_MODEL,
-      max_tokens: 1500,
-      // `temperature` is deprecated for Opus 4.7 — Anthropic 400s if sent.
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMsg }],
-    }),
-    signal: AbortSignal.timeout(30_000),
-  });
+  const resp = await callAnthropicMessages({
+    model: OPUS_MODEL,
+    max_tokens: 1500,
+    // `temperature` is deprecated for Opus 4.7 — Anthropic 400s if sent.
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userMsg }],
+  }, { signal: AbortSignal.timeout(30_000) });
   if (!resp.ok) {
     const body = await resp.text().catch(() => '');
     throw new Error(`Anthropic error: ${resp.status} ${body.slice(0, 200)}`);

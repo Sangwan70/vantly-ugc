@@ -1,17 +1,17 @@
 ---
-name: 'Agent-Media UGC Video'
+name: 'Vantly UGC Video'
 description: 'The ONE tool for UGC video. Give a `script` (any length) and optionally a `person` description, an `image` (photo), or a `character` (saved char_… or sheet URL); it returns the finished vertical video. Short script → one clip; long monologue → full multi-take (never trimmed); pass `broll_url` → narrated b-roll overlay. Captions are OPT-IN — ASK the user if they want them (and which style) before generating; set `captions:true` only if they say yes. You never pick a sub-tool.'
-allowed-tools: ['mcp__agent-media__make_ugc']
+allowed-tools: ['mcp__vantly-ugc__make_ugc']
 x-skill-slug: 'make_ugc'
 x-skill-version: '1.0.0'
 x-primitive: 'composed:make_ugc'
-x-mcp-tool: 'mcp__agent-media__make_ugc'
+x-mcp-tool: 'mcp__vantly-ugc__make_ugc'
 ---
-# Agent-Media UGC Video
+# Vantly UGC Video
 
 **One tool. One call. A finished, captioned, vertical UGC video.**
 
-You give a `script` and (optionally) who says it — agent-media picks the pipeline, the take count, and the duration for you. You NEVER pick a sub-tool:
+You give a `script` and (optionally) who says it — vantly-ugc picks the pipeline, the take count, and the duration for you. You NEVER pick a sub-tool:
 
 - **Short line** → one clean talking-head clip.
 - **Full monologue** (any length) → a seamless multi-take video, **never trimmed to fit a clip**.
@@ -67,12 +67,12 @@ After a video finishes, the character is **saved** — `GET /v1/characters` list
 
 ## How to call it
 
-Preferred path: MCP tool `mcp__agent-media__make_ugc`. The full schema is auto-published via `tools/list`; the fields above are the manual.
+Preferred path: MCP tool `mcp__vantly-ugc__make_ugc`. The full schema is auto-published via `tools/list`; the fields above are the manual.
 
 Fallback path: REST.
 ```http
-POST https://api.agent-media.ai/v1/skills/make_ugc/run
-Authorization: Bearer $AGENT_MEDIA_API_KEY
+POST https://api.vantly-ugc.com/v1/skills/make_ugc/run
+Authorization: Bearer $VANTLY_UGC_API_KEY
 Content-Type: application/json
 Idempotency-Key: <any unique string per intent>
 
@@ -88,8 +88,8 @@ Idempotency-Key: <any unique string per intent>
 ## Polling the result
 
 ```http
-GET https://api.agent-media.ai/v1/skills/runs/<skill_run_id>
-Authorization: Bearer $AGENT_MEDIA_API_KEY
+GET https://api.vantly-ugc.com/v1/skills/runs/<skill_run_id>
+Authorization: Bearer $VANTLY_UGC_API_KEY
 ```
 
 Returns per-step `status` + `current_step`; `final_output.video_url` is your finished MP4 when `status` is `succeeded`.
@@ -100,7 +100,7 @@ Returns per-step `status` + `current_step`; `final_output.video_url` is your fin
 
 - See [reference/realism-rubric.md](../../reference/realism-rubric.md) for the realism doctrine baked into every prompt.
 - See [reference/pacing.md](../../reference/pacing.md) — you don't manage pacing; make_ugc sizes every take to the words.
-- See [reference/auth.md](../../reference/auth.md) for first-time install and `agent-media login`.
+- See [reference/auth.md](../../reference/auth.md) for first-time install and `vantly-ugc login`.
 
 ## Source of truth
 

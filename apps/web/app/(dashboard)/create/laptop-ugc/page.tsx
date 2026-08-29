@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -298,7 +298,7 @@ export default function LaptopUgcPage() {
             value={script}
             onChange={(e) => setScript(e.target.value)}
             rows={4}
-            placeholder={`"Found this AI tool that ships UGC ads in 2 minutes. So easy — run it from CLI or Claude Code. It's agent-media."`}
+            placeholder={`"Found this AI tool that ships UGC ads in 2 minutes. So easy — run it from CLI or Claude Code. It's vantly-ugc."`}
             className="block w-full rounded-lg border border-gray-300 px-4 py-3 text-sm focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
           />
           <p className="text-xs text-gray-500">Auto-split at sentence boundary between two face shots.</p>

@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -13,7 +13,7 @@
  * Subsequent steps will live next to this in follow-up commits:
  *   Step 2 — Character source (actor / sheet URL / from a brief)
  *   Step 3 — Variation brief (the AI rewrites-each-run pattern)
- *   Step 4 — Caption + Postiz destinations
+ *   Step 4 — Caption + Vantly destinations
  *   Step 5 — Review + create
  */
 
@@ -171,7 +171,7 @@ interface Props {
    * inline on the review card.
    */
   onFinish: (s: ScheduleWizardState) => Promise<string | null> | string | null;
-  /** Postiz destinations chosen on the parent page; rendered on step 5 review. */
+  /** Vantly destinations chosen on the parent page; rendered on step 5 review. */
   selectedDestinations?: SelectedDestination[];
 }
 
@@ -1712,7 +1712,7 @@ export function ScheduleWizardSheet({ open, onClose, onFinish, selectedDestinati
                     <div className="px-4 py-3">
                       <p className="font-mono text-[10px] uppercase tracking-wider text-text-muted">Posts to</p>
                       {selectedDestinations.length === 0 ? (
-                        <p className="mt-1 text-sm text-amber-700">No destinations selected. Pick some on the Postiz page first.</p>
+                        <p className="mt-1 text-sm text-amber-700">No destinations selected. Pick some on the Vantly page first.</p>
                       ) : (
                         <ul className="mt-1 space-y-1 text-sm text-text">
                           {selectedDestinations.map((d) => (
@@ -1771,7 +1771,7 @@ export function ScheduleWizardSheet({ open, onClose, onFinish, selectedDestinati
                 <div className="rounded-lg border-2 border-amber-300 bg-amber-50 px-4 py-3">
                   <p className="text-sm font-semibold text-amber-900">Content responsibility</p>
                   <p className="mt-2 text-xs text-amber-900">
-                    Every run posts AI-generated video and text directly to your social accounts via Postiz. The output is
+                    Every run posts AI-generated video and text directly to your social accounts via Vantly. The output is
                     machine-generated and may occasionally produce unexpected, off-brand, or inappropriate content even with
                     moderation in place.
                   </p>
@@ -1784,7 +1784,7 @@ export function ScheduleWizardSheet({ open, onClose, onFinish, selectedDestinati
                     />
                     <span>
                       I understand AI generates the videos and captions for this schedule, and I&rsquo;m responsible for
-                      what gets posted to my social accounts. agent-media and Postiz don&rsquo;t review, approve, or
+                      what gets posted to my social accounts. vantly-ugc and Vantly don&rsquo;t review, approve, or
                       accept liability for content I publish through this schedule. I&rsquo;ll review my brief and the
                       first few runs carefully, and pause the schedule if anything looks off.
                     </span>

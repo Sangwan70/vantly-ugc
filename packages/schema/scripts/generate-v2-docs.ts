@@ -1,12 +1,12 @@
 #!/usr/bin/env tsx
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Generate v2 docs + SKILL.md from V2_GENERATORS.
  *
  * Reads packages/schema/src/v2/generators.ts and emits:
  *   - docs/v2/api-reference.md   — Markdown reference for the v2 REST surface
- *   - skills/agent-media-v2/SKILL.md  — Claude skill file pointing only at v2
+ *   - skills/vantly-ugc-v2/SKILL.md  — Claude skill file pointing only at v2
  *
  * Both files are derived. Hand edits get blown away on the next run — the
  * single source of truth is the registry.
@@ -25,12 +25,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '../../..');
 
 const DOCS_OUT = resolve(repoRoot, 'docs/v2/api-reference.md');
-const SKILL_OUT = resolve(repoRoot, 'skills/agent-media-v2/SKILL.md');
+const SKILL_OUT = resolve(repoRoot, 'skills/vantly-ugc-v2/SKILL.md');
 
 const GENERATED_NOTE = `<!--
   AUTO-GENERATED — do not hand-edit.
   Source: packages/schema/src/v2/generators.ts
-  Regenerate: pnpm --filter @agentmedia/schema gen:v2-docs
+  Regenerate: pnpm --filter @vantly-ugc/schema gen:v2-docs
 -->`;
 
 // ── Markdown helpers ───────────────────────────────────────────────────────
@@ -108,11 +108,11 @@ function renderApiReference(): string {
   return [
     GENERATED_NOTE,
     '',
-    '# agent-media v2 — API reference',
+    '# vantly-ugc v2 — API reference',
     '',
     '_Public REST surface for v2 generators (Selfie, Character). Auth is a Bearer API key (`ma_xxx`)._',
     '',
-    '**Base URL:** `https://api.agent-media.ai`',
+    '**Base URL:** `https://api.vantly-ugc.com`',
     '',
     '## Endpoints',
     '',
@@ -125,7 +125,7 @@ function renderApiReference(): string {
     '',
     '### Authentication',
     '',
-    'Every v2 request sends `Authorization: Bearer ma_xxx`. Get a key via `agent-media login` (CLI) or the dashboard.',
+    'Every v2 request sends `Authorization: Bearer ma_xxx`. Get a key via `vantly-ugc login` (CLI) or the dashboard.',
     '',
     '### Polling',
     '',
@@ -152,7 +152,7 @@ function renderApiReference(): string {
 // ─────────────────────────────────────────────────────────────────────────────
 // Multi-file skill emit
 //
-// Layout under skills/agent-media-v2/:
+// Layout under skills/vantly-ugc-v2/:
 //   SKILL.md                          — eager-loaded entry, ~2 KB
 //   reference/
 //     conversation-flow.md            — MUST-READ before any CLI call
@@ -169,7 +169,7 @@ function renderApiReference(): string {
 // fresh reference/generators/<id>.md automatically.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const SKILL_DIR = resolve(repoRoot, 'skills/agent-media-v2');
+const SKILL_DIR = resolve(repoRoot, 'skills/vantly-ugc-v2');
 
 interface EmittedFile {
   /** path relative to SKILL_DIR */
@@ -188,28 +188,28 @@ function renderSkillIndex(): string {
 
   return [
     '---',
-    'name: agent-media-v2',
+    'name: vantly-ugc-v2',
     // CRITICAL: the description string is what Claude reads when deciding whether to
     // load this skill AND it's the most-attended-to text once the skill is loaded.
     // Put the hard gate here, not buried in section 3 of the body.
-    'description: AI UGC video production via agent-media (selfie, character, subs, plus more soon). BEFORE running ANY agent-media command you MUST first Read reference/conversation-flow.md and walk the user through the 4 gates IN ORDER — (1) confirm duration first with script-pacing guidance (2-4 words/sec), (2) confirm script OR scene_action; if no speech, also propose background_music, (3) RUN `agent-media character list --json` YOURSELF (don\'t ask the user, don\'t mention char_xxx ids — present saved characters BY NAME if any, otherwise confirm the new description), (4) propose a director\'s brief with setting, lighting, wardrobe, props/product, and action; pass non-default motion/product handling through --scene-action. AUTOPILOT exception: if user explicitly says "autopilot", "just do it", "run with defaults", or equivalent, proceed end-to-end without re-asking every gate; infer missing details reasonably, keep safety constraints, and report assumptions. While jobs run, poll status and open portrait, character sheet, wireframe, and final video as each URL appears. When user says "no subs" → pass --subtitles false. When no script → pass --background-music. NEVER auto-pick a character. NEVER expose char_xxx ids. NEVER mention pricing/credits/USD.',
+    'description: AI UGC video production via vantly-ugc (selfie, character, subs, plus more soon). BEFORE running ANY vantly-ugc command you MUST first Read reference/conversation-flow.md and walk the user through the 4 gates IN ORDER — (1) confirm duration first with script-pacing guidance (2-4 words/sec), (2) confirm script OR scene_action; if no speech, also propose background_music, (3) RUN `vantly-ugc character list --json` YOURSELF (don\'t ask the user, don\'t mention char_xxx ids — present saved characters BY NAME if any, otherwise confirm the new description), (4) propose a director\'s brief with setting, lighting, wardrobe, props/product, and action; pass non-default motion/product handling through --scene-action. AUTOPILOT exception: if user explicitly says "autopilot", "just do it", "run with defaults", or equivalent, proceed end-to-end without re-asking every gate; infer missing details reasonably, keep safety constraints, and report assumptions. While jobs run, poll status and open portrait, character sheet, wireframe, and final video as each URL appears. When user says "no subs" → pass --subtitles false. When no script → pass --background-music. NEVER auto-pick a character. NEVER expose char_xxx ids. NEVER mention pricing/credits/USD.',
     '---',
     '',
     GENERATED_NOTE,
     '',
-    '# agent-media — Claude skill',
+    '# vantly-ugc — Claude skill',
     '',
-    'agent-media is a CLI for AI UGC video generation. This skill tells you how to drive it. **Loaded files are intentionally small** — open the right reference file for the task you have, don\'t try to memorize everything.',
+    'vantly-ugc is a CLI for AI UGC video generation. This skill tells you how to drive it. **Loaded files are intentionally small** — open the right reference file for the task you have, don\'t try to memorize everything.',
     '',
     '## 🛑 HARD GATE — read this first, every conversation',
     '',
-    'Before calling ANY `agent-media` shell command, you MUST:',
+    'Before calling ANY `vantly-ugc` shell command, you MUST:',
     '',
     '1. **Read** [`reference/conversation-flow.md`](reference/conversation-flow.md) — the full 4-gate protocol with templates.',
     '2. **Walk the user through 4 gates IN ORDER, one message each** — do not bulk-fire:',
     '   - **Gate 1:** confirm duration first with **script-pacing guidance** (2-4 words/sec). Propose a fit: 5s ≈ 10-20 words, 10s ≈ 20-40 words, 15s ≈ 30-60 words.',
     '   - **Gate 2:** confirm the exact script (verbatim — typos land in the video), or confirm `scene_action` + `--background-music` when there is no speech.',
-    '   - **Gate 3:** confirm character. YOU run `agent-media character list --json` (do not ask the user "do you have a saved character?" — they don\'t know that\'s a thing). If the list is empty, just confirm the description from their original prompt. If non-empty, present each saved character BY NAME (not by `char_xxx` id — that format is internal). The user picks by NAME or says "new"; you map name → id internally. 🛑 NEVER auto-pick. NEVER show `char_xxx` ids to the user. Never ask for a photo by default.',
+    '   - **Gate 3:** confirm character. YOU run `vantly-ugc character list --json` (do not ask the user "do you have a saved character?" — they don\'t know that\'s a thing). If the list is empty, just confirm the description from their original prompt. If non-empty, present each saved character BY NAME (not by `char_xxx` id — that format is internal). The user picks by NAME or says "new"; you map name → id internally. 🛑 NEVER auto-pick. NEVER show `char_xxx` ids to the user. Never ask for a photo by default.',
     '   - **Gate 4:** propose a full **director\'s brief** with pre-filled fields in 3 sections — **A. Intent+Performance**, **B. Scene+Look**, **C. Output**. Put visual direction into `--description` and action/product handling into `--scene-action`. The shot composition and energy are inferred from the brief; you can OPTIONALLY pin them with `--shot-preset` and `--vibe`, or override the realism defaults with `--camera-locked` / `--phone-in-frame` / `--polish` (rare — only when the user explicitly asks for a stable shot, a phone-in-hand composition, or a different polish look).',
     '3. Only then call the CLI.',
     '',
@@ -219,31 +219,31 @@ function renderSkillIndex(): string {
     '',
     '## NEVER discuss pricing',
     '',
-    'Do NOT mention credit costs, USD amounts, or pricing tiers in any reply. Do NOT ask the user to "confirm cost". The API handles billing transparently. If the user asks about cost, point them at <https://agent-media.ai/pricing>. That is the only acceptable surface for pricing.',
+    'Do NOT mention credit costs, USD amounts, or pricing tiers in any reply. Do NOT ask the user to "confirm cost". The API handles billing transparently. If the user asks about cost, point them at <https://vantly-ugc.com/pricing>. That is the only acceptable surface for pricing.',
     '',
-    '## What agent-media can do (router)',
+    '## What vantly-ugc can do (router)',
     '',
     '| Command | Use when | Deep-dive |',
     '|---|---|---|',
     generatorRows,
     '',
-    '`agent-media skill update` — pull the latest skill files into ~/.claude/skills/agent-media-v2/.',
-    '`agent-media skill status` — print local vs remote version.',
+    '`vantly-ugc skill update` — pull the latest skill files into ~/.claude/skills/vantly-ugc-v2/.',
+    '`vantly-ugc skill status` — print local vs remote version.',
     '',
-    '## What agent-media CANNOT do',
+    '## What vantly-ugc CANNOT do',
     '',
-    'These legacy v1 commands exist in the CLI binary for backwards compat but produce inferior output. They are hidden from `agent-media --help` for a reason. **Never call them.**',
+    'These legacy v1 commands exist in the CLI binary for backwards compat but produce inferior output. They are hidden from `vantly-ugc --help` for a reason. **Never call them.**',
     '',
-    '- ❌ `agent-media ugc` — uses a stale fixed actor library (200 actors picked at random). The actors look dated. Use `agent-media selfie` — it generates an on-model character from your description on every run.',
-    '- ❌ `agent-media show-your-app` — built on the v1 actor pool + manual screen-composite step. The v2 product is on the roadmap. For now, run `agent-media selfie` for the talking head and capture the screen separately.',
-    '- ❌ `agent-media laptop-ugc` — v1 only. Same story as show-your-app; v2 product coming.',
-    '- ❌ `agent-media character-video` — superseded by `agent-media selfie --character <id>`. The new command uses the current portrait → sheet → wireframe → Seedance pipeline.',
-    '- ❌ `agent-media text-to-video` — no character control; output is generic and off-brand. Use `agent-media selfie` with a saved character.',
-    '- ❌ `agent-media subtitle` (singular) — v1 burner with fewer styles and shakier sync. Use `agent-media subs` (plural).',
-    '- ❌ `agent-media review` — SaaS-review generator built on v1 actors. Compose with `agent-media selfie` + a script you write.',
-    '- ❌ `agent-media product-acting` — v1 product-in-hand generator. For now, use `agent-media selfie` with a strong `--scene-action` describing the product hold, demo, and interaction.',
+    '- ❌ `vantly-ugc ugc` — uses a stale fixed actor library (200 actors picked at random). The actors look dated. Use `vantly-ugc selfie` — it generates an on-model character from your description on every run.',
+    '- ❌ `vantly-ugc show-your-app` — built on the v1 actor pool + manual screen-composite step. The v2 product is on the roadmap. For now, run `vantly-ugc selfie` for the talking head and capture the screen separately.',
+    '- ❌ `vantly-ugc laptop-ugc` — v1 only. Same story as show-your-app; v2 product coming.',
+    '- ❌ `vantly-ugc character-video` — superseded by `vantly-ugc selfie --character <id>`. The new command uses the current portrait → sheet → wireframe → Seedance pipeline.',
+    '- ❌ `vantly-ugc text-to-video` — no character control; output is generic and off-brand. Use `vantly-ugc selfie` with a saved character.',
+    '- ❌ `vantly-ugc subtitle` (singular) — v1 burner with fewer styles and shakier sync. Use `vantly-ugc subs` (plural).',
+    '- ❌ `vantly-ugc review` — SaaS-review generator built on v1 actors. Compose with `vantly-ugc selfie` + a script you write.',
+    '- ❌ `vantly-ugc product-acting` — v1 product-in-hand generator. For now, use `vantly-ugc selfie` with a strong `--scene-action` describing the product hold, demo, and interaction.',
     '',
-    'If the user wants a feature not listed in the router above, offer `agent-media selfie` when the request can be expressed as one actor, one setting, dialogue/action, and optional props/product handling.',
+    'If the user wants a feature not listed in the router above, offer `vantly-ugc selfie` when the request can be expressed as one actor, one setting, dialogue/action, and optional props/product handling.',
     '',
     '## Reference files (lazy-loaded)',
     '',
@@ -265,7 +265,7 @@ function renderConversationFlow(): string {
   return [
     GENERATED_NOTE,
     '',
-    '# Conversation flow — MUST READ before any agent-media call',
+    '# Conversation flow — MUST READ before any vantly-ugc call',
     '',
     '> **CRITICAL:** Output quality is directly tied to how well you collect these inputs. Run the 4 gates in order. Do not skip, combine, or bulk-fire them.',
     '',
@@ -308,7 +308,7 @@ function renderConversationFlow(): string {
     'Step 1 — run silently (don\'t print the raw output to the user):',
     '',
     '```bash',
-    'agent-media character list --json',
+    'vantly-ugc character list --json',
     '```',
     '',
     'Step 2 — interpret the result and ask the right question:',
@@ -335,7 +335,7 @@ function renderConversationFlow(): string {
     '',
     '> *"Got it — new character. Going with: «<echo description»? Add anything?"*',
     '',
-    '**Default to description-only when creating new.** agent-media generates the character image from text — no photo required. Only ask for a photo if the user explicitly says "use THIS person" and provides one.',
+    '**Default to description-only when creating new.** vantly-ugc generates the character image from text — no photo required. Only ask for a photo if the user explicitly says "use THIS person" and provides one.',
     '',
     'Once the user picks a name OR confirms a new description, move to Gate 4. Pass the resolved character to the selfie call as `--character char_xxx` (saved) OR `--description "..."` (new).',
     '',
@@ -410,29 +410,29 @@ function renderConversationFlow(): string {
     '1. Echo the resolved inputs in ONE line: *"Got it: 10s bright-bedroom selfie · cream top · hair-oil bottle action. Running."*',
     '2. Call the CLI:',
     '   ```bash',
-    '   agent-media selfie \\',
+    '   vantly-ugc selfie \\',
     '     --description "28yo fit blonde woman, stylish natural fragrance UGC creator, cream jacket over fitted white top, loose blonde waves, bright bedroom daylight" \\',
     '     --script "I keep getting DMs about my hair oil routine" \\',
     '     --scene-action "standing near a dresser, holding an amber hair-oil bottle and scrunching one curl mid-line" \\',
     '     --duration 10',
     '   ```',
-    '3. If you need to show progress, poll `agent-media status <job_id> --json` about every 20-30 seconds. Open/show each new URL as soon as it appears: `portrait_url`, `character_sheet_url`/`sheet_url`, `wireframe_url`, then `video_url`.',
+    '3. If you need to show progress, poll `vantly-ugc status <job_id> --json` about every 20-30 seconds. Open/show each new URL as soon as it appears: `portrait_url`, `character_sheet_url`/`sheet_url`, `wireframe_url`, then `video_url`.',
     '',
     '## crazy-look — silent reaction clips (DIFFERENT flow)',
     '',
-    '`agent-media crazy-look` does NOT use the 4 selfie gates. No script, no subtitles, no music — the caption IS the content and ambient room tone is built in.',
+    '`vantly-ugc crazy-look` does NOT use the 4 selfie gates. No script, no subtitles, no music — the caption IS the content and ambient room tone is built in.',
     '',
-    '**Rule 0 — a series begins with a character sheet.** Run `agent-media character list --json` silently. Starting a series with no saved character? Create one FIRST (`agent-media character create …`) — the saved sheet + pinned seed is what keeps the SAME face on every clip. Inline `--description` invents a NEW person per clip; only use it for a one-off test, never a series.',
+    '**Rule 0 — a series begins with a character sheet.** Run `vantly-ugc character list --json` silently. Starting a series with no saved character? Create one FIRST (`vantly-ugc character create …`) — the saved sheet + pinned seed is what keeps the SAME face on every clip. Inline `--description` invents a NEW person per clip; only use it for a one-off test, never a series.',
     '',
     '**Gate 1 — caption.** Confirm the exact overlay text (burned over the full clip; deliberate typos read as authentic).',
     '',
     '**Gate 2 — nothing else unless the user directs it.** `--look`, `--framing`, and `--chaos` are optional and SAMPLED PER JOB when omitted: random look, weighted framing rotation (full-face / eyes-only / mouth-only / nose-up / medium), randomized beat arc. The volume workflow is the default — same caption + same character, N calls → N different performances. Pin look/framing/chaos only when explicitly asked.',
     '',
     '```bash',
-    'agent-media character create --name "ashley" --description "21yo woman, long brown wavy hair, argyle cardigan"',
-    'agent-media crazy-look --character char_XXXXXXXXXX --caption "WAIT there\'s an app that LOCKS your phone until you PRAY???"',
+    'vantly-ugc character create --name "ashley" --description "21yo woman, long brown wavy hair, argyle cardigan"',
+    'vantly-ugc crazy-look --character char_XXXXXXXXXX --caption "WAIT there\'s an app that LOCKS your phone until you PRAY???"',
     '# run it again unchanged — different look, framing and beats, SAME face:',
-    'agent-media crazy-look --character char_XXXXXXXXXX --caption "WAIT there\'s an app that LOCKS your phone until you PRAY???"',
+    'vantly-ugc crazy-look --character char_XXXXXXXXXX --caption "WAIT there\'s an app that LOCKS your phone until you PRAY???"',
     '```',
     '',
     '❌ Never run a crazy-look SERIES on `--description` — every clip gets a different person.',
@@ -456,15 +456,15 @@ function renderConversationFlow(): string {
     '',
     '## DO NOT ask about cost or credits',
     '',
-    'There is no 5th gate about pricing. The API debits internally and allows a soft overdraft so generations never get blocked. Never quote credit numbers or USD to the user — point them at <https://agent-media.ai/pricing> if they ask.',
+    'There is no 5th gate about pricing. The API debits internally and allows a soft overdraft so generations never get blocked. Never quote credit numbers or USD to the user — point them at <https://vantly-ugc.com/pricing> if they ask.',
     '',
     '## Anti-patterns — never do these',
     '',
-    '- ❌ Calling `agent-media selfie` without running all 4 gates.',
+    '- ❌ Calling `vantly-ugc selfie` without running all 4 gates.',
     '- ❌ Asking the 4 gates as one giant message — they\'re sequential, one per turn.',
     '- ❌ Skipping Gate 4 (the director\'s brief). That\'s the gate that controls quality. Without it the output looks generic.',
     '- ❌ Asking blank questions ("what scene?") instead of proposing defaults ("here\'s the scene I\'d use — confirm?").',
-    '- ❌ **Auto-picking a character from `agent-media character list`.** Even if there\'s only one, even if it\'s the "most recent" — you MUST show the user the list and wait for them to explicitly pick the id or say "new". Picking on their behalf wastes credits on the wrong person.',
+    '- ❌ **Auto-picking a character from `vantly-ugc character list`.** Even if there\'s only one, even if it\'s the "most recent" — you MUST show the user the list and wait for them to explicitly pick the id or say "new". Picking on their behalf wastes credits on the wrong person.',
     '- ❌ Forgetting to forward `subtitles: true` (or `--subtitles true`) on the selfie call when the user accepted the brief. The default is on, but defaults only fire if you don\'t override — be explicit.',
     '- ❌ **Defaulting to subtitles ON when the user explicitly says "no subs".** If the user\'s prompt or any Gate-3 reply contains "no subs", "without subtitles", "no captions", or similar — the call MUST include `--subtitles false` (CLI) or `subtitles: false` (REST). Failure mode: a subtitled video gets shipped against the user\'s wishes + the Whisper transcription may capture model garbage and burn it as text.',
     '- ❌ **Mismatching script length and duration** (e.g. 10-word script + 15s duration without enough visual action). Normal speech is 2-4 words/sec. Size duration to fit the script and action plan.',
@@ -475,8 +475,8 @@ function renderConversationFlow(): string {
     '- ❌ Waiting silently until the final video when intermediate URLs are available. Surface portrait, sheet, wireframe, and final video as each completes.',
     '- ❌ Asking for a photo when the user only gave a text description.',
     '- ❌ Suggesting a duration not in {5, 10, 15}.',
-    '- ❌ **Mentioning credit cost, USD, or pricing to the user.** The API handles billing transparently. If asked about cost, point at <https://agent-media.ai/pricing>.',
-    '- ❌ Falling back to `agent-media ugc` or any v1 command if v2 errors. Surface the error to the user instead.',
+    '- ❌ **Mentioning credit cost, USD, or pricing to the user.** The API handles billing transparently. If asked about cost, point at <https://vantly-ugc.com/pricing>.',
+    '- ❌ Falling back to `vantly-ugc ugc` or any v1 command if v2 errors. Surface the error to the user instead.',
     '',
   ].join('\n');
 }
@@ -511,7 +511,7 @@ function renderSubtitleStyles(): string {
     '',
     '# Subtitle styles',
     '',
-    'Pass via `--style <name>` on `agent-media subs` or `--subs-style <name>` on `agent-media selfie`. Default: `hormozi`.',
+    'Pass via `--style <name>` on `vantly-ugc subs` or `--subs-style <name>` on `vantly-ugc selfie`. Default: `hormozi`.',
     '',
     '| Style | Look |',
     '|---|---|',
@@ -553,18 +553,18 @@ function renderErrors(): string {
     '',
     '| Error | Fix |',
     '|---|---|',
-    '| `ERR_MODULE_NOT_FOUND: @agentmedia/schema` | You\'re on an old CLI. Run `npm install -g agent-media-cli@latest`. |',
-    '| `Not authenticated. Run agent-media login first.` | API key missing. Run `agent-media login`. |',
-    '| `LOGIN_TIMEOUT` | Browser didn\'t complete OAuth in time. Re-run `agent-media login`. |',
-    '| `DEPRECATED v1 command: agent-media ugc` | You called a legacy command. Switch to `agent-media selfie`. |',
+    '| `ERR_MODULE_NOT_FOUND: @vantly-ugc/schema` | You\'re on an old CLI. Run `npm install -g vantly-ugc-cli@latest`. |',
+    '| `Not authenticated. Run vantly-ugc login first.` | API key missing. Run `vantly-ugc login`. |',
+    '| `LOGIN_TIMEOUT` | Browser didn\'t complete OAuth in time. Re-run `vantly-ugc login`. |',
+    '| `DEPRECATED v1 command: vantly-ugc ugc` | You called a legacy command. Switch to `vantly-ugc selfie`. |',
     '',
     '## API',
     '',
     '| Code | Meaning | Fix |',
     '|---|---|---|',
     '| `VALIDATION_ERROR` | Input body failed schema. Check the `issues` array in the response. | Adjust args to match the input schema. |',
-    '| `UNAUTHORIZED` | Bearer token missing or invalid. | Re-run `agent-media login`. |',
-    '| `INSUFFICIENT_CREDITS` | Not enough credits on the account. | Run `agent-media subscribe` to top up. |',
+    '| `UNAUTHORIZED` | Bearer token missing or invalid. | Re-run `vantly-ugc login`. |',
+    '| `INSUFFICIENT_CREDITS` | Not enough credits on the account. | Run `vantly-ugc subscribe` to top up. |',
     '| `WORKER_NOT_CONFIGURED` | Server-side misconfig — should not normally occur. | Ping support. |',
     '| `DATABASE_ERROR` | Server insert failed (often missing models row). | Ping support, report the job request. |',
     '',
@@ -577,7 +577,7 @@ function renderGenerator(g: V2GeneratorRecord): string {
   return [
     GENERATED_NOTE,
     '',
-    `# \`agent-media ${g.cli?.command ?? g.id}\`${status}`,
+    `# \`vantly-ugc ${g.cli?.command ?? g.id}\`${status}`,
     '',
     g.summary,
     '',
@@ -589,7 +589,7 @@ function renderGenerator(g: V2GeneratorRecord): string {
     '',
     examples.length
       ? '```bash\n' + examples.join('\n') + '\n```'
-      : `\`agent-media ${g.cli?.command ?? g.id} --help\``,
+      : `\`vantly-ugc ${g.cli?.command ?? g.id} --help\``,
     '',
     '## MCP tool',
     '',

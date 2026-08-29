@@ -1,8 +1,8 @@
-// Copyright 2026 agent-media contributors
+// Copyright 2026 Vantly UGC contributors
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * Stripe-specific types for the agent-media billing integration.
+ * Stripe-specific types for the vantly-ugc billing integration.
  *
  * These types mirror the Stripe API objects we interact with,
  * providing a thin, typed abstraction so the rest of the codebase
@@ -118,7 +118,7 @@ export interface StripeInvoice {
 // ── Stripe Webhook Event ────────────────────────────────────────────────────
 
 /**
- * The subset of Stripe webhook event types that agent-media processes.
+ * The subset of Stripe webhook event types that vantly-ugc processes.
  */
 export type StripeWebhookEventType =
   | 'invoice.paid'

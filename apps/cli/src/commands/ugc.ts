@@ -1,8 +1,8 @@
 import { printDeprecation } from '../lib/deprecation.js';
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media ugc <script-or-file>` command.
+ * `vantly-ugc ugc <script-or-file>` command.
  *
  * Produces a full UGC-style video from a script. Flow:
  * 1. Load API key from the credential store.
@@ -24,7 +24,7 @@ import {
 } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
 import {
-  AgentMediaAPI,
+  VantlyUgcAPI,
   type GenerationJob,
 } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
@@ -50,7 +50,7 @@ const TERMINAL_STATUSES = new Set<string>(['completed', 'failed', 'canceled']);
  * in a row.
  */
 async function pollOnce(
-  api: AgentMediaAPI,
+  api: VantlyUgcAPI,
   jobId: string,
 ): Promise<{ status: string; checkpoint?: string } | null> {
   try {
@@ -97,7 +97,7 @@ function isScriptFile(value: string): boolean {
  * Poll a UGC job until it reaches a terminal state.
  */
 async function waitForJob(
-  api: AgentMediaAPI,
+  api: VantlyUgcAPI,
   jobId: string,
   mode: OutputMode,
 ): Promise<GenerationJob | null> {
@@ -126,14 +126,14 @@ async function waitForJob(
             spinner.fail(
               `Lost connection to the API after ${formatElapsed(elapsed)}. ` +
                 `Job ${jobId} may still be processing — re-run with ` +
-                `\`agent-media status ${jobId}\` to check.`,
+                `\`vantly-ugc status ${jobId}\` to check.`,
             );
           }
           throw new CLIError(
             `Lost connection to the API. Job ${jobId} may still be processing.`,
             {
               code: 'POLL_ABORTED',
-              suggestion: `Re-run with: agent-media status ${jobId}`,
+              suggestion: `Re-run with: vantly-ugc status ${jobId}`,
             },
           );
         }
@@ -228,13 +228,13 @@ export function registerUGCCommand(program: Command): void {
     .description(
       'Produce a UGC-style video from a script\n\n' +
       'Examples:\n' +
-      '  $ agent-media ugc "Ever wonder why top founders wake up at 5am?" --sync\n' +
-      '  $ agent-media ugc ./script.txt --voice nova --sync\n' +
-      '  $ agent-media ugc ./script.md --style hormozi -s\n' +
-      '  $ agent-media ugc -g "A fitness tracker that monitors sleep quality" --sync\n' +
-      '  $ agent-media ugc -g "Premium yoga mat" --product-url https://example.com/mat\n' +
-      '  $ agent-media ugc ./script.txt --scenes-file ./scenes.json --sync\n' +
-      '  $ agent-media ugc ./script.txt --product-image https://example.com/product.jpg --sync\n\n' +
+      '  $ vantly-ugc ugc "Ever wonder why top founders wake up at 5am?" --sync\n' +
+      '  $ vantly-ugc ugc ./script.txt --voice nova --sync\n' +
+      '  $ vantly-ugc ugc ./script.md --style hormozi -s\n' +
+      '  $ vantly-ugc ugc -g "A fitness tracker that monitors sleep quality" --sync\n' +
+      '  $ vantly-ugc ugc -g "Premium yoga mat" --product-url https://example.com/mat\n' +
+      '  $ vantly-ugc ugc ./script.txt --scenes-file ./scenes.json --sync\n' +
+      '  $ vantly-ugc ugc ./script.txt --product-image https://example.com/product.jpg --sync\n\n' +
       'The argument can be inline text or a path to a .txt/.md file.\n' +
       'Use --generate-script to have AI write the script for you.\n' +
       'Use --scenes-file to provide a JSON array of scenes and bypass AI scene splitting.\n' +
@@ -243,8 +243,8 @@ export function registerUGCCommand(program: Command): void {
     .option('--voice <name>', 'TTS voice (alloy, echo, fable, onyx, nova, shimmer, or custom voice_id)')
     .option('--tone <name>', 'Voice tone: energetic, calm, confident, dramatic')
     .option('--style <name>', 'Subtitle style (default: hormozi). Options: hormozi, tiktok, minimal, clean, bold, impact, fire, pop, spotlight, aesthetic, pastel, glow, neon, electric, gradient, karaoke, boxed', 'hormozi')
-    .option('--persona <slug>', 'Use a persona for voice + face consistency (created via `agent-media persona create`)')
-    .option('--actor <slug>', 'Use a library actor for talking heads (see `agent-media actor list`)')
+    .option('--persona <slug>', 'Use a persona for voice + face consistency (created via `vantly-ugc persona create`)')
+    .option('--actor <slug>', 'Use a library actor for talking heads (see `vantly-ugc actor list`)')
     .option('--face-url <url>', 'Direct URL or local file path to a face photo for talking head + B-roll')
     .option('-d, --duration <seconds>', 'Target video duration in seconds (5, 10, 15)', parseInt)
     .option('--aspect <ratio>', 'Aspect ratio: 9:16, 16:9, 1:1 (default: 9:16)', '9:16')
@@ -285,12 +285,12 @@ export function registerUGCCommand(program: Command): void {
       if (!apiKey) {
         throw new CLIError('Not logged in.', {
           code: 'NOT_AUTHENTICATED',
-          suggestion: "Run 'agent-media login' to authenticate.",
+          suggestion: "Run 'vantly-ugc login' to authenticate.",
         });
       }
 
       try {
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
 
         // ── Resolve script content ──────────────────────────────────────
         let script: string;
@@ -312,7 +312,7 @@ export function registerUGCCommand(program: Command): void {
             'Script argument is required (or use -g to generate one, or --scenes-file for explicit scenes).',
             {
               code: 'INVALID_INPUT',
-              suggestion: "Provide a script: agent-media ugc 'your script...' --sync\nOr generate one: agent-media ugc -g 'fitness tracker' --sync\nOr use scenes: agent-media ugc --scenes-file ./scenes.json --sync",
+              suggestion: "Provide a script: vantly-ugc ugc 'your script...' --sync\nOr generate one: vantly-ugc ugc -g 'fitness tracker' --sync\nOr use scenes: vantly-ugc ugc --scenes-file ./scenes.json --sync",
             },
           );
         } else if (!scriptOrFile && cmdOpts.scenesFile) {
@@ -481,14 +481,14 @@ export function registerUGCCommand(program: Command): void {
               ugcParams.actor_slug = randomActor.slug;
               if (mode === 'human') {
                 console.log(`  Actor:   ${chalk.cyan(randomActor.name)} (${randomActor.slug}) — randomly selected`);
-                console.log(chalk.dim(`  Tip: browse actors with 'agent-media actor list' or pick one with --actor <slug>`));
+                console.log(chalk.dim(`  Tip: browse actors with 'vantly-ugc actor list' or pick one with --actor <slug>`));
               }
             }
           } catch {
             // Non-critical — proceed without actor if fetch fails
             if (mode === 'human') {
               console.log(chalk.yellow('  Warning: Could not fetch actor list. Video will have no talking head.'));
-              console.log(chalk.yellow('  Tip: specify --actor <slug> manually. Run "agent-media actor list" to browse.'));
+              console.log(chalk.yellow('  Tip: specify --actor <slug> manually. Run "vantly-ugc actor list" to browse.'));
             }
           }
         }
@@ -750,7 +750,7 @@ export function registerUGCCommand(program: Command): void {
               console.log();
               console.log(
                 chalk.dim(
-                  `  Run 'agent-media status ${result.job_id}' to check progress`,
+                  `  Run 'vantly-ugc status ${result.job_id}' to check progress`,
                 ),
               );
               console.log(

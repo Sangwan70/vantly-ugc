@@ -1,8 +1,8 @@
-// Copyright 2026 agent-media contributors
+// Copyright 2026 Vantly UGC contributors
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * @agent-media/types - Shared type definitions for the agent-media platform.
+ * @vantly-ugc/types - Shared type definitions for the vantly-ugc platform.
  */
 
 // ── Re-exports ──────────────────────────────────────────────────────────────

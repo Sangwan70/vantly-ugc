@@ -1,17 +1,32 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * Postiz SSO endpoint.
+ * Vantly SSO endpoint.
  *
- * Postiz redirects logged-in users to:
- *   https://agent-media.ai/sso/{jwtToken}
+ * This is the receiving side of a bespoke bridge Vantly added specifically
+ * for vantly-ugc-app: vantly/apps/backend/src/api/routes/users.controller.ts's
+ * GET /vantly-ugc-sso (requires an existing vantly.social session) signs
+ * { id: organization.id, displayName: organization.name } with a DEDICATED
+ * secret, VANTLY_SSO_KEY (jsonwebtoken's `sign`, HS256 by default — NOT the
+ * OAuth client_secret used by /api/auth/vantly and
+ * /api/integrations/postiz/oauth/*), and redirects the browser to
+ *   https://vantly-ugc.com/sso/{jwtToken}
+ * which is this route. We verify the signature, then create-or-find a
+ * Supabase user keyed to that organization id (profiles.vantly_org_id —
+ * same column "Sign in with Vantly" uses, since both paths mean the same
+ * thing: signing in as a Vantly organization, because Vantly's tokens have
+ * no per-person identity — see /api/integrations/postiz/oauth/callback's
+ * comments), sign them in, and redirect to the dashboard.
  *
- * The JWT contains the user's Postiz ID and name, signed with our
- * OAuth client_secret (HMAC-SHA256). We verify the signature, extract
- * the user info, create or find the corresponding Supabase user, sign
- * them in, and redirect to the dashboard.
+ * This is initiated FROM vantly.social (a "launch vantly-ugc-app" link
+ * there, if one exists) rather than from vantly-ugc-app's own login page —
+ * for a login button on vantly-ugc-app itself, see /api/auth/vantly
+ * instead, which reuses the same OAuth App credentials as the Vantly
+ * connect flow.
  *
- * JWT payload expected: { sub: "postiz-user-id", name: "Display Name" }
+ * JWT payload actually sent by Vantly: { id: "org-id", displayName: "Org name" }.
+ * (sub/name are read as fallbacks below only because this route predates
+ * knowing Vantly's exact payload shape — id/displayName are what's real.)
  */
 
 import { NextResponse } from 'next/server';
@@ -47,7 +62,7 @@ function verifyJwt(token: string, secret: string): { sub: string; name?: string 
     // Check expiration if present
     if (payload.exp && Date.now() / 1000 > payload.exp) return null;
 
-    // Accept both `sub` and `id` as user identifier (Postiz uses `id`)
+    // Accept both `sub` and `id` as user identifier (Vantly sends `id`)
     const userId = payload.sub || payload.id;
     if (!userId) return null;
     return { sub: userId, name: payload.name || payload.displayName };
@@ -63,31 +78,31 @@ export async function GET(
   const { token } = await params;
   const { origin } = new URL(request.url);
 
-  const clientSecret = process.env.POSTIZ_CLIENT_SECRET;
-  if (!clientSecret) {
-    console.error('POSTIZ_CLIENT_SECRET not configured');
+  const ssoKey = process.env.VANTLY_SSO_KEY;
+  if (!ssoKey) {
+    console.error('VANTLY_SSO_KEY not configured');
     return NextResponse.redirect(new URL('/login?error=config', origin));
   }
 
   // ── Verify and decode the JWT ──────────────────────────────────────────
-  const payload = verifyJwt(token, clientSecret);
+  const payload = verifyJwt(token, ssoKey);
   if (!payload) {
-    console.error('Invalid or expired Postiz SSO token');
+    console.error('Invalid or expired Vantly SSO token');
     return NextResponse.redirect(new URL('/login?error=invalid_token', origin));
   }
 
-  const postizUserId = payload.sub;
+  const vantlyOrgId = payload.sub;
   const displayName = payload.name || null;
 
   // ── Create or find Supabase user ───────────────────────────────────────
   const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!.trim(),
+    (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)!.trim(),
     process.env.SUPABASE_SERVICE_ROLE_KEY!.trim(),
   );
 
-  const ssoEmail = `postiz_${postizUserId}@sso.agent-media.ai`;
+  const ssoEmail = `vantly_${vantlyOrgId}@sso.vantly-ugc.com`;
 
-  // Try to create — if already exists, look up by postiz_id
+  // Try to create — if already exists, look up by vantly_org_id
   let userId: string;
 
   const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
@@ -95,29 +110,29 @@ export async function GET(
     email_confirm: true,
     user_metadata: {
       full_name: displayName,
-      postiz_id: postizUserId,
-      auth_provider: 'postiz',
+      vantly_org_id: vantlyOrgId,
+      auth_provider: 'vantly',
     },
   });
 
   if (newUser?.user) {
     userId = newUser.user.id;
 
-    // Store postiz_id in profiles
+    // Store vantly_org_id in profiles
     await supabaseAdmin
       .from('profiles')
-      .update({ postiz_id: postizUserId })
+      .update({ vantly_org_id: vantlyOrgId })
       .eq('id', userId);
   } else if (createError?.message?.includes('already been registered')) {
-    // Existing user — look up by postiz_id
+    // Existing user — look up by vantly_org_id
     const { data: profile } = await supabaseAdmin
       .from('profiles')
       .select('id')
-      .eq('postiz_id', postizUserId)
+      .eq('vantly_org_id', vantlyOrgId)
       .maybeSingle();
 
     if (!profile?.id) {
-      console.error('Postiz user exists but profile not found:', postizUserId);
+      console.error('Vantly org already registered but profile not found:', vantlyOrgId);
       return NextResponse.redirect(new URL('/login?error=user_lookup', origin));
     }
     userId = profile.id;

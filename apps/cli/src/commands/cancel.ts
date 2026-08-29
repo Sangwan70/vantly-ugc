@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media cancel <job-id>` command.
+ * `vantly-ugc cancel <job-id>` command.
  *
  * Cancels an active generation job (submitted/queued/processing)
  * and refunds the credits. Use --all to cancel all active jobs.
@@ -16,7 +16,7 @@ import {
   createSpinner,
 } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
-import { AgentMediaAPI } from '../lib/api.js';
+import { VantlyUgcAPI } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
 
 interface CancelOptions {
@@ -41,19 +41,19 @@ export function registerCancelCommand(program: Command): void {
       if (!apiKey) {
         throw new CLIError('Not logged in.', {
           code: 'NOT_AUTHENTICATED',
-          suggestion: "Run 'agent-media login' to authenticate.",
+          suggestion: "Run 'vantly-ugc login' to authenticate.",
         });
       }
 
       if (!jobId && !cmdOpts.all) {
         throw new CLIError('Provide a job ID or use --all.', {
           code: 'MISSING_ARGUMENT',
-          suggestion: "Usage: agent-media cancel <job-id> or agent-media cancel --all",
+          suggestion: "Usage: vantly-ugc cancel <job-id> or vantly-ugc cancel --all",
         });
       }
 
       try {
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
 
         // ── Cancel all active jobs ──────────────────────────────────────
         if (cmdOpts.all) {

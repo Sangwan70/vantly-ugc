@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media whoami` command.
+ * `vantly-ugc whoami` command.
  *
  * Shows the authenticated user's identity, subscription plan,
  * and credit balances. Requires a valid API key.
@@ -11,7 +11,7 @@ import type { Command } from 'commander';
 import chalk from 'chalk';
 import { detectOutputMode, printJson, printQuiet, createSpinner } from '../lib/output.js';
 import { getApiKey, getProfile, resolveProfileName } from '../lib/credentials.js';
-import { AgentMediaAPI } from '../lib/api.js';
+import { VantlyUgcAPI } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
 
 export function registerWhoAmICommand(program: Command): void {
@@ -31,7 +31,7 @@ export function registerWhoAmICommand(program: Command): void {
       if (!apiKey) {
         throw new CLIError('Not logged in.', {
           code: 'NOT_AUTHENTICATED',
-          suggestion: 'Run `agent-media login` to authenticate.',
+          suggestion: 'Run `vantly-ugc login` to authenticate.',
         });
       }
 
@@ -39,7 +39,7 @@ export function registerWhoAmICommand(program: Command): void {
         const spinner = createSpinner('Fetching account info...');
         if (mode === 'human') spinner.start();
 
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
         const data = await api.whoami();
         const profile = getProfile(profileName);
 

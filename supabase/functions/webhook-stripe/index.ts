@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors
+// Copyright 2026 Vantly UGC contributors
 // SPDX-License-Identifier: Apache-2.0
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 /**
  * Edge Function: webhook-stripe
  *
- * Receives and processes ALL Stripe webhook events for the agent-media
+ * Receives and processes ALL Stripe webhook events for the vantly-ugc
  * billing system.  Every event is verified via HMAC-SHA256 signature,
  * de-duplicated through the stripe_webhook_events table, and dispatched
  * to the appropriate handler.

@@ -1,12 +1,12 @@
 {
-  "name": "agent-media",
-  "description": "Agent-Media UGC Video — one tool. Give a script + a person (description, photo, or saved character) and get a finished, captioned, lip-synced vertical UGC video. Short line → one clip; full monologue → seamless multi-take; b-roll URL → narrated overlay. One Bearer token, one MCP server.",
+  "name": "vantly-ugc",
+  "description": "Vantly UGC Video — one tool. Give a script + a person (description, photo, or saved character) and get a finished, captioned, lip-synced vertical UGC video. Short line → one clip; full monologue → seamless multi-take; b-roll URL → narrated overlay. One Bearer token, one MCP server.",
   "version": "1.3.0",
   "author": {
     "name": "gitroomhq",
     "url": "https://github.com/gitroomhq"
   },
-  "homepage": "https://agent-media.ai",
+  "homepage": "https://vantly-ugc.com",
   "repository": "https://github.com/gitroomhq/agent-media-app",
   "license": "Apache-2.0",
   "keywords": [
@@ -23,7 +23,7 @@
     "gpt-image-2",
     "seedance",
     "video-generation",
-    "agent-media"
+    "vantly-ugc"
   ],
   "categories": [
     "video",
@@ -31,8 +31,8 @@
     "ai-creative"
   ],
   "api": {
-    "rest": "https://api.agent-media.ai",
-    "openapi": "https://api.agent-media.ai/openapi.json",
-    "mcp": "https://api.agent-media.ai/mcp"
+    "rest": "https://api.vantly-ugc.com",
+    "openapi": "https://api.vantly-ugc.com/openapi.json",
+    "mcp": "https://api.vantly-ugc.com/mcp"
   }
 }

@@ -1,11 +1,11 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media skill <subcommand>` — manage the local Claude skill copy.
+ * `vantly-ugc skill <subcommand>` — manage the local Claude skill copy.
  *
  * Subcommands:
- *   - update — pull the latest SKILL.md from gitroomhq/agent-media into
- *     ~/.claude/skills/agent-media-v2/SKILL.md
+ *   - update — pull the latest SKILL.md from gitroomhq/vantly-ugc into
+ *     ~/.claude/skills/vantly-ugc-v2/SKILL.md
  *   - status — show local + remote version side-by-side
  */
 
@@ -19,12 +19,12 @@ import { handleError } from '../lib/errors.js';
 export function registerSkillCommand(program: Command): void {
   const skill = program
     .command('skill')
-    .description('Manage the agent-media Claude skill installation.');
+    .description('Manage the vantly-ugc Claude skill installation.');
 
   skill
     .command('update')
     .description(
-      'Update the locally-installed agent-media Claude skill to the latest version from github.com/gitroomhq/agent-media.',
+      'Update the locally-installed vantly-ugc Claude skill to the latest version from github.com/gitroomhq/agent-media.',
     )
     .action(async () => {
       try {

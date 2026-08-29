@@ -1,6 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+// This self-hosted stack's gateway (supabase/self-host-gateway/nginx.conf)
+// only proxies /auth/v1, /rest/v1, /storage/v1 — there is no Edge Functions
+// runtime behind it, so supabase.functions.invoke('credits-check') below
+// always 404'd here. api-v2 has its own reimplementation of this one
+// function as a plain route (services/api-v2/src/routes/v1/credits-check.ts)
+// — proxy straight to that instead for this name only. Every other function
+// name still goes through the normal Edge Function invoke path below.
+const API_V2_URL = process.env.API_V2_URL?.replace(/\/+$/, '') ?? 'https://api.vantly-ugc.com';
+
+async function proxyCreditsCheckToApiV2(): Promise<NextResponse> {
+  const supabase = await createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  }
+  try {
+    const upstream = await fetch(`${API_V2_URL}/v1/credits-check`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+    const text = await upstream.text();
+    let data: unknown;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = { error: 'upstream_error', error_description: text.slice(0, 400) };
+    }
+    return NextResponse.json(data, { status: upstream.status });
+  } catch (err) {
+    return NextResponse.json(
+      { error: 'upstream_unreachable', error_description: (err as Error).message },
+      { status: 502 },
+    );
+  }
+}
+
 const ALLOWED_FUNCTIONS = new Set([
   'ugc-video',
   'job-status',
@@ -89,6 +125,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ name
   const { name } = await params;
   if (!ALLOWED_FUNCTIONS.has(name)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+  if (name === 'credits-check') {
+    return proxyCreditsCheckToApiV2();
   }
   try {
     const supabase = await createClient();

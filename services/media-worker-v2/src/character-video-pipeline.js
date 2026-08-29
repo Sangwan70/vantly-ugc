@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Character Video Pipeline (Step 3 of the 3-step character_video flow)
@@ -28,6 +28,7 @@ import { tmpdir } from 'node:os';
 import { createClient } from '@supabase/supabase-js';
 import { r2Upload } from './r2.js';
 import { generateVideo, getVideoProvider } from './providers/index.js';
+import { callAnthropicMessages, hasProviderCredential, missingCredentialEnvVar } from './anthropic-client.js';
 import { generateStoryboardSheet, generateCharacterSheet } from './character-sheets.js';
 import { transcribeWithWhisper } from './whisper.js';
 import { generateASS } from './ass-generator.js';
@@ -159,7 +160,6 @@ async function patchJobInputParams(jobId, patch) {
   if (updErr) throw new Error(`update input_params for ${jobId}: ${updErr.message}`);
 }
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const SCRIPT_MODEL = process.env.SCRIPT_MODEL ?? 'claude-opus-4-7';
 // Provider credentials are validated by the registry (src/providers/). This is
 // kept only for log lines — the pipeline never branches on it.
@@ -248,8 +248,8 @@ Refuse unsafe briefs by returning
  * shipping near-identical videos every cadence tick.
  */
 async function generateRunScript({ brief, recentTopics = [], assetType = null, duration = 10 }) {
-  if (!ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY missing on worker — per-run script generation requires it. Set it on the media-worker-v2 Railway service.');
+  if (!hasProviderCredential()) {
+    throw new Error(`${missingCredentialEnvVar()} missing on worker — per-run script generation requires it. Set it on the media-worker-v2 Railway service.`);
   }
   const addendum = assetType && ASSET_ADDENDA[assetType] ? `\n\n${ASSET_ADDENDA[assetType]}` : '';
   const system = buildScriptSystemPrompt(duration) + addendum;
@@ -257,19 +257,11 @@ async function generateRunScript({ brief, recentTopics = [], assetType = null, d
     ? `${assetType ? `Reference asset attached: ${assetType}\n\n` : ''}Series brief:\n${brief}\n\nRecently posted topics (do not repeat):\n${recentTopics.map((t) => `- ${t}`).join('\n')}\n\nWrite today's script.`
     : `${assetType ? `Reference asset attached: ${assetType}\n\n` : ''}Series brief:\n${brief}\n\nThis is the first run. Write today's script.`);
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: SCRIPT_MODEL,
-      max_tokens: 600,
-      system,
-      messages: [{ role: 'user', content: userMsg }],
-    }),
+  const resp = await callAnthropicMessages({
+    model: SCRIPT_MODEL,
+    max_tokens: 600,
+    system,
+    messages: [{ role: 'user', content: userMsg }],
     signal: AbortSignal.timeout(45_000),
   });
   if (!resp.ok) {

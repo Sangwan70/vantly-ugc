@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Public (no-auth) proxy for GET /v1/public/skills — powers the
@@ -8,7 +8,7 @@
 import { NextResponse } from 'next/server';
 
 const API_V2_URL = process.env.API_V2_URL?.replace(/\/+$/, '')
-  ?? 'https://api.agent-media.ai';
+  ?? 'https://api.vantly-ugc.com';
 
 export async function GET(): Promise<NextResponse> {
   try {

@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /** Same-origin proxy for /v1/agent/projects — list (GET) + create (POST). Phase 3. */
 

@@ -11,7 +11,7 @@
  * Reference: architecture doc Section 11.2, Sprint 2.
  */
 
-// Copyright 2026 agent-media contributors
+// Copyright 2026 Vantly UGC contributors
 // SPDX-License-Identifier: Apache-2.0
 //
 // Licensed under the Apache License, Version 2.0 (the "License");

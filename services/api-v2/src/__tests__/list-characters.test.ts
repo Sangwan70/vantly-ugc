@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 //
 // C1: `GET /v2/characters` must only surface USABLE characters — it must apply
 // the `portrait_url IS NOT NULL` filter so legacy/partial rows (which the

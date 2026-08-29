@@ -1,8 +1,8 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Shared Sentry `beforeSend` scrubber. Strips PII / secrets from events before
- * they leave the browser or server: emails, agent-media API keys (ma_…),
+ * they leave the browser or server: emails, vantly-ugc API keys (ma_…),
  * bearer tokens, and Sentry/Supabase DSNs that might appear in messages or URLs.
  * Conservative by design — we'd rather over-redact than leak a customer email
  * or a key into the error backend.

@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media profile` command group.
+ * `vantly-ugc profile` command group.
  *
  * Manages credential profiles for multi-account usage.
  * Subcommands: list, switch, delete, current.
@@ -75,7 +75,7 @@ export function registerProfileCommand(program: Command): void {
     .command('profile')
     .description('Manage credential profiles');
 
-  // ── agent-media profile list ──────────────────────────────────────────
+  // ── vantly-ugc profile list ──────────────────────────────────────────
   profileCmd
     .command('list')
     .description('List all saved profiles')
@@ -103,7 +103,7 @@ export function registerProfileCommand(program: Command): void {
             default:
               console.log(chalk.yellow('No profiles found.'));
               console.log(
-                chalk.dim('  Run `agent-media login` to create a profile.'),
+                chalk.dim('  Run `vantly-ugc login` to create a profile.'),
               );
               break;
           }
@@ -150,7 +150,7 @@ export function registerProfileCommand(program: Command): void {
       }
     });
 
-  // ── agent-media profile switch <name> ─────────────────────────────────
+  // ── vantly-ugc profile switch <name> ─────────────────────────────────
   profileCmd
     .command('switch <name>')
     .description('Switch to a different profile')
@@ -171,7 +171,7 @@ export function registerProfileCommand(program: Command): void {
             code: 'PROFILE_NOT_FOUND',
             suggestion: available.length > 0
               ? `Available profiles: ${available.join(', ')}`
-              : 'Run `agent-media login` to create a profile.',
+              : 'Run `vantly-ugc login` to create a profile.',
           });
         }
 
@@ -206,7 +206,7 @@ export function registerProfileCommand(program: Command): void {
       }
     });
 
-  // ── agent-media profile delete <name> ─────────────────────────────────
+  // ── vantly-ugc profile delete <name> ─────────────────────────────────
   profileCmd
     .command('delete <name>')
     .description('Delete a saved profile')
@@ -224,7 +224,7 @@ export function registerProfileCommand(program: Command): void {
         if (!store.profiles[name]) {
           throw new CLIError(`Profile "${name}" does not exist.`, {
             code: 'PROFILE_NOT_FOUND',
-            suggestion: `Run \`agent-media profile list\` to see available profiles.`,
+            suggestion: `Run \`vantly-ugc profile list\` to see available profiles.`,
           });
         }
 
@@ -235,7 +235,7 @@ export function registerProfileCommand(program: Command): void {
             {
               code: 'CANNOT_DELETE_ACTIVE',
               suggestion:
-                'Switch to another profile first with `agent-media profile switch <name>`.',
+                'Switch to another profile first with `vantly-ugc profile switch <name>`.',
             },
           );
         }
@@ -268,7 +268,7 @@ export function registerProfileCommand(program: Command): void {
       }
     });
 
-  // ── agent-media profile current ───────────────────────────────────────
+  // ── vantly-ugc profile current ───────────────────────────────────────
   profileCmd
     .command('current')
     .description('Show the current active profile')
@@ -287,7 +287,7 @@ export function registerProfileCommand(program: Command): void {
         if (!profile) {
           throw new CLIError(`No credentials found for profile "${profileName}".`, {
             code: 'NOT_AUTHENTICATED',
-            suggestion: 'Run `agent-media login` to authenticate.',
+            suggestion: 'Run `vantly-ugc login` to authenticate.',
           });
         }
 

@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors
+// Copyright 2026 Vantly UGC contributors
 // SPDX-License-Identifier: Apache-2.0
 
 /**
@@ -192,7 +192,7 @@ async function handleCreate(req: Request, origin: string): Promise<Response> {
   if (ELEVENLABS_API_KEY) {
     try {
       const cloneForm = new FormData();
-      cloneForm.append("name", `agent-media-${slug}-${user.id.substring(0, 8)}`);
+      cloneForm.append("name", `vantly-ugc-${slug}-${user.id.substring(0, 8)}`);
       cloneForm.append("files", new Blob([voiceBuffer], { type: voiceSample.type }), voiceSample.name);
       cloneForm.append("remove_background_noise", "true");
 

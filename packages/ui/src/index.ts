@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * @agent-media/ui - Shared UI components for the agent-media platform.
+ * @vantly-ugc/ui - Shared UI components for the vantly-ugc platform.
  *
  * This package provides reusable React components built on Shadcn/ui
  * and Tailwind CSS, shared between the web dashboard and docs.

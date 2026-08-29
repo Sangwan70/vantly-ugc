@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 import { ApplicationFailure, Context } from '@temporalio/activity';
-import { SimpleSelfieToolInputSchema } from '@agentmedia/schema';
+import { SimpleSelfieToolInputSchema } from '@vantly-ugc/schema';
 import type { WorkerConfig } from '../config.js';
 import { getDb } from '../client/db.js';
 import { r2UploadVnext } from '../client/r2.js';

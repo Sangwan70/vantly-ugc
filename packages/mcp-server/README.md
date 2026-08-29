@@ -1,11 +1,11 @@
-# @agentmedia/mcp-server
+# @vantly-ugc/mcp-server
 
-MCP server for [agent-media](https://agent-media.ai) — generate AI UGC videos from Claude Code, Cursor, Windsurf, or any MCP-compatible client.
+MCP server for [vantly-ugc](https://vantly-ugc.com) — generate AI UGC videos from Claude Code, Cursor, Windsurf, or any MCP-compatible client.
 
 UGC for developers. Script in, video URL out — directly from your IDE.
 
-[![npm version](https://img.shields.io/npm/v/@agentmedia/mcp-server)](https://www.npmjs.com/package/@agentmedia/mcp-server)
-[![license](https://img.shields.io/npm/l/@agentmedia/mcp-server)](https://github.com/gitroomhq/agent-media-app/blob/main/LICENSE)
+[![npm version](https://img.shields.io/npm/v/@vantly-ugc/mcp-server)](https://www.npmjs.com/package/@vantly-ugc/mcp-server)
+[![license](https://img.shields.io/npm/l/@vantly-ugc/mcp-server)](https://github.com/gitroomhq/agent-media-app/blob/main/LICENSE)
 
 ## What It Does
 
@@ -23,7 +23,7 @@ Five tools that let AI agents generate UGC videos:
 
 ### 1. Get an API Key
 
-Sign up at [agent-media.ai](https://agent-media.ai) and generate an API key in Settings.
+Sign up at [vantly-ugc.com](https://vantly-ugc.com) and generate an API key in Settings.
 
 ### 2. Configure Your IDE
 
@@ -34,11 +34,11 @@ Add to `~/.claude/settings.json`:
 ```json
 {
   "mcpServers": {
-    "agent-media": {
+    "vantly-ugc": {
       "command": "npx",
-      "args": ["-y", "@agentmedia/mcp-server"],
+      "args": ["-y", "@vantly-ugc/mcp-server"],
       "env": {
-        "AGENT_MEDIA_API_KEY": "ma_your_key_here"
+        "VANTLY_UGC_API_KEY": "ma_your_key_here"
       }
     }
   }
@@ -51,11 +51,11 @@ Open Settings > MCP Servers > Add Server:
 
 ```json
 {
-  "agent-media": {
+  "vantly-ugc": {
     "command": "npx",
-    "args": ["-y", "@agentmedia/mcp-server"],
+    "args": ["-y", "@vantly-ugc/mcp-server"],
     "env": {
-      "AGENT_MEDIA_API_KEY": "ma_your_key_here"
+      "VANTLY_UGC_API_KEY": "ma_your_key_here"
     }
   }
 }
@@ -67,11 +67,11 @@ Open Settings > MCP > Add:
 
 ```json
 {
-  "agent-media": {
+  "vantly-ugc": {
     "command": "npx",
-    "args": ["-y", "@agentmedia/mcp-server"],
+    "args": ["-y", "@vantly-ugc/mcp-server"],
     "env": {
-      "AGENT_MEDIA_API_KEY": "ma_your_key_here"
+      "VANTLY_UGC_API_KEY": "ma_your_key_here"
     }
   }
 }
@@ -80,9 +80,9 @@ Open Settings > MCP > Add:
 #### Global Install (Alternative)
 
 ```bash
-npm install -g @agentmedia/mcp-server
-export AGENT_MEDIA_API_KEY=ma_your_key_here
-agent-media-mcp
+npm install -g @vantly-ugc/mcp-server
+export VANTLY_UGC_API_KEY=ma_your_key_here
+vantly-ugc-mcp
 ```
 
 ## Usage Examples
@@ -151,29 +151,29 @@ Pass `webhook_url` to `create_video` to get notified when the job completes or f
 **Payload on success:** `{ job_id, status: "completed", video_url }`
 **Payload on failure:** `{ job_id, status: "failed", error_message }`
 
-Must be `https://`, publicly reachable, max 2048 chars. On non-2xx response, agent-media retries 3× with exponential backoff (1 s, 4 s, 16 s). Query strings are preserved — append `?secret=MY_TOKEN` to verify authenticity.
+Must be `https://`, publicly reachable, max 2048 chars. On non-2xx response, vantly-ugc retries 3× with exponential backoff (1 s, 4 s, 16 s). Query strings are preserved — append `?secret=MY_TOKEN` to verify authenticity.
 
 ## Environment Variables
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `AGENT_MEDIA_API_KEY` | Yes | — | Your API key (`ma_xxx` format) |
-| `AGENT_MEDIA_API_URL` | No | Production API | Override the API base URL |
+| `VANTLY_UGC_API_KEY` | Yes | — | Your API key (`ma_xxx` format) |
+| `VANTLY_UGC_API_URL` | No | Production API | Override the API base URL |
 
 ## Related Packages
 
 | Package | Description |
 |---|---|
-| [`@agentmedia/sdk`](https://www.npmjs.com/package/@agentmedia/sdk) | TypeScript SDK for direct API integration |
-| [`agent-media-cli`](https://www.npmjs.com/package/agent-media-cli) | CLI tool — generate videos from your terminal |
-| [`@agentmedia/schema`](https://www.npmjs.com/package/@agentmedia/schema) | Shared schema — enums, types, Zod validation |
-| [`agent-media`](https://pypi.org/project/agent-media/) | Python SDK |
+| [`@vantly-ugc/sdk`](https://www.npmjs.com/package/@vantly-ugc/sdk) | TypeScript SDK for direct API integration |
+| [`vantly-ugc-cli`](https://www.npmjs.com/package/vantly-ugc-cli) | CLI tool — generate videos from your terminal |
+| [`@vantly-ugc/schema`](https://www.npmjs.com/package/@vantly-ugc/schema) | Shared schema — enums, types, Zod validation |
+| [`vantly-ugc`](https://pypi.org/project/vantly-ugc/) | Python SDK |
 
 ## Links
 
-- [Interactive API Docs](https://agent-media.ai/docs/api-reference)
-- [OpenAPI Spec](https://agent-media.ai/openapi.json)
-- [Website](https://agent-media.ai)
+- [Interactive API Docs](https://vantly-ugc.com/docs/api-reference)
+- [OpenAPI Spec](https://vantly-ugc.com/openapi.json)
+- [Website](https://vantly-ugc.com)
 - [GitHub](https://github.com/gitroomhq/agent-media-app)
 
 ## License

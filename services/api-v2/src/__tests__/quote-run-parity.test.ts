@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 //
 // A12: the quote path and the run path must validate identically (so a quote can
 // never accept input the run would reject) and price coherently (invariant 9 —

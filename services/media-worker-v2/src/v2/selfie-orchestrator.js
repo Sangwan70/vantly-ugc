@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Internal Selfie orchestration agent.
@@ -13,8 +13,8 @@
  */
 
 import { REALISM_RUBRIC, SHOT_PRESETS, VIBE_MODIFIERS } from './realism.js';
+import { callAnthropicMessages, hasProviderCredential, missingCredentialEnvVar } from '../anthropic-client.js';
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const MODEL =
   process.env.SELFIE_ORCHESTRATOR_MODEL ??
   process.env.PORTRAIT_PROMPTER_MODEL ??
@@ -23,7 +23,7 @@ const MODEL =
 const SHOT_PRESET_KEYS = Object.keys(SHOT_PRESETS);
 const VIBE_KEYS = Object.keys(VIBE_MODIFIERS);
 
-const SYSTEM_PROMPT = `You are agent-media's internal Selfie pipeline orchestrator.
+const SYSTEM_PROMPT = `You are vantly-ugc's internal Selfie pipeline orchestrator.
 
 You receive raw request fields for a short AI UGC selfie clip. Your job is to produce strict JSON for the worker stages:
 1. gpt-image-2 portrait prompt
@@ -218,8 +218,8 @@ function ensurePhrase(prompt, phrase) {
  * @param {string} [params.jobId]
  */
 export async function orchestrateSelfie(params) {
-  if (!ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY missing on worker - Selfie orchestration requires it.');
+  if (!hasProviderCredential()) {
+    throw new Error(`${missingCredentialEnvVar()} missing on worker - Selfie orchestration requires it.`);
   }
 
   const {
@@ -290,19 +290,11 @@ export async function orchestrateSelfie(params) {
     'Return the orchestration JSON now.',
   ].join('\n');
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 5000,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: user }],
-    }),
+  const resp = await callAnthropicMessages({
+    model: MODEL,
+    max_tokens: 5000,
+    system: SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: user }],
     signal: AbortSignal.timeout(75_000),
   });
 

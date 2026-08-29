@@ -295,11 +295,11 @@ export default function ActorsPage() {
               <div className="mt-1">
                 <p className="mb-1.5 text-[10px] font-medium text-text-muted">Use in CLI</p>
                 <button
-                  onClick={() => handleCopy(`agent-media ugc "your script..." --actor ${selected.slug} --sync`)}
+                  onClick={() => handleCopy(`vantly-ugc ugc "your script..." --actor ${selected.slug} --sync`)}
                   className="group flex w-full items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-left transition-colors hover:border-[#121212]/30"
                 >
                   <code className="flex-1 text-[11px] text-accent/80">
-                    agent-media ugc &quot;...&quot; --actor {selected.slug} --sync
+                    vantly-ugc ugc &quot;...&quot; --actor {selected.slug} --sync
                   </code>
                   {copied ? (
                     <Check className="h-3.5 w-3.5 shrink-0 text-green-400" />

@@ -1,5 +1,5 @@
 #!/usr/bin/env tsx
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * CI check: verify generated/openapi.json is up to date with the schema.
@@ -16,7 +16,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const specPath = resolve(__dirname, '../../../generated/openapi.json');
 
 if (!existsSync(specPath)) {
-  console.error('ERROR: generated/openapi.json does not exist. Run: pnpm --filter @agent-media/schema generate:openapi');
+  console.error('ERROR: generated/openapi.json does not exist. Run: pnpm --filter @vantly-ugc/schema generate:openapi');
   process.exit(1);
 }
 
@@ -35,7 +35,7 @@ if (committed.trim() === regenerated.trim()) {
   process.exit(0);
 } else {
   console.error('✗ OpenAPI spec is STALE. Schema changed but spec was not regenerated.');
-  console.error('  Run: pnpm --filter @agent-media/schema generate:openapi');
+  console.error('  Run: pnpm --filter @vantly-ugc/schema generate:openapi');
   console.error('  Then commit generated/openapi.json');
   process.exit(1);
 }

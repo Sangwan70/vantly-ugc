@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media list` command.
+ * `vantly-ugc list` command.
  *
  * Lists the authenticated user's generation jobs with optional filtering
  * by status and model. Supports human (table), JSON, and quiet output modes.
@@ -20,7 +20,7 @@ import {
   createSpinner,
 } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
-import { AgentMediaAPI, type GenerationJob } from '../lib/api.js';
+import { VantlyUgcAPI, type GenerationJob } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
 
 /** Status labels with color coding. */
@@ -178,7 +178,7 @@ export function registerListCommand(program: Command): void {
         if (!apiKey) {
           throw new CLIError('Not logged in.', {
             code: 'NOT_AUTHENTICATED',
-            suggestion: "Run 'agent-media login' to authenticate.",
+            suggestion: "Run 'vantly-ugc login' to authenticate.",
           });
         }
 
@@ -200,7 +200,7 @@ export function registerListCommand(program: Command): void {
         }
 
         try {
-          const api = new AgentMediaAPI(apiKey);
+          const api = new VantlyUgcAPI(apiKey);
 
           const spinner = createSpinner('Fetching jobs...');
           if (mode === 'human') spinner.start();
@@ -229,7 +229,7 @@ export function registerListCommand(program: Command): void {
                 console.log();
                 console.log(
                   chalk.dim(
-                    "  No jobs found. Run 'agent-media generate <model>' to create one.",
+                    "  No jobs found. Run 'vantly-ugc generate <model>' to create one.",
                   ),
                 );
                 console.log();

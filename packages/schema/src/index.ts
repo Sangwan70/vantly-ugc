@@ -1,8 +1,8 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * @agent-media/schema — Single source of truth for all enums, types,
- * and validation schemas in the agent-media platform.
+ * @vantly-ugc/schema — Single source of truth for all enums, types,
+ * and validation schemas in the vantly-ugc platform.
  */
 
 export * from './video.js';

@@ -1,11 +1,11 @@
 ---
 name: 'Make Subtitles'
 description: 'Burn TikTok / Hormozi-style captions onto any vNext video (R2-hosted). Auto-transcribes via Whisper when transcript is omitted. Styles: hormozi (default), tiktok, minimal.'
-allowed-tools: ['mcp__agent-media__make_subtitles']
+allowed-tools: ['mcp__vantly-ugc__make_subtitles']
 x-skill-slug: 'make_subtitles'
 x-skill-version: '1.0.0'
 x-primitive: 'subtitles_v2'
-x-mcp-tool: 'mcp__agent-media__make_subtitles'
+x-mcp-tool: 'mcp__vantly-ugc__make_subtitles'
 ---
 # Make Subtitles
 
@@ -13,17 +13,17 @@ Burn TikTok / Hormozi-style captions onto any vNext video (R2-hosted). Auto-tran
 
 ## When to use this
 
-Call this skill when the user asks for the outcome described above. It runs on the agent-media vNext primitive runtime via the `mcp__agent-media__make_subtitles` MCP tool. Authentication is the user's existing agent-media Bearer token (issued by `agent-media login`).
+Call this skill when the user asks for the outcome described above. It runs on the vantly-ugc vNext primitive runtime via the `mcp__vantly-ugc__make_subtitles` MCP tool. Authentication is the user's existing vantly-ugc Bearer token (issued by `vantly-ugc login`).
 
 ## How to call it
 
-Preferred path: MCP tool `mcp__agent-media__make_subtitles`. Schema is auto-published via `tools/list` against the same MCP server, so don't restate the schema here — trust the server's response.
+Preferred path: MCP tool `mcp__vantly-ugc__make_subtitles`. Schema is auto-published via `tools/list` against the same MCP server, so don't restate the schema here — trust the server's response.
 
 Fallback path: REST.
 
 ```http
-POST https://api.agent-media.ai/v1/skills/make_subtitles/run
-Authorization: Bearer $AGENT_MEDIA_API_KEY
+POST https://api.vantly-ugc.com/v1/skills/make_subtitles/run
+Authorization: Bearer $VANTLY_UGC_API_KEY
 Content-Type: application/json
 Idempotency-Key: <any unique string per intent>
 
@@ -42,14 +42,14 @@ Idempotency-Key: <any unique string per intent>
 ## Polling the result
 
 ```http
-GET https://api.agent-media.ai/v1/primitives/runs/<run_id>
-Authorization: Bearer $AGENT_MEDIA_API_KEY
+GET https://api.vantly-ugc.com/v1/primitives/runs/<run_id>
+Authorization: Bearer $VANTLY_UGC_API_KEY
 ```
 
 ## House rules baked into this skill
 
 - See [reference/realism-rubric.md](../../reference/realism-rubric.md) for the realism doctrine baked into every prompt.
-- See [reference/auth.md](../../reference/auth.md) for first-time install and `agent-media login`.
+- See [reference/auth.md](../../reference/auth.md) for first-time install and `vantly-ugc login`.
 
 ## Source of truth
 

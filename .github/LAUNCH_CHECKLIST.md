@@ -5,7 +5,7 @@
 - [ ] Stripe test -> live key swap on Vercel
 - [x] Supabase production project configured (ppwvarkmpffljlqxkjux)
 - [x] Vercel production deploy verified
-- [x] DNS configured for agent-media.ai
+- [x] DNS configured for vantly-ugc.com
 - [ ] SSL certificates active
 
 ## AI Provider
@@ -32,7 +32,7 @@
 
 ## Package & Distribution
 
-- [x] npm package `agent-media-cli` v1.0.0 published on registry
+- [x] npm package `vantly-ugc-cli` v1.0.0 published on registry
 
 ## Edge Functions Deployed
 

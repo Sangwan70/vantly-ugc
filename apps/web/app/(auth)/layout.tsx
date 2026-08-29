@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -49,7 +49,7 @@ export default function AuthLayout({
             href={MARKETING_URL}
             className={`text-lg font-bold tracking-tight ${darkFrame ? 'text-white' : 'text-[#121212]'}`}
           >
-            agent-media
+            vantly-ugc
           </Link>
           <button
             onClick={handleSignOut}

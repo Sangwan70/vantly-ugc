@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -6,7 +6,7 @@
  * Public connect guide — higgsfield.ai/{mcp,cli,skills}-style. A big hero
  * headline that reflects the selected target, MCP / CLI / Skill tabs + a
  * per-client selector (MCP), and path-based routing (/mcp, /cli, /skills).
- * All commands are REAL, verified agent-media connect methods.
+ * All commands are REAL, verified vantly-ugc connect methods.
  */
 
 import { useEffect, useState } from 'react';
@@ -14,7 +14,7 @@ import { Check, Copy, Terminal, Server, ExternalLink } from 'lucide-react';
 import { ClaudeIcon, CursorIcon, AnthropicIcon, OpenAIIcon } from '@/components/brand-icons';
 
 /**
- * Two surfaces, matching agent-media.ai. "Skill" was a third tab, which framed
+ * Two surfaces, matching vantly-ugc.com. "Skill" was a third tab, which framed
  * the Claude skill pack as a rival install path — it is not, it is something
  * you run through MCP or the CLI. Its command now lives in CLI step 3, exactly
  * where the public guide puts it.
@@ -28,26 +28,26 @@ const CLIENT_HERO: Record<Client, string> = { 'claude-code': 'Claude Code', curs
 
 const MCP_JSON = `{
   "mcpServers": {
-    "agent-media": {
+    "vantly-ugc": {
       "command": "npx",
-      "args": ["-y", "-p", "@agentmedia/mcp-server@latest", "agent-media-mcp"],
-      "env": { "AGENT_MEDIA_API_KEY": "ma_..." }
+      "args": ["-y", "-p", "@vantly-ugc/mcp-server@latest", "vantly-ugc-mcp"],
+      "env": { "VANTLY_UGC_API_KEY": "ma_..." }
     }
   }
 }`;
 
 // Codex reads MCP servers from ~/.codex/config.toml (TOML, not JSON).
-const CODEX_TOML = `[mcp_servers.agent-media]
+const CODEX_TOML = `[mcp_servers.vantly-ugc]
 command = "npx"
-args = ["-y", "-p", "@agentmedia/mcp-server@latest", "agent-media-mcp"]
-env = { AGENT_MEDIA_API_KEY = "ma_..." }`;
+args = ["-y", "-p", "@vantly-ugc/mcp-server@latest", "vantly-ugc-mcp"]
+env = { VANTLY_UGC_API_KEY = "ma_..." }`;
 
 // Single-pass, non-overlapping highlighter for our (static, author-controlled)
 // shell + JSON snippets. Strings green, comments gray, commands violet, flags blue.
 function highlight(text: string): string {
   const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return esc.replace(
-    /("(?:[^"\\]|\\.)*")(\s*:)?|(#.*$)|(\b(?:npx|npm|claude|curl)\b)|(\bagent-media(?:-mcp|-cli)?\b)|(--?[A-Za-z][\w-]*)|([{}\[\],])/gm,
+    /("(?:[^"\\]|\\.)*")(\s*:)?|(#.*$)|(\b(?:npx|npm|claude|curl)\b)|(\bvantly-ugc(?:-mcp|-cli)?\b)|(--?[A-Za-z][\w-]*)|([{}\[\],])/gm,
     (m, str, colon, cmt, cmd, brand, flag, punct) => {
       if (str) {
         // A string followed by ":" is a JSON key (cyan); otherwise a value (green).
@@ -56,7 +56,7 @@ function highlight(text: string): string {
       }
       if (cmt) return `<span style='color:#6B7280'>${cmt}</span>`;
       if (cmd) return `<span style='color:#E5C07B'>${cmd}</span>`;      // commands: amber
-      if (brand) return `<span style='color:#C4B5FD'>${brand}</span>`;  // agent-media: violet
+      if (brand) return `<span style='color:#C4B5FD'>${brand}</span>`;  // vantly-ugc: violet
       if (flag) return `<span style='color:#61AFEF'>${flag}</span>`;    // flags: blue
       if (punct) return `<span style='color:#8B98A8'>${punct}</span>`;  // braces/commas: muted
       return m;
@@ -153,7 +153,7 @@ export function ConnectGuide({ initialTab = 'mcp', initialClient = 'claude-code'
           Turn {heroName} into a creative engine
         </h1>
         <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed sm:text-lg" style={{ color: 'var(--cryptix-text-muted)' }}>
-          Connect agent-media to Claude Code, Cursor, and Claude Desktop — and generate lip-synced UGC videos right from your chat - add captions when you want them.
+          Connect vantly-ugc to Claude Code, Cursor, and Claude Desktop — and generate lip-synced UGC videos right from your chat - add captions when you want them.
         </p>
       </div>
 
@@ -193,22 +193,22 @@ export function ConnectGuide({ initialTab = 'mcp', initialClient = 'claude-code'
       <div className="mt-4 grid grid-cols-1 gap-7 p-5 sm:p-6 md:grid-cols-3" style={{ background: '#17171D', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12 }}>
         {surface === 'cli' && (
           <>
-            <Step n={1} title="Install the CLI">One line — auth, uploads, and polling are handled for you.<Code text="npm install -g agent-media-cli" /></Step>
-            <Step n={2} title="Sign in">Opens a browser, takes 5 seconds. The token is stored locally.<Code text="agent-media login" /></Step>
-            <Step n={3} title="Run it, or hand it to your agent"><code className="text-white/85">agent-media skills list</code>, then run and wait:<Code text={`agent-media skills run make_ugc \\\n  --input '{"script":"this app changed my mornings","person":"a friendly woman"}' \\\n  --wait`} />To let Claude Code call these in plain English, pull in the skill pack:<Code text="npx skills add gitroomhq/agent-media-app" /></Step>
+            <Step n={1} title="Install the CLI">One line — auth, uploads, and polling are handled for you.<Code text="npm install -g vantly-ugc-cli" /></Step>
+            <Step n={2} title="Sign in">Opens a browser, takes 5 seconds. The token is stored locally.<Code text="vantly-ugc login" /></Step>
+            <Step n={3} title="Run it, or hand it to your agent"><code className="text-white/85">vantly-ugc skills list</code>, then run and wait:<Code text={`vantly-ugc skills run make_ugc \\\n  --input '{"script":"this app changed my mornings","person":"a friendly woman"}' \\\n  --wait`} />To let Claude Code call these in plain English, pull in the skill pack:<Code text="npx skills add gitroomhq/vantly-ugc-app" /></Step>
           </>
         )}
         {surface === 'mcp' && (
           <>
-            <Step n={1} title="Get your API key">Grab a <code className="text-white/85">ma_…</code> key from the dashboard (API Keys) or run <code className="text-white/85">agent-media login</code>.</Step>
+            <Step n={1} title="Get your API key">Grab a <code className="text-white/85">ma_…</code> key from the dashboard (API Keys) or run <code className="text-white/85">vantly-ugc login</code>.</Step>
             {client === 'claude-code' ? (
-              <Step n={2} title="Add the MCP server">One command registers agent-media in Claude Code:<Code text={`claude mcp add agent-media \\\n  -e AGENT_MEDIA_API_KEY=ma_... \\\n  -- npx -y -p @agentmedia/mcp-server@latest agent-media-mcp`} /></Step>
+              <Step n={2} title="Add the MCP server">One command registers vantly-ugc in Claude Code:<Code text={`claude mcp add vantly-ugc \\\n  -e VANTLY_UGC_API_KEY=ma_... \\\n  -- npx -y -p @vantly-ugc/mcp-server@latest vantly-ugc-mcp`} /></Step>
             ) : client === 'codex' ? (
-              <Step n={2} title="Edit ~/.codex/config.toml">Add the agent-media server (paste your <code className="text-white/85">ma_…</code> key):<Code text={CODEX_TOML} /></Step>
+              <Step n={2} title="Edit ~/.codex/config.toml">Add the vantly-ugc server (paste your <code className="text-white/85">ma_…</code> key):<Code text={CODEX_TOML} /></Step>
             ) : (
-              <Step n={2} title={client === 'cursor' ? 'Edit ~/.cursor/mcp.json' : 'Edit claude_desktop_config.json'}>Add the agent-media server (paste your <code className="text-white/85">ma_…</code> key):<Code text={MCP_JSON} /></Step>
+              <Step n={2} title={client === 'cursor' ? 'Edit ~/.cursor/mcp.json' : 'Edit claude_desktop_config.json'}>Add the vantly-ugc server (paste your <code className="text-white/85">ma_…</code> key):<Code text={MCP_JSON} /></Step>
             )}
-            <Step n={3} title="Generate from chat">Restart {CLIENT_LABEL[client]}, then ask: <span className="text-white/85">&quot;Make a UGC video with agent-media.&quot;</span> The make_ugc tool self-describes via <code className="text-white/85">tools/list</code>.</Step>
+            <Step n={3} title="Generate from chat">Restart {CLIENT_LABEL[client]}, then ask: <span className="text-white/85">&quot;Make a UGC video with vantly-ugc.&quot;</span> The make_ugc tool self-describes via <code className="text-white/85">tools/list</code>.</Step>
           </>
         )}
       </div>

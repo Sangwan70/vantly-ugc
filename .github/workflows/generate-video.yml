@@ -28,7 +28,7 @@ on:
         default: true
         type: boolean
     secrets:
-      AGENT_MEDIA_API_KEY:
+      VANTLY_UGC_API_KEY:
         required: true
     outputs:
       video_url:
@@ -76,7 +76,7 @@ jobs:
       - name: Submit generation job
         id: submit
         env:
-          API_KEY: ${{ secrets.AGENT_MEDIA_API_KEY }}
+          API_KEY: ${{ secrets.VANTLY_UGC_API_KEY }}
           SCRIPT: ${{ inputs.script }}
           ACTOR_SLUG: ${{ inputs.actor_slug }}
           DURATION: ${{ inputs.duration }}
@@ -113,7 +113,7 @@ jobs:
         id: poll
         if: ${{ inputs.sync == true || inputs.sync == 'true' }}
         env:
-          API_KEY: ${{ secrets.AGENT_MEDIA_API_KEY }}
+          API_KEY: ${{ secrets.VANTLY_UGC_API_KEY }}
           JOB_ID: ${{ steps.submit.outputs.job_id }}
         run: |
           MAX_ATTEMPTS=60

@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Legacy v1 command deprecation banner.
@@ -20,37 +20,37 @@ import chalk from 'chalk';
 
 const REPLACEMENT: Record<string, { v2: string; explainer: string }> = {
   ugc: {
-    v2: 'agent-media selfie',
+    v2: 'vantly-ugc selfie',
     explainer:
       'v2 selfie ships a fully on-model character via a portrait → multi-pose sheet → wireframe → Seedance pipeline. Higher quality, consistent across clips, supports saved character ids.',
   },
   'show-your-app': {
-    v2: 'agent-media selfie  (Show Your App as a v2 product is on the roadmap)',
+    v2: 'vantly-ugc selfie  (Show Your App as a v2 product is on the roadmap)',
     explainer:
       'For now, generate a selfie talking about your app + record a screen capture separately. The v2 "Show Your App" generator will land soon and ship the composite end-to-end.',
   },
   'laptop-ugc': {
-    v2: 'agent-media selfie  (Laptop UGC as a v2 product is on the roadmap)',
+    v2: 'vantly-ugc selfie  (Laptop UGC as a v2 product is on the roadmap)',
     explainer:
       'Use selfie for the talking-head; capture the laptop screen separately for now.',
   },
   'character-video': {
-    v2: 'agent-media selfie --character <char_id>',
+    v2: 'vantly-ugc selfie --character <char_id>',
     explainer:
-      'In v2, characters are first-class objects. Create one with `agent-media character create --photo X.png --name slug`, then reuse the returned char_xxxxxxxxxx across every selfie.',
+      'In v2, characters are first-class objects. Create one with `vantly-ugc character create --photo X.png --name slug`, then reuse the returned char_xxxxxxxxxx across every selfie.',
   },
   'text-to-video': {
-    v2: 'agent-media selfie',
+    v2: 'vantly-ugc selfie',
     explainer:
       'Plain text-to-video without a character isn\'t a v2 generator. Use selfie with a saved character or a photo.',
   },
   subtitle: {
-    v2: 'agent-media subs',
+    v2: 'vantly-ugc subs',
     explainer:
       'v2 `subs` ships the same 17 styles (Hormozi, neon, minimal, …) plus optional --transcript override and Whisper fallback.',
   },
   'product-acting': {
-    v2: 'agent-media selfie  (Product Acting as a v2 product is on the roadmap)',
+    v2: 'vantly-ugc selfie  (Product Acting as a v2 product is on the roadmap)',
     explainer:
       'For now, generate the talking-head with selfie. The v2 "Product Acting" generator (product-in-hands UGC) is on the roadmap.',
   },
@@ -64,7 +64,7 @@ export function printDeprecation(command: string): void {
   if (!r) return;
   const banner =
     chalk.yellow.bold('⚠  DEPRECATED v1 command: ') +
-    chalk.yellow(`agent-media ${command}`) +
+    chalk.yellow(`vantly-ugc ${command}`) +
     '\n' +
     chalk.yellow(`   Use instead: ${chalk.bold(r.v2)}`) +
     '\n' +

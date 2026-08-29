@@ -1,5 +1,5 @@
 {
-  "name": "agent-media",
+  "name": "vantly-ugc",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,7 @@
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
-    "e2e:cli:live": "pnpm --filter agent-media-cli build && node scripts/cli-live-e2e.mjs"
+    "e2e:cli:live": "pnpm --filter vantly-ugc-cli build && node scripts/cli-live-e2e.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.13.4",
@@ -19,7 +19,7 @@
     "turbo": "^2.4.4",
     "typescript": "^5.7.3"
   },
-  "packageManager": "pnpm@9.15.4",
+  "packageManager": "pnpm@9.15.9+sha512.68046141893c66fad01c079231128e9afb89ef87e2691d69e4d40eee228988295fd4682181bae55b58418c3a253bde65a505ec7c5f9403ece5cc3cd37dcf2531",
   "engines": {
     "node": ">=20.0.0"
   }

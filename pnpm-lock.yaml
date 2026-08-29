@@ -32,9 +32,9 @@ importers:
 
   apps/cli:
     dependencies:
-      '@agentmedia/schema':
-        specifier: ^0.5.4
-        version: 0.5.4
+      '@vantly-ugc/schema':
+        specifier: workspace:*
+        version: link:../../packages/schema
       chalk:
         specifier: ^5.4.1
         version: 5.6.2
@@ -59,12 +59,6 @@ importers:
 
   apps/web:
     dependencies:
-      '@agent-media/types':
-        specifier: workspace:*
-        version: link:../../packages/types
-      '@agent-media/ui':
-        specifier: workspace:*
-        version: link:../../packages/ui
       '@dub/analytics':
         specifier: ^0.0.32
         version: 0.0.32
@@ -89,6 +83,12 @@ importers:
       '@types/three':
         specifier: ^0.184.1
         version: 0.184.1
+      '@vantly-ugc/types':
+        specifier: workspace:*
+        version: link:../../packages/types
+      '@vantly-ugc/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -156,15 +156,15 @@ importers:
 
   packages/mcp-server:
     dependencies:
-      '@agentmedia/schema':
-        specifier: ^0.5.5
-        version: 0.5.5
       '@modelcontextprotocol/sdk':
         specifier: ^1.12.0
-        version: 1.29.0(zod@3.25.76)
+        version: 1.29.0(zod@4.3.6)
+      '@vantly-ugc/schema':
+        specifier: workspace:*
+        version: link:../schema
       zod-to-json-schema:
         specifier: ^3.25.0
-        version: 3.25.2(zod@3.25.76)
+        version: 3.25.2(zod@4.3.6)
     devDependencies:
       typescript:
         specifier: ^5.7.3
@@ -194,9 +194,9 @@ importers:
 
   packages/sdk-ts:
     dependencies:
-      '@agentmedia/schema':
-        specifier: ^0.5.5
-        version: 0.5.5
+      '@vantly-ugc/schema':
+        specifier: workspace:*
+        version: link:../schema
     devDependencies:
       tsup:
         specifier: ^8.5.1
@@ -226,9 +226,6 @@ importers:
 
   services/api-v2:
     dependencies:
-      '@agentmedia/schema':
-        specifier: workspace:*
-        version: link:../../packages/schema
       '@aws-sdk/client-s3':
         specifier: ^3.1004.0
         version: 3.1054.0
@@ -253,6 +250,9 @@ importers:
       '@temporalio/workflow':
         specifier: ^1.16.2
         version: 1.16.2
+      '@vantly-ugc/schema':
+        specifier: workspace:*
+        version: link:../../packages/schema
       express:
         specifier: ^4.21.0
         version: 4.22.1
@@ -290,9 +290,6 @@ importers:
 
   services/primitive-worker-vnext:
     dependencies:
-      '@agentmedia/schema':
-        specifier: workspace:*
-        version: link:../../packages/schema
       '@anthropic-ai/sdk':
         specifier: ^0.32.1
         version: 0.32.1
@@ -317,6 +314,9 @@ importers:
       '@temporalio/workflow':
         specifier: ^1.16.2
         version: 1.16.2
+      '@vantly-ugc/schema':
+        specifier: workspace:*
+        version: link:../../packages/schema
       openai:
         specifier: ^4.70.0
         version: 4.104.0(ws@8.19.0)(zod@3.25.76)
@@ -341,12 +341,6 @@ importers:
         version: 3.2.4(@types/node@22.19.11)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.48.0)(tsx@4.21.0)
 
 packages:
-
-  '@agentmedia/schema@0.5.4':
-    resolution: {integrity: sha512-s3/JI/KkP9PFjHnBeEbx2snHTZFzWxltrnL2r7jG/qkGXwEgPzPlUwD824Nic7XrCPsHuH/HMZqKzm9cULh1GA==}
-
-  '@agentmedia/schema@0.5.5':
-    resolution: {integrity: sha512-43DUZNHB8WbPTSyUd27EwtEqeJcZcqNjGCs7JaLrJ+kVwyiL4nCbYUrhHRy0KSZQvGU9FwubMb5f+yxPHYNLmg==}
 
   '@alloc/quick-lru@5.2.0':
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
@@ -5060,16 +5054,6 @@ packages:
 
 snapshots:
 
-  '@agentmedia/schema@0.5.4':
-    dependencies:
-      zod: 3.25.76
-      zod-to-json-schema: 3.25.2(zod@3.25.76)
-
-  '@agentmedia/schema@0.5.5':
-    dependencies:
-      zod: 3.25.76
-      zod-to-json-schema: 3.25.2(zod@3.25.76)
-
   '@alloc/quick-lru@5.2.0': {}
 
   '@anthropic-ai/sdk@0.32.1':
@@ -5896,6 +5880,28 @@ snapshots:
       raw-body: 3.0.2
       zod: 3.25.76
       zod-to-json-schema: 3.25.2(zod@3.25.76)
+    transitivePeerDependencies:
+      - supports-color
+
+  '@modelcontextprotocol/sdk@1.29.0(zod@4.3.6)':
+    dependencies:
+      '@hono/node-server': 1.19.13(hono@4.12.12)
+      ajv: 8.18.0
+      ajv-formats: 3.0.1(ajv@8.18.0)
+      content-type: 1.0.5
+      cors: 2.8.6
+      cross-spawn: 7.0.6
+      eventsource: 3.0.7
+      eventsource-parser: 3.0.6
+      express: 5.2.1
+      express-rate-limit: 8.3.2(express@5.2.1)
+      hono: 4.12.12
+      jose: 6.2.2
+      json-schema-typed: 8.0.2
+      pkce-challenge: 5.0.1
+      raw-body: 3.0.2
+      zod: 4.3.6
+      zod-to-json-schema: 3.25.2(zod@4.3.6)
     transitivePeerDependencies:
       - supports-color
 
@@ -10254,6 +10260,10 @@ snapshots:
   zod-to-json-schema@3.25.2(zod@3.25.76):
     dependencies:
       zod: 3.25.76
+
+  zod-to-json-schema@3.25.2(zod@4.3.6):
+    dependencies:
+      zod: 4.3.6
 
   zod@3.25.76: {}
 

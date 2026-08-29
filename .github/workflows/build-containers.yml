@@ -7,7 +7,7 @@
 # and `latest`.
 #
 # Publishes one image per service:
-#   ghcr.io/gitroomhq/agent-media-app/<service>:<tag>
+#   ghcr.io/gitroomhq/vantly-ugc-app/<service>:<tag>
 #
 # Trigger: push a git tag (e.g. v1.0.0), or run manually.
 
@@ -21,7 +21,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/gitroomhq/agent-media-app
+  IMAGE_PREFIX: ghcr.io/gitroomhq/vantly-ugc-app
 
 jobs:
   common:

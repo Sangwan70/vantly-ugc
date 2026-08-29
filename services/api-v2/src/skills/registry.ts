@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * vNext skill registry.
@@ -22,7 +22,7 @@ import {
   WireframeGpt2ToolInputSchema,
   LipSyncToolInputSchema,
   BrollTalkingHeadToolInputSchema,
-} from '@agentmedia/schema';
+} from '@vantly-ugc/schema';
 
 /**
  * User-facing skill input for make_ugc_video. The user supplies EXACTLY
@@ -186,7 +186,7 @@ export const MakeCharacterSheetSkillInputSchema = z
  * User-facing skill input for make_product_in_hands. The character sheet must
  * already be R2-hosted (it comes from make_character_sheet). The PRODUCT image
  * may be ANY https URL OR a base64 image — the route re-hosts it onto
- * agent-media R2 before the primitive runs. Exactly one product source.
+ * vantly-ugc R2 before the primitive runs. Exactly one product source.
  * Speech path = script; non-speech path = scene_action (silent demo).
  */
 export const MakeProductInHandsSkillInputSchema = z
@@ -404,7 +404,7 @@ export const SKILLS: Record<string, SkillEntry> = {
   },
   make_ugc: {
     slug: 'make_ugc',
-    name: 'Agent-Media UGC Video',
+    name: 'Vantly UGC Video',
     version: '1.0.0',
     description:
       'The ONE tool for UGC video. Give a `script` (any length) and optionally a `person` description, an `image` (photo), or a `character` (saved char_… or sheet URL); it returns the finished vertical video. Short script → one clip; long monologue → full multi-take (never trimmed); pass `broll_url` → narrated b-roll overlay. Captions are OPT-IN — ASK the user if they want them (and which style) before generating; set `captions:true` only if they say yes. You never pick a sub-tool.',

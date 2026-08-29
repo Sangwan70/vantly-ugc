@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -27,7 +27,7 @@ import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Home, Palette, Images, LogOut, Loader2, LifeBuoy, BookOpen, Sparkles, ListChecks, KeyRound, Share2, ShieldCheck, Bot } from 'lucide-react';
-import { AgentMediaLogo } from '@/components/agent-media-logo';
+import { VantlyLogo } from '@/components/vantly-logo';
 import { createClient } from '@/lib/supabase/client';
 import { goToMarketingSite } from '@/lib/marketing';
 import { isAdminEmail } from '@/lib/admin-allowlist';
@@ -120,9 +120,9 @@ export default function DashboardDarkLayout({
           style={{ backgroundColor: '#0B0C11', borderRight: '1px solid rgba(255,255,255,0.06)' }}
         >
           {/* Logo (→ Home) */}
-          <Link href="/dashboard" aria-label="agent-media — Home" className="group relative flex h-16 shrink-0 items-center justify-center">
+          <Link href="/dashboard" aria-label="vantly-ugc — Home" className="group relative flex h-16 shrink-0 items-center justify-center">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ backgroundColor: '#FFFFFF', boxShadow: '0 0 24px rgba(167,139,250,0.18)' }} aria-hidden>
-              <AgentMediaLogo size={22} color="#0B0C11" />
+              <VantlyLogo size={22} color="#0B0C11" />
             </span>
             <RailTip label="Home" />
           </Link>
@@ -208,10 +208,10 @@ export default function DashboardDarkLayout({
             }}
             aria-hidden
           >
-            <AgentMediaLogo size={22} color="#0B0C11" />
+            <VantlyLogo size={22} color="#0B0C11" />
           </span>
           <span className="text-sm font-semibold" style={{ letterSpacing: '-0.01em' }}>
-            agent-media
+            vantly-ugc
           </span>
         </div>
 

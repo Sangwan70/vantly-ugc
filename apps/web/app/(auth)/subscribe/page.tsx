@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -7,7 +7,7 @@
  * subscription.
  *
  * This is the marketing site's pricing card, ported from
- * agent-media-website/src/components/Section/PricingHeroSection, and nothing
+ * vantly-ugc-website/src/components/Section/PricingHeroSection, and nothing
  * else. What it replaced was a light-themed two-column layout with a hero, a
  * video marquee and an FAQ: the marquee rendered as six empty grey rectangles
  * because nothing populated it, and the page sat on a #ededed frame while the

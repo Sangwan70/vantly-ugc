@@ -1,11 +1,11 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * POST /v2/characters
  *
  * Public REST entry for v2 character creation.
  *   1. Auth (bearer token)
- *   2. Validate input via @agentmedia/schema/v2 → CharacterCreateSchema
+ *   2. Validate input via @vantly-ugc/schema/v2 → CharacterCreateSchema
  *   3. Create generation_jobs row (operation='character_create')
  *   4. Deduct credits
  *   5. Dispatch to media-worker-v2 POST /v2/characters
@@ -24,7 +24,7 @@ import {
   CharacterUpdateSchema,
   V2_GENERATORS,
   quoteV2Credits,
-} from '@agentmedia/schema/v2';
+} from '@vantly-ugc/schema/v2';
 import { supabase } from '../../server.js';
 
 const WORKER_V2_URL = process.env.WORKER_V2_URL;

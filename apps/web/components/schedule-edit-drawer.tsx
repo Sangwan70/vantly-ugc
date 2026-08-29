@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -12,7 +12,7 @@
  *   - duration + aspect_ratio (job_params)
  *   - prompt_rows (when the schedule was batch) OR brief (when recurring)
  *
- * Caption fields, character source, asset, and Postiz destinations are
+ * Caption fields, character source, asset, and Vantly destinations are
  * out of scope here — those are rarely edited and adding them inflates
  * this drawer significantly. The wizard remains the canonical create
  * flow for those.

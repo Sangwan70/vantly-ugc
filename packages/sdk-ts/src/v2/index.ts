@@ -1,10 +1,10 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * @agentmedia/sdk/v2 — TypeScript SDK for the v2 product surface.
+ * @vantly-ugc/sdk/v2 — TypeScript SDK for the v2 product surface.
  *
- *   import { AgentMedia } from '@agentmedia/sdk';
- *   const client = new AgentMedia({ apiKey: 'ma_xxx' });
+ *   import { VantlyUgc } from '@vantly-ugc/sdk';
+ *   const client = new VantlyUgc({ apiKey: 'ma_xxx' });
  *
  *   const character = await client.v2.createCharacter({
  *     photo_url: 'https://...',
@@ -19,12 +19,12 @@
  *
  * Each method is a thin wrapper over an api-v2 REST route from the
  * V2_GENERATORS registry. Method names and input shapes derive from
- * `@agentmedia/schema/v2`. When we add op #3+ we'll either keep adding
+ * `@vantly-ugc/schema/v2`. When we add op #3+ we'll either keep adding
  * thin wrappers or codegen the whole surface from V2_GENERATORS — the
  * external method names are stable either way.
  */
 
-import type { SelfieInput, CharacterCreateInput } from '@agentmedia/schema/v2';
+import type { SelfieInput, CharacterCreateInput } from '@vantly-ugc/schema/v2';
 
 // Public shapes — mirror api-v2 responses.
 export interface V2JobSubmitted {
@@ -62,7 +62,7 @@ async function call<T>(
   path: string,
   body?: unknown,
 ): Promise<T> {
-  const baseUrl = cfg.baseUrl ?? 'https://api.agent-media.ai';
+  const baseUrl = cfg.baseUrl ?? 'https://api.vantly-ugc.com';
   const fetchFn = cfg.fetchImpl ?? fetch;
   const resp = await fetchFn(`${baseUrl}${path}`, {
     method,
@@ -92,10 +92,10 @@ async function call<T>(
 }
 
 /**
- * The v2 surface. Bound to an AgentMedia instance — never instantiated
+ * The v2 surface. Bound to an VantlyUgc instance — never instantiated
  * directly by SDK users.
  */
-export class AgentMediaV2 {
+export class VantlyUgcV2 {
   constructor(private cfg: V2Config) {}
 
   /** Submit a v2 Selfie job. Returns the job id; use {@link status} to poll. */

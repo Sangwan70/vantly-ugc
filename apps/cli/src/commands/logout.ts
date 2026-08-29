@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media logout` command.
+ * `vantly-ugc logout` command.
  *
  * Clears stored credentials for the current (or specified) profile.
  * With --all, removes all profiles and the credentials file entirely.
@@ -19,7 +19,7 @@ import {
   clearAllCredentials,
   getProfile,
 } from '../lib/credentials.js';
-import { AgentMediaAPI } from '../lib/api.js';
+import { VantlyUgcAPI } from '../lib/api.js';
 import { handleError } from '../lib/errors.js';
 
 export function registerLogoutCommand(program: Command): void {
@@ -78,7 +78,7 @@ export function registerLogoutCommand(program: Command): void {
 
         // Best-effort server-side key revocation
         try {
-          const api = new AgentMediaAPI(profile.apiKey);
+          const api = new VantlyUgcAPI(profile.apiKey);
           await api.revokeApiKey();
         } catch {
           // Server unreachable or key already revoked -- continue with local cleanup

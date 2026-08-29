@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -26,7 +26,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Loader2, Check, AlertCircle, LogOut } from 'lucide-react';
-import { AgentMediaLogo } from '@/components/agent-media-logo';
+import { VantlyLogo } from '@/components/vantly-logo';
 import { createClient } from '@/lib/supabase/client';
 import { goToMarketingSite } from '@/lib/marketing';
 import { invokeFn } from '@/lib/supabase/fn-proxy';
@@ -136,9 +136,9 @@ export default function OnboardingPlanPage() {
           className="inline-flex items-center gap-3 text-sm font-semibold text-black transition-opacity hover:opacity-70"
         >
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-black text-white">
-            <AgentMediaLogo size={22} color="#FFFFFF" />
+            <VantlyLogo size={22} color="#FFFFFF" />
           </span>
-          <span style={{ letterSpacing: '-0.01em' }}>agent-media</span>
+          <span style={{ letterSpacing: '-0.01em' }}>vantly-ugc</span>
         </Link>
         <button
           type="button"

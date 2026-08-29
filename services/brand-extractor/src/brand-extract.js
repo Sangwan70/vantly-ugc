@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Brand extraction pipeline.
@@ -219,7 +219,7 @@ export async function extractBrand({ url, jobId = `brand-${Date.now()}` }) {
   if (!url || typeof url !== 'string') {
     throw new Error('extractBrand: url is required');
   }
-  // Coerce missing scheme: people paste "agent-media.ai" all the time.
+  // Coerce missing scheme: people paste "vantly-ugc.com" all the time.
   let target = url.trim();
   if (!/^https?:\/\//i.test(target)) target = `https://${target}`;
 

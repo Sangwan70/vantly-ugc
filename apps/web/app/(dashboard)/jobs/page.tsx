@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -145,7 +145,7 @@ function inFlightFor(job: GenerationJob): string {
 
 export default function JobsPage() {
   const [jobs, setJobs] = useState<GenerationJob[]>([]);
-  // Set of job_ids that have at least one failed postiz_publication.
+  // Set of job_ids that have at least one failed vantly_publication.
   // A job can be `completed` (video rendered) but the auto-publish failed
   // — those should surface in the Failed tab too, not just in Recent
   // publications above.
@@ -189,7 +189,7 @@ export default function JobsPage() {
         if (list.length > 0) {
           const jobIds = list.map((j) => j.id);
           const { data: pubs } = await supabase
-            .from('postiz_publications')
+            .from('vantly_publications')
             .select('job_id')
             .in('job_id', jobIds)
             .eq('status', 'failed');

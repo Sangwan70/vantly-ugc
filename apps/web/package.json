@@ -1,5 +1,5 @@
 {
-  "name": "@agent-media/web",
+  "name": "@vantly-ugc/web",
   "version": "0.1.0",
   "type": "module",
   "private": true,
@@ -11,8 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@agent-media/types": "workspace:*",
-    "@agent-media/ui": "workspace:*",
+    "@vantly-ugc/types": "workspace:*",
+    "@vantly-ugc/ui": "workspace:*",
     "@dub/analytics": "^0.0.32",
     "@sentry/nextjs": "^10.56.0",
     "@stripe/react-stripe-js": "^5.6.1",

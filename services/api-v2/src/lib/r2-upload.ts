@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * api-v2 R2 upload helper. Used to accept user-supplied image bytes
@@ -51,7 +51,7 @@ function readEnv(): R2Env {
     accountId: accountId ?? '',
     accessKeyId: accessKeyId!,
     secretAccessKey: secretAccessKey!,
-    bucket: process.env.R2_BUCKET || 'agent-media-outputs',
+    bucket: process.env.R2_BUCKET || 'vantly-ugc',
     publicUrl:
       process.env.R2_PUBLIC_URL ||
       'https://pub-16e2ed8f6be84691845e91436920ce0a.r2.dev',
@@ -262,7 +262,7 @@ function httpsGetPinned(
         port: url.port ? Number(url.port) : 443,
         path: url.pathname + url.search,
         method: 'GET',
-        headers: { Host: url.hostname, 'User-Agent': 'agent-media/1', Accept: '*/*' },
+        headers: { Host: url.hostname, 'User-Agent': 'vantly-ugc/1', Accept: '*/*' },
         timeout: timeoutMs,
       },
       (res: IncomingMessage) => {
@@ -328,7 +328,7 @@ async function safeFetchToBuffer(
 }
 
 /**
- * Fetch an image from ANY public https URL and re-host it on agent-media R2.
+ * Fetch an image from ANY public https URL and re-host it on vantly-ugc R2.
  * Used by skills that accept arbitrary product/image URLs (e.g.
  * make_product_in_hands) so the downstream primitive only ever sees an
  * R2-hosted URL. If the URL is already on our R2 public host, it's returned

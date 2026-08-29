@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * v2 · Crazy Look input schema.
@@ -18,7 +18,7 @@
  *
  * Character inputs (one of) — same contract as SelfieSchema:
  *   - character_id (reuse saved character)
- *   - description  (text-only, agent-media paints the character)
+ *   - description  (text-only, vantly-ugc paints the character)
  *   - description + photo_url (use the user's photo as a likeness ref)
  *
  * Look inputs:

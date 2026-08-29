@@ -1,16 +1,16 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media apikey` command group.
+ * `vantly-ugc apikey` command group.
  *
  * Manages user API keys: list, create, and revoke. API keys are used
- * for authenticating CLI and programmatic access to the agent-media
+ * for authenticating CLI and programmatic access to the vantly-ugc
  * platform.
  *
  * Subcommands:
- * - `agent-media apikey list`            -- list all active API keys
- * - `agent-media apikey create <name>`   -- create a new API key
- * - `agent-media apikey revoke <key-id>` -- revoke an existing key
+ * - `vantly-ugc apikey list`            -- list all active API keys
+ * - `vantly-ugc apikey create <name>`   -- create a new API key
+ * - `vantly-ugc apikey revoke <key-id>` -- revoke an existing key
  *
  * Supports human, JSON, and quiet output modes via global flags.
  */
@@ -26,7 +26,7 @@ import {
 } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
 import {
-  AgentMediaAPI,
+  VantlyUgcAPI,
   type ApiKeyRecord,
 } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
@@ -39,7 +39,7 @@ function requireAuth(profileName: string): string {
   if (!apiKey) {
     throw new CLIError('Not logged in.', {
       code: 'NOT_AUTHENTICATED',
-      suggestion: "Run 'agent-media login' to authenticate.",
+      suggestion: "Run 'vantly-ugc login' to authenticate.",
     });
   }
   return apiKey;
@@ -152,7 +152,7 @@ export function registerApikeyCommand(program: Command): void {
     .command('apikey')
     .description('Manage API keys');
 
-  // ── agent-media apikey list ──────────────────────────────────────────────
+  // ── vantly-ugc apikey list ──────────────────────────────────────────────
   apikeyCmd
     .command('list')
     .description('List all active API keys')
@@ -170,7 +170,7 @@ export function registerApikeyCommand(program: Command): void {
         const spinner = createSpinner('Fetching API keys...');
         if (mode === 'human') spinner.start();
 
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
         const keys = await api.listApiKeys();
 
         if (mode === 'human') spinner.stop();
@@ -190,7 +190,7 @@ export function registerApikeyCommand(program: Command): void {
               console.log();
               console.log(
                 chalk.dim(
-                  "  No API keys found. Create one with 'agent-media apikey create <name>'.",
+                  "  No API keys found. Create one with 'vantly-ugc apikey create <name>'.",
                 ),
               );
               console.log();
@@ -218,7 +218,7 @@ export function registerApikeyCommand(program: Command): void {
       }
     });
 
-  // ── agent-media apikey create <name> ─────────────────────────────────────
+  // ── vantly-ugc apikey create <name> ─────────────────────────────────────
   apikeyCmd
     .command('create <name>')
     .description('Create a new API key')
@@ -236,7 +236,7 @@ export function registerApikeyCommand(program: Command): void {
         const spinner = createSpinner('Creating API key...');
         if (mode === 'human') spinner.start();
 
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
         const result = await api.createApiKey(name);
 
         if (mode === 'human') spinner.stop();
@@ -274,7 +274,7 @@ export function registerApikeyCommand(program: Command): void {
       }
     });
 
-  // ── agent-media apikey revoke <key-id> ──────────────────────────────────
+  // ── vantly-ugc apikey revoke <key-id> ──────────────────────────────────
   apikeyCmd
     .command('revoke <key-id>')
     .description('Revoke an API key')
@@ -290,7 +290,7 @@ export function registerApikeyCommand(program: Command): void {
       const apiKey = requireAuth(profileName);
 
       try {
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
 
         // Fetch the key list to show details before confirming
         if (mode === 'human' && !cmdOpts.force) {

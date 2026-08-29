@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -43,7 +43,7 @@ const developerLinks = [
   {
     href: '/cli',
     label: 'CLI',
-    description: '30 commands. npm install -g agent-media-cli',
+    description: '30 commands. npm install -g vantly-ugc-cli',
     icon: Terminal,
   },
   {
@@ -65,9 +65,9 @@ const developerLinks = [
     icon: Bot,
   },
   {
-    href: '/integrations',
-    label: 'Integrations',
-    description: 'Webhooks and third-party connectors',
+    href: '/ai-tools',
+    label: 'AI Workflows',
+    description: 'Claude, Claude Code, Cursor, Codex, and more',
     icon: Plug,
   },
   {
@@ -77,7 +77,7 @@ const developerLinks = [
     icon: BookOpenText,
   },
   {
-    href: 'https://github.com/gitroomhq/agent-media',
+    href: 'https://github.com/gitroomhq/agent-media-app',
     label: 'GitHub',
     description: 'Public repo and package source',
     icon: Github,
@@ -93,9 +93,21 @@ const resourceLinks = [
     icon: Images,
   },
   {
+    href: '/showcase',
+    label: 'Showcase',
+    description: 'Real renders from the pipeline',
+    icon: Images,
+  },
+  {
+    href: '/skill-center',
+    label: 'Skill Center',
+    description: 'Every generation skill in the registry',
+    icon: Bot,
+  },
+  {
     href: '/blog',
     label: 'Blog',
-    description: 'Guides, comparisons, and launch ideas',
+    description: 'Notes from the team',
     icon: Newspaper,
   },
 ];
@@ -106,6 +118,8 @@ const mobileLinkGroups = [
     links: [
       ...primaryLinks,
       { href: '/how-to', label: 'UGC Guides' },
+      { href: '/showcase', label: 'Showcase' },
+      { href: '/skill-center', label: 'Skill Center' },
       { href: '/blog', label: 'Blog' },
     ],
   },
@@ -219,7 +233,7 @@ export function LandingHeader() {
             href="/"
             className="whitespace-nowrap text-lg font-bold tracking-tight text-[#121212]"
           >
-            agent-media
+            vantly-ugc
           </Link>
           <nav className="hidden items-center gap-6 xl:flex">
             {primaryLinks.map((link) => (
@@ -236,8 +250,8 @@ export function LandingHeader() {
             onClick={openLogin}
             className="rounded-full bg-[#121212] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#333] sm:px-5"
           >
-            <span className="sm:hidden">Create</span>
-            <span className="hidden sm:inline">Start Creating</span>
+            <span className="sm:hidden">Generate</span>
+            <span className="hidden sm:inline">Start generating</span>
           </button>
           <button
             type="button"

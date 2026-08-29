@@ -1,16 +1,16 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media skills ...` — vNext skill registry surface.
+ * `vantly-ugc skills ...` — vNext skill registry surface.
  *
- * NOTE: `agent-media skill` (singular) manages the local Claude skill
- * install. This file owns the PLURAL `agent-media skills` namespace
+ * NOTE: `vantly-ugc skill` (singular) manages the local Claude skill
+ * install. This file owns the PLURAL `vantly-ugc skills` namespace
  * which targets the api-v2 vNext skill registry. Different surfaces;
  * deliberate naming split.
  *
- *   agent-media skills list                       — list registered skills
- *   agent-media skills run <slug> --input <json>  — start a skill
- *   agent-media skills status <run_id>            — fetch run status
+ *   vantly-ugc skills list                       — list registered skills
+ *   vantly-ugc skills run <slug> --input <json>  — start a skill
+ *   vantly-ugc skills status <run_id>            — fetch run status
  *
  * Generic by design: every entry in the api-v2 SKILLS registry is
  * usable from here with zero per-skill CLI code.
@@ -21,7 +21,7 @@ import { randomUUID } from 'node:crypto';
 import type { Command } from 'commander';
 import chalk from 'chalk';
 import { getApiKey } from '../lib/credentials.js';
-import { AgentMediaAPI } from '../lib/api.js';
+import { VantlyUgcAPI } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
 import { detectOutputMode, printJson, printQuiet, createSpinner } from '../lib/output.js';
 
@@ -55,7 +55,7 @@ const TERMINAL = new Set(['succeeded', 'completed', 'success', 'failed', 'cancel
 export function registerSkillsCommand(program: Command): void {
   const cmd = program
     .command('skills')
-    .description('Run agent-media vNext skills by slug (e.g. make_ugc, the Agent-Media UGC Video tool)');
+    .description('Run vantly-ugc vNext skills by slug (e.g. make_ugc, the Vantly UGC Video tool)');
 
   cmd
     .command('list')
@@ -68,9 +68,9 @@ export function registerSkillsCommand(program: Command): void {
         const mode = detectOutputMode(opts);
         const apiKey = await getApiKey(opts.profile);
         if (!apiKey) {
-          throw new CLIError('Not logged in. Run `agent-media login`.', { code: 'NOT_AUTHENTICATED' });
+          throw new CLIError('Not logged in. Run `vantly-ugc login`.', { code: 'NOT_AUTHENTICATED' });
         }
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
         const { skills } = await api.listSkills();
         if (mode === 'json') {
           printJson({ skills });
@@ -110,9 +110,9 @@ export function registerSkillsCommand(program: Command): void {
         const mode = detectOutputMode(opts);
         const apiKey = await getApiKey(opts.profile);
         if (!apiKey) {
-          throw new CLIError('Not logged in. Run `agent-media login`.', { code: 'NOT_AUTHENTICATED' });
+          throw new CLIError('Not logged in. Run `vantly-ugc login`.', { code: 'NOT_AUTHENTICATED' });
         }
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
 
         let inputBody: Record<string, unknown> = {};
         if (opts.inputFile) {
@@ -139,7 +139,7 @@ export function registerSkillsCommand(program: Command): void {
             console.log(`  run_id: ${chalk.cyan(runId)}`);
             if (submit.workflow_id) console.log(`  workflow_id: ${submit.workflow_id}`);
             console.log(`  status: ${submit.status}`);
-            console.log(chalk.dim(`\nPoll with: agent-media skills status ${runId}${composed ? ' --composed' : ''}\n`));
+            console.log(chalk.dim(`\nPoll with: vantly-ugc skills status ${runId}${composed ? ' --composed' : ''}\n`));
           }
           return;
         }
@@ -180,9 +180,9 @@ export function registerSkillsCommand(program: Command): void {
         const mode = detectOutputMode(opts);
         const apiKey = await getApiKey(opts.profile);
         if (!apiKey) {
-          throw new CLIError('Not logged in. Run `agent-media login`.', { code: 'NOT_AUTHENTICATED' });
+          throw new CLIError('Not logged in. Run `vantly-ugc login`.', { code: 'NOT_AUTHENTICATED' });
         }
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
         let body: Record<string, unknown> | null = null;
         if (opts.composed) {
           body = await api.getSkillRun(runId);

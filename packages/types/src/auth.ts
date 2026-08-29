@@ -1,8 +1,8 @@
-// Copyright 2026 agent-media contributors
+// Copyright 2026 Vantly UGC contributors
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * Authentication and identity types for the agent-media platform.
+ * Authentication and identity types for the vantly-ugc platform.
  *
  * Covers user profiles, sessions, API keys, and the CLI device-code
  * OAuth flow.
@@ -46,7 +46,7 @@ export interface AuthTokens {
 export type DeviceCodeStatus = 'pending' | 'approved' | 'expired';
 
 /**
- * A device-code record created when the CLI runs `agent-media login`.
+ * A device-code record created when the CLI runs `vantly-ugc login`.
  * The user opens the verification URL in a browser, authenticates,
  * and approves the device. The CLI polls until the status flips to
  * "approved" and an API key is returned.

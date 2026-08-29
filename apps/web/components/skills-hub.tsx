@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -102,7 +102,7 @@ export function SkillsHub({
         <div className="mt-6 max-w-2xl">
           <span className="text-[11px] font-semibold uppercase tracking-wider text-white/50">REST</span>
           <pre className="mt-2 overflow-x-auto px-3 py-2.5 text-[12px] text-white/85 font-mono" style={{ background: '#08080B', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 8 }}>{`curl -X POST \\
-  https://api.agent-media.ai/v1/skills/make_ugc/run \\
+  https://api.vantly-ugc.com/v1/skills/make_ugc/run \\
   -H "Authorization: Bearer $TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{ "script": "...", "person": "a friendly woman" }'`}</pre>

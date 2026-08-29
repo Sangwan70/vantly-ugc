@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Minimal Cloudflare R2 uploader for the brand-extractor service.
@@ -11,7 +11,7 @@
  *   R2_ACCOUNT_ID         - Cloudflare account ID
  *   R2_ACCESS_KEY_ID      - R2 API token access key
  *   R2_SECRET_ACCESS_KEY  - R2 API token secret
- *   R2_BUCKET             - bucket name (default: agent-media-outputs)
+ *   R2_BUCKET             - bucket name (default: vantly-ugc)
  *   R2_PUBLIC_URL         - public CDN host (default: the existing pub-...
  *                           r2.dev URL used elsewhere in the project)
  */
@@ -21,7 +21,7 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
-const R2_BUCKET = process.env.R2_BUCKET || 'agent-media-outputs';
+const R2_BUCKET = process.env.R2_BUCKET || 'vantly-ugc';
 const R2_PUBLIC_URL =
   process.env.R2_PUBLIC_URL ||
   'https://pub-16e2ed8f6be84691845e91436920ce0a.r2.dev';

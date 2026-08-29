@@ -1,4 +1,4 @@
-name: agent-media-batch-ugc
+name: vantly-ugc-batch-ugc
 args:
   scripts:
     default: "[]"
@@ -8,7 +8,7 @@ args:
     default: "hormozi"
 steps:
   - id: check_credits
-    command: agent-media credits --json
+    command: vantly-ugc credits --json
 
   - id: preview_batch
     command: |
@@ -21,10 +21,10 @@ steps:
   - id: submit_batch
     command: |
       for script in $(echo '${scripts}' | jq -r '.[]'); do
-        agent-media ugc "$script" --actor ${actor} --style ${style} --json
+        vantly-ugc ugc "$script" --actor ${actor} --style ${style} --json
       done
     condition: $preview_batch.approved
 
   - id: list_results
-    command: agent-media list --status completed --limit 10 --json
+    command: vantly-ugc list --status completed --limit 10 --json
     condition: $preview_batch.approved

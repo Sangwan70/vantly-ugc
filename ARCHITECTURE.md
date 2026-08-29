@@ -1,11 +1,11 @@
 # Architecture
 
-How agent-media is put together, and why. This is the map for contributors and
+How vantly-ugc is put together, and why. This is the map for contributors and
 self-hosters.
 
 ## System overview & design philosophy
 
-agent-media is an agent-native platform for generating user-generated-content (UGC) video. The caller describes a video in a single sentence — a script, and optionally a person description, a photo, or a saved character — and a server-orchestrated pipeline returns a finished, captioned vertical video. The surface is reachable four ways: a REST API, a CLI published to npm as `agent-media-cli`, MCP (a local stdio server plus a hosted HTTP connector with OAuth), and a web dashboard.
+vantly-ugc is an agent-native platform for generating user-generated-content (UGC) video. The caller describes a video in a single sentence — a script, and optionally a person description, a photo, or a saved character — and a server-orchestrated pipeline returns a finished, captioned vertical video. The surface is reachable four ways: a REST API, a CLI published to npm as `vantly-ugc-cli`, MCP (a local stdio server plus a hosted HTTP connector with OAuth), and a web dashboard.
 
 The north star is to be the best agent-native UGC video surface: one tool, `make_ugc`, script in and vertical video out, with engine selection hidden. A generation is a single durable Temporal workflow with per-step progress and an automatic credit refund on failure — not an agent hand-assembling clips from primitives. That "one durable call, not a recipe" property is the core differentiator, and the price is always quoted before spend.
 
@@ -24,7 +24,7 @@ The monorepo is a pnpm + turbo workspace.
 | `services/media-worker-v2` | JavaScript, Express + FIFO queue | Legacy render plane. Calls providers and assembles with ffmpeg |
 | `services/brand-extractor` | JS, Playwright + vision call | Extracts brand palette/context from a URL |
 | `apps/web` | Next.js 15, React 19, Tailwind v4 | Dashboard app (auth, create, gallery, jobs, settings). Marketing pages are not part of this distribution |
-| `apps/cli` | TypeScript | `agent-media-cli` on npm |
+| `apps/cli` | TypeScript | `vantly-ugc-cli` on npm |
 | `supabase/functions` | Deno edge functions | Checkout, webhooks, presigned URLs, job status, persona/actor CRUD, usage stats |
 | `packages/mcp-server` | TypeScript | Local stdio MCP server (companion to the hosted `/mcp` connector) |
 | `packages/sdk-ts`, `packages/sdk-python` | TS / Python | SDKs against api-v2 |
@@ -194,7 +194,7 @@ flowchart LR
   STDIO["packages/mcp-server (local stdio)"] --> API
   REST["REST /v1/skills/*"] --> API
   SDKS["SDK-ts / SDK-python"] --> API
-  CLI["agent-media-cli"] --> API
+  CLI["vantly-ugc-cli"] --> API
   API["api-v2 skill routes"] --> ROUTER["decideMakeUgcRoute"] --> WORKERS["render workers"]
 ```
 

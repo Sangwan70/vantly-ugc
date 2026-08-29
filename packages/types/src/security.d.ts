@@ -1,5 +1,5 @@
 /**
- * Security types for the agent-media platform.
+ * Security types for the vantly-ugc platform.
  *
  * Covers rate limiting, content moderation, input validation,
  * CORS configuration, and HTTP security headers. These types are

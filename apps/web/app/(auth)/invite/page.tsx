@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -167,10 +167,10 @@ export default function InvitePage() {
           <p className="text-xs text-text-muted">
             Don&apos;t have an invite code? Contact us at{' '}
             <a
-              href="mailto:beta@agent-media.ai"
+              href="mailto:beta@vantly-ugc.com"
               className="text-[#121212] transition-colors hover:underline"
             >
-              beta@agent-media.ai
+              beta@vantly-ugc.com
             </a>
           </p>
         </div>

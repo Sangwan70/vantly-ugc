@@ -1,11 +1,11 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import {
   V1_MANDATORY_TOOL_CONTRACTS,
   generateV1ToolContractSchemas,
-} from '@agentmedia/schema';
+} from '@vantly-ugc/schema';
 import { supabase } from '../../server.js';
 import {
   type RuntimeBudget,

@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * POST /api/v1/product-acting
@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-const DEFAULT_API_V2_URL = 'https://api.agent-media.ai';
+const DEFAULT_API_V2_URL = 'https://api.vantly-ugc.com';
 
 function getApiV2Url(req: NextRequest) {
   const configuredUrl = process.env.API_V2_URL?.replace(/\/+$/, '');

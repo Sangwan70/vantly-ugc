@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 //
 // A4 / Route 0: `make_ugc` with a `product_image` routes to the existing
 // make_product_in_hands primitive (held/worn, staged in code), needs a holder

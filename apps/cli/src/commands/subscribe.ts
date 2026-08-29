@@ -1,16 +1,16 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media subscribe` command.
+ * `vantly-ugc subscribe` command.
  *
  * Interactive command for purchasing subscription plans and credit packs.
  * Opens Stripe Checkout in the user's browser.
  *
  * Usage:
- *   agent-media subscribe              # Interactive menu
- *   agent-media subscribe --plan starter
- *   agent-media subscribe --credits 500
- *   agent-media subscribe --manage     # Opens Stripe Customer Portal
+ *   vantly-ugc subscribe              # Interactive menu
+ *   vantly-ugc subscribe --plan starter
+ *   vantly-ugc subscribe --credits 500
+ *   vantly-ugc subscribe --manage     # Opens Stripe Customer Portal
  */
 
 import { createInterface } from 'node:readline';
@@ -23,7 +23,7 @@ import {
   createSpinner,
 } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
-import { AgentMediaAPI, type WhoAmIResponse } from '../lib/api.js';
+import { VantlyUgcAPI, type WhoAmIResponse } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
 
 /** Available subscription plans. */
@@ -73,7 +73,7 @@ const POLL_TIMEOUT_MS = 120_000;
  * Poll `whoami()` until a subscription change is detected or timeout.
  */
 async function waitForSubscription(
-  api: AgentMediaAPI,
+  api: VantlyUgcAPI,
   before: WhoAmIResponse,
   type: 'plan' | 'credits',
 ): Promise<WhoAmIResponse | null> {
@@ -116,10 +116,10 @@ async function waitForSubscription(
 
     if (aborted) {
       console.log();
-      console.log(chalk.dim("  Stopped waiting. Run 'agent-media plan' to check your subscription status."));
+      console.log(chalk.dim("  Stopped waiting. Run 'vantly-ugc plan' to check your subscription status."));
     } else {
       console.log();
-      console.log(chalk.yellow("  Payment may still be processing. Run 'agent-media plan' to check."));
+      console.log(chalk.yellow("  Payment may still be processing. Run 'vantly-ugc plan' to check."));
     }
 
     return null;
@@ -147,7 +147,7 @@ function showConfirmation(after: WhoAmIResponse, type: 'plan' | 'credits', purch
   }
   console.log();
   console.log(chalk.dim('  Start generating:'));
-  console.log(chalk.dim('    agent-media generate kling3 -p "your prompt"'));
+  console.log(chalk.dim('    vantly-ugc generate kling3 -p "your prompt"'));
   console.log();
 }
 
@@ -176,12 +176,12 @@ export function registerSubscribeCommand(program: Command): void {
         if (!apiKey) {
           throw new CLIError('Not logged in.', {
             code: 'NOT_AUTHENTICATED',
-            suggestion: "Run 'agent-media login' to authenticate.",
+            suggestion: "Run 'vantly-ugc login' to authenticate.",
           });
         }
 
         try {
-          const api = new AgentMediaAPI(apiKey);
+          const api = new VantlyUgcAPI(apiKey);
 
           // ── --manage: Open Stripe Portal ──────────────────────────────
           if (cmdOpts.manage) {
@@ -244,7 +244,7 @@ export function registerSubscribeCommand(program: Command): void {
               if (mode === 'human') spinner.fail('Failed to create checkout session');
               throw new CLIError('No checkout URL returned', {
                 code: 'CHECKOUT_FAILED',
-                suggestion: 'Try again or visit https://agent-media.ai/billing',
+                suggestion: 'Try again or visit https://vantly-ugc.com/billing',
               });
             }
 
@@ -293,7 +293,7 @@ export function registerSubscribeCommand(program: Command): void {
               if (mode === 'human') spinner.fail('Failed to create checkout session');
               throw new CLIError('No checkout URL returned', {
                 code: 'CHECKOUT_FAILED',
-                suggestion: 'Try again or visit https://agent-media.ai/billing',
+                suggestion: 'Try again or visit https://vantly-ugc.com/billing',
               });
             }
 
@@ -411,7 +411,7 @@ export function registerSubscribeCommand(program: Command): void {
               spinner.fail('Failed to create checkout session');
               throw new CLIError('No checkout URL returned', {
                 code: 'CHECKOUT_FAILED',
-                suggestion: 'Try again or visit https://agent-media.ai/billing',
+                suggestion: 'Try again or visit https://vantly-ugc.com/billing',
               });
             }
 
@@ -458,7 +458,7 @@ export function registerSubscribeCommand(program: Command): void {
               spinner.fail('Failed to create checkout session');
               throw new CLIError('No checkout URL returned', {
                 code: 'CHECKOUT_FAILED',
-                suggestion: 'Try again or visit https://agent-media.ai/billing',
+                suggestion: 'Try again or visit https://vantly-ugc.com/billing',
               });
             }
 

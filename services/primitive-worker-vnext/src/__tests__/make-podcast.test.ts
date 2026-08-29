@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 //
 // make_podcast take planning: flatten ordered A/B turns into <=15s takes and
 // count takes per speaker. The chunker MUST guarantee every take lands in

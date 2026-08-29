@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * Observability and monitoring types for the agent-media platform.
+ * Observability and monitoring types for the vantly-ugc platform.
  *
  * Covers circuit breaker health tracking, alert management, credit
  * reconciliation, and system health summaries. These types are consumed

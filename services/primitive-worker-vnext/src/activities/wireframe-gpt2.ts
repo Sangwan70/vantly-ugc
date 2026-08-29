@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 import { ApplicationFailure, Context } from '@temporalio/activity';
-import { WireframeGpt2ToolInputSchema } from '@agentmedia/schema';
+import { WireframeGpt2ToolInputSchema } from '@vantly-ugc/schema';
 import type { WorkerConfig } from '../config.js';
 import { getDb } from '../client/db.js';
 import { generateImageWithFallback, classifyOpenAIError } from '../client/openai.js';

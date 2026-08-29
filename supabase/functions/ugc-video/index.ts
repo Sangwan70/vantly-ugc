@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors
+// Copyright 2026 Vantly UGC contributors
 // SPDX-License-Identifier: Apache-2.0
 
 /**
@@ -533,7 +533,7 @@ async function handleUGC(req: Request, _origin: string): Promise<Response> {
       return corsRes(
         {
           error: "not_found",
-          error_description: `Persona '${body.persona_slug}' not found. Run 'agent-media persona list' to see your personas.`,
+          error_description: `Persona '${body.persona_slug}' not found. Run 'vantly-ugc persona list' to see your personas.`,
         },
         { status: 404 },
       );
@@ -623,7 +623,7 @@ async function handleUGC(req: Request, _origin: string): Promise<Response> {
       return corsRes(
         {
           error: "not_found",
-          error_description: `Actor '${body.actor_slug}' not found.${hint} Run 'agent-media actor list' to browse actors.`,
+          error_description: `Actor '${body.actor_slug}' not found.${hint} Run 'vantly-ugc actor list' to browse actors.`,
         },
         { status: 404 },
       );

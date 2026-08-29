@@ -1,12 +1,12 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * @agent-media/schema/v2 — v2 product line surface.
+ * @vantly-ugc/schema/v2 — v2 product line surface.
  *
- * Old code keeps importing from `@agent-media/schema`. New code
+ * Old code keeps importing from `@vantly-ugc/schema`. New code
  * (sdk-ts/v2, sdk-python.v2, MCP loop, CLI v2 commands, api-v2
  * /v2/* routes, new dashboard, new docs, new SKILL.md) imports
- * exclusively from `@agent-media/schema/v2`.
+ * exclusively from `@vantly-ugc/schema/v2`.
  */
 
 export * from './selfie.js';

@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media delete <job-id>` command.
+ * `vantly-ugc delete <job-id>` command.
  *
  * Soft-deletes a generation job, with options to restore soft-deleted
  * jobs or batch-delete all failed jobs.
@@ -25,7 +25,7 @@ import {
   createSpinner,
 } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
-import { AgentMediaAPI, type GenerationJob } from '../lib/api.js';
+import { VantlyUgcAPI, type GenerationJob } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
 
 /** Status labels with color coding. */
@@ -116,7 +116,7 @@ export function registerDeleteCommand(program: Command): void {
       if (!apiKey) {
         throw new CLIError('Not logged in.', {
           code: 'NOT_AUTHENTICATED',
-          suggestion: "Run 'agent-media login' to authenticate.",
+          suggestion: "Run 'vantly-ugc login' to authenticate.",
         });
       }
 
@@ -124,26 +124,26 @@ export function registerDeleteCommand(program: Command): void {
       if (cmdOpts.allFailed && jobId) {
         throw new CLIError('Cannot specify both a job ID and --all-failed.', {
           code: 'INVALID_FLAGS',
-          suggestion: "Use either 'agent-media delete <job-id>' or 'agent-media delete --all-failed'.",
+          suggestion: "Use either 'vantly-ugc delete <job-id>' or 'vantly-ugc delete --all-failed'.",
         });
       }
 
       if (!cmdOpts.allFailed && !jobId) {
         throw new CLIError('A job ID is required unless using --all-failed.', {
           code: 'MISSING_ARGUMENT',
-          suggestion: "Usage: agent-media delete <job-id> or agent-media delete --all-failed",
+          suggestion: "Usage: vantly-ugc delete <job-id> or vantly-ugc delete --all-failed",
         });
       }
 
       if (cmdOpts.restore && cmdOpts.allFailed) {
         throw new CLIError('Cannot use --restore with --all-failed.', {
           code: 'INVALID_FLAGS',
-          suggestion: "Restore jobs individually: 'agent-media delete <job-id> --restore'.",
+          suggestion: "Restore jobs individually: 'vantly-ugc delete <job-id> --restore'.",
         });
       }
 
       try {
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
 
         // ── Restore mode ──────────────────────────────────────────────
         if (cmdOpts.restore && jobId) {
@@ -170,7 +170,7 @@ export function registerDeleteCommand(program: Command): void {
               console.log();
               console.log(`  ${chalk.green('Job restored successfully.')}`);
               console.log(
-                chalk.dim(`  Run 'agent-media status ${jobId}' to check details.`),
+                chalk.dim(`  Run 'vantly-ugc status ${jobId}' to check details.`),
               );
               console.log();
               break;
@@ -331,7 +331,7 @@ export function registerDeleteCommand(program: Command): void {
             console.log();
             console.log(`  ${chalk.green('Job deleted successfully.')}`);
             console.log(
-              chalk.dim(`  Restore with: agent-media delete ${jobId!} --restore`),
+              chalk.dim(`  Restore with: vantly-ugc delete ${jobId!} --restore`),
             );
             console.log();
             break;

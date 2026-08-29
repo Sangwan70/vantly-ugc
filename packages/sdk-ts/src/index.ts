@@ -1,11 +1,11 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * @agent-media/sdk — TypeScript SDK for agent-media video generation.
+ * @vantly-ugc/sdk — TypeScript SDK for vantly-ugc video generation.
  *
  * Usage:
- *   import { AgentMedia } from '@agent-media/sdk';
- *   const client = new AgentMedia({ apiKey: 'ma_xxx' });
+ *   import { VantlyUgc } from '@vantly-ugc/sdk';
+ *   const client = new VantlyUgc({ apiKey: 'ma_xxx' });
  *   const video = await client.createVideo({ script: '...', actor_slug: 'sofia' });
  *   console.log(video.video_url);
  */
@@ -15,9 +15,9 @@ import type {
   ShowYourAppInput, ProductActingInput, LaptopUgcInput,
   CharacterSheetInput, CharacterStoryboardInput,
   StoryboardSuggestInput, CharacterVideoInput, TextToVideoInput,
-} from '@agentmedia/schema';
+} from '@vantly-ugc/schema';
 
-export interface AgentMediaConfig {
+export interface VantlyUgcConfig {
   apiKey: string;
   baseUrl?: string;
 }
@@ -73,14 +73,14 @@ export interface ApiError {
   details?: unknown[];
 }
 
-export class AgentMediaError extends Error {
+export class VantlyUgcError extends Error {
   readonly code: string;
   readonly status: number;
   readonly details?: unknown[];
 
   constructor(status: number, error: ApiError) {
     super(error.message);
-    this.name = 'AgentMediaError';
+    this.name = 'VantlyUgcError';
     this.code = error.code;
     this.status = status;
     this.details = error.details;
@@ -88,22 +88,22 @@ export class AgentMediaError extends Error {
 }
 
 // v2 namespace — imported here so `client.v2.selfie(...)` works without
-// a separate import. Lives in its own subpath (@agentmedia/sdk/v2) too
+// a separate import. Lives in its own subpath (@vantly-ugc/sdk/v2) too
 // for users who want only the v2 surface and tree-shake the legacy class.
-import { AgentMediaV2 } from './v2/index.js';
-export { AgentMediaV2 } from './v2/index.js';
+import { VantlyUgcV2 } from './v2/index.js';
+export { VantlyUgcV2 } from './v2/index.js';
 export type { V2JobSubmitted, V2JobStatus, V2Config } from './v2/index.js';
 
-export class AgentMedia {
+export class VantlyUgc {
   private readonly apiKey: string;
   private readonly baseUrl: string;
   /** v2 product surface — Selfie, character_create, future v2 ops. */
-  readonly v2: AgentMediaV2;
+  readonly v2: VantlyUgcV2;
 
-  constructor(config: AgentMediaConfig) {
+  constructor(config: VantlyUgcConfig) {
     this.apiKey = config.apiKey;
-    this.baseUrl = config.baseUrl ?? 'https://api.agent-media.ai';
-    this.v2 = new AgentMediaV2({ apiKey: this.apiKey, baseUrl: this.baseUrl });
+    this.baseUrl = config.baseUrl ?? 'https://api.vantly-ugc.com';
+    this.v2 = new VantlyUgcV2({ apiKey: this.apiKey, baseUrl: this.baseUrl });
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -120,7 +120,7 @@ export class AgentMedia {
 
     if (!resp.ok) {
       const error = data.error ?? { code: 'UNKNOWN', message: 'Request failed' };
-      throw new AgentMediaError(resp.status, error);
+      throw new VantlyUgcError(resp.status, error);
     }
 
     return data as T;
@@ -205,7 +205,7 @@ export class AgentMedia {
         };
       }
       if (status.status === 'failed') {
-        throw new AgentMediaError(500, {
+        throw new VantlyUgcError(500, {
           code: 'GENERATION_FAILED',
           message: status.error_message ?? 'Product Acting UGC generation failed',
         });
@@ -213,7 +213,7 @@ export class AgentMedia {
       await new Promise(r => setTimeout(r, 5_000));
     }
 
-    throw new AgentMediaError(408, {
+    throw new VantlyUgcError(408, {
       code: 'TIMEOUT',
       message: `Product Acting UGC timed out after ${timeout / 1000}s. Job ID: ${job.job_id}`,
     });
@@ -251,7 +251,7 @@ export class AgentMedia {
         };
       }
       if (status.status === 'failed') {
-        throw new AgentMediaError(500, {
+        throw new VantlyUgcError(500, {
           code: 'GENERATION_FAILED',
           message: status.error_message ?? 'Laptop UGC generation failed',
         });
@@ -259,7 +259,7 @@ export class AgentMedia {
       await new Promise(r => setTimeout(r, 5_000));
     }
 
-    throw new AgentMediaError(408, {
+    throw new VantlyUgcError(408, {
       code: 'TIMEOUT',
       message: `Laptop UGC timed out after ${timeout / 1000}s. Job ID: ${job.job_id}`,
     });
@@ -286,7 +286,7 @@ export class AgentMedia {
         };
       }
       if (status.status === 'failed') {
-        throw new AgentMediaError(500, {
+        throw new VantlyUgcError(500, {
           code: 'GENERATION_FAILED',
           message: status.error_message ?? 'Show Your App generation failed',
         });
@@ -294,7 +294,7 @@ export class AgentMedia {
       await new Promise(r => setTimeout(r, 5_000));
     }
 
-    throw new AgentMediaError(408, {
+    throw new VantlyUgcError(408, {
       code: 'TIMEOUT',
       message: `Show Your App timed out after ${timeout / 1000}s. Job ID: ${job.job_id}`,
     });
@@ -372,7 +372,7 @@ export class AgentMedia {
     const submit = await this.submitTextToVideo(input);
     const job = await this.pollUntilDone(submit.job_id, 'text-to-video', timeout);
     if (!job.video_url) {
-      throw new AgentMediaError(500, { code: 'GENERATION_FAILED', message: `text-to-video completed without an output URL (job ${submit.job_id})` });
+      throw new VantlyUgcError(500, { code: 'GENERATION_FAILED', message: `text-to-video completed without an output URL (job ${submit.job_id})` });
     }
     return {
       job_id: submit.job_id,
@@ -415,13 +415,13 @@ export class AgentMedia {
   }> {
     const sources = [input.description, input.actor_slug, input.reference_image_url].filter(Boolean).length;
     if (sources === 0) {
-      throw new AgentMediaError(400, { code: 'VALIDATION_ERROR', message: 'Provide one of description, actor_slug, or reference_image_url' });
+      throw new VantlyUgcError(400, { code: 'VALIDATION_ERROR', message: 'Provide one of description, actor_slug, or reference_image_url' });
     }
     if (input.actor_slug && input.reference_image_url) {
-      throw new AgentMediaError(400, { code: 'VALIDATION_ERROR', message: 'actor_slug and reference_image_url are mutually exclusive' });
+      throw new VantlyUgcError(400, { code: 'VALIDATION_ERROR', message: 'actor_slug and reference_image_url are mutually exclusive' });
     }
     if (Boolean(input.beats) === Boolean(input.script)) {
-      throw new AgentMediaError(400, { code: 'VALIDATION_ERROR', message: 'Provide exactly one of beats or script' });
+      throw new VantlyUgcError(400, { code: 'VALIDATION_ERROR', message: 'Provide exactly one of beats or script' });
     }
 
     const sessionId = options?.sessionId ?? (typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -441,7 +441,7 @@ export class AgentMedia {
     } as CharacterSheetInput);
     const sheetJob = await this.pollUntilDone(sheetSubmit.job_id, 'character sheet', remaining());
     if (!sheetJob.video_url) {
-      throw new AgentMediaError(500, { code: 'GENERATION_FAILED', message: `character sheet completed without an output URL (job ${sheetSubmit.job_id})` });
+      throw new VantlyUgcError(500, { code: 'GENERATION_FAILED', message: `character sheet completed without an output URL (job ${sheetSubmit.job_id})` });
     }
     const characterSheetUrl = sheetJob.video_url;
 
@@ -455,7 +455,7 @@ export class AgentMedia {
     } as CharacterStoryboardInput);
     const sbJob = await this.pollUntilDone(sbSubmit.job_id, 'storyboard', remaining());
     if (!sbJob.video_url) {
-      throw new AgentMediaError(500, { code: 'GENERATION_FAILED', message: `storyboard completed without an output URL (job ${sbSubmit.job_id})` });
+      throw new VantlyUgcError(500, { code: 'GENERATION_FAILED', message: `storyboard completed without an output URL (job ${sbSubmit.job_id})` });
     }
     const storyboardUrl = sbJob.video_url;
 
@@ -472,7 +472,7 @@ export class AgentMedia {
     } as CharacterVideoInput);
     const videoJob = await this.pollUntilDone(videoSubmit.job_id, 'character video', remaining());
     if (!videoJob.video_url) {
-      throw new AgentMediaError(500, { code: 'GENERATION_FAILED', message: `character video completed without an output URL (job ${videoSubmit.job_id})` });
+      throw new VantlyUgcError(500, { code: 'GENERATION_FAILED', message: `character video completed without an output URL (job ${videoSubmit.job_id})` });
     }
 
     return {
@@ -492,14 +492,14 @@ export class AgentMedia {
       const status = await this.getVideoStatus(jobId);
       if (status.status === 'completed') return status;
       if (status.status === 'failed') {
-        throw new AgentMediaError(500, {
+        throw new VantlyUgcError(500, {
           code: 'GENERATION_FAILED',
           message: status.error_message ?? `${label} generation failed`,
         });
       }
       await new Promise((r) => setTimeout(r, 5_000));
     }
-    throw new AgentMediaError(408, {
+    throw new VantlyUgcError(408, {
       code: 'TIMEOUT',
       message: `${label} timed out after ${Math.round(timeoutMs / 1000)}s. Job ID: ${jobId}`,
     });
@@ -527,7 +527,7 @@ export class AgentMedia {
       }
 
       if (status.status === 'failed') {
-        throw new AgentMediaError(500, {
+        throw new VantlyUgcError(500, {
           code: 'GENERATION_FAILED',
           message: status.error_message ?? 'Video generation failed',
         });
@@ -536,7 +536,7 @@ export class AgentMedia {
       await new Promise(r => setTimeout(r, 5_000));
     }
 
-    throw new AgentMediaError(408, {
+    throw new VantlyUgcError(408, {
       code: 'TIMEOUT',
       message: `Video generation timed out after ${timeout / 1000}s. Job ID: ${job.job_id}`,
     });
@@ -549,4 +549,4 @@ export type {
   ShowYourAppInput, ProductActingInput, LaptopUgcInput,
   CharacterSheetInput, CharacterStoryboardInput,
   StoryboardSuggestInput, CharacterVideoInput, TextToVideoInput,
-} from '@agentmedia/schema';
+} from '@vantly-ugc/schema';

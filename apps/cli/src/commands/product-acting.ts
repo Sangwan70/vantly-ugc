@@ -1,8 +1,8 @@
 import { printDeprecation } from '../lib/deprecation.js';
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media product-acting` command.
+ * `vantly-ugc product-acting` command.
  *
  * Generates a Product Acting UGC video: an AI creator presents or reacts to a
  * product image in a selected real-world scenario.
@@ -18,7 +18,7 @@ import {
 } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
 import {
-  AgentMediaAPI,
+  VantlyUgcAPI,
   type GenerationJob,
 } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
@@ -72,7 +72,7 @@ function formatElapsed(seconds: number): string {
 }
 
 async function waitForJob(
-  api: AgentMediaAPI,
+  api: VantlyUgcAPI,
   jobId: string,
   mode: OutputMode,
 ): Promise<GenerationJob | null> {
@@ -145,12 +145,12 @@ export function registerProductActingCommand(program: Command): void {
     .description(
       'Generate Product Acting UGC — AI creator presents a product image\n\n' +
       'Examples:\n' +
-      '  $ agent-media product-acting \\\n' +
+      '  $ vantly-ugc product-acting \\\n' +
       '      --product-image https://cdn.example.com/perfume.png \\\n' +
       '      --actor sarah \\\n' +
       '      --script "I did not expect this perfume to smell this expensive" \\\n' +
       '      --sync\n\n' +
-      '  $ agent-media product-acting \\\n' +
+      '  $ vantly-ugc product-acting \\\n' +
       '      --product-image https://cdn.example.com/bottle.webp \\\n' +
       '      --actor marcus --product-name "Hydra Boost" \\\n' +
       '      --about "Daily electrolyte drink for gym recovery" \\\n' +
@@ -159,7 +159,7 @@ export function registerProductActingCommand(program: Command): void {
       '--about is required and the API generates a short script.',
     )
     .requiredOption('--product-image <url>', 'Public URL of the product image')
-    .requiredOption('--actor <slug>', 'Actor slug from `agent-media actor list`')
+    .requiredOption('--actor <slug>', 'Actor slug from `vantly-ugc actor list`')
     .option('--actor-variant-id <uuid>', 'Optional actor variant UUID')
     .option('--product-name <name>', 'Product name for script/frame context')
     .option('--about <text>', 'Product description/context. Required if --script is omitted')
@@ -199,7 +199,7 @@ export function registerProductActingCommand(program: Command): void {
       if (!apiKey) {
         throw new CLIError('Not logged in.', {
           code: 'NOT_AUTHENTICATED',
-          suggestion: "Run 'agent-media login' to authenticate.",
+          suggestion: "Run 'vantly-ugc login' to authenticate.",
         });
       }
 
@@ -246,7 +246,7 @@ export function registerProductActingCommand(program: Command): void {
       }
 
       try {
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
         const submitSpinner = createSpinner('Submitting Product Acting UGC job...');
         if (mode === 'human') submitSpinner.start();
 
@@ -283,7 +283,7 @@ export function registerProductActingCommand(program: Command): void {
               console.log(`  ${chalk.bold('Subtitles:')}  ${result.subtitle_style}`);
               console.log(`  ${chalk.bold('Credits:')}    ${result.credits_deducted} deducted`);
               console.log();
-              console.log(chalk.dim(`  Run 'agent-media status ${result.job_id}' to check progress`));
+              console.log(chalk.dim(`  Run 'vantly-ugc status ${result.job_id}' to check progress`));
               console.log(chalk.dim(`  Or re-run with --sync to wait for completion`));
               console.log();
           }

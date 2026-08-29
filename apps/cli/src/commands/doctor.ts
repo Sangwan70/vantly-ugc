@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media doctor` command.
+ * `vantly-ugc doctor` command.
  *
  * Runs diagnostic checks to verify the CLI environment is correctly
  * configured. Checks credentials, API connectivity, authentication,
@@ -21,7 +21,7 @@ import chalk from 'chalk';
 import { detectOutputMode, printJson } from '../lib/output.js';
 import { loadCredentials, getApiKey, resolveProfileName } from '../lib/credentials.js';
 import { loadConfig, CONFIG_FILE, saveConfig } from '../lib/config.js';
-import { AgentMediaAPI } from '../lib/api.js';
+import { VantlyUgcAPI } from '../lib/api.js';
 import { handleError } from '../lib/errors.js';
 
 const require = createRequire(import.meta.url);
@@ -51,7 +51,7 @@ interface CheckResult {
  * Resolve the API base URL from env or default.
  */
 function getApiBaseUrl(): string {
-  return process.env['AGENT_MEDIA_API_URL']?.replace(/\/+$/, '') ?? DEFAULT_API_URL;
+  return process.env['VANTLY_UGC_API_URL']?.replace(/\/+$/, '') ?? DEFAULT_API_URL;
 }
 
 /**
@@ -82,7 +82,7 @@ function checkCredentials(profileName: string): CheckResult {
         label,
         passed: false,
         message: `No profile "${profileName}" found`,
-        fix: 'Run `agent-media login` to authenticate.',
+        fix: 'Run `vantly-ugc login` to authenticate.',
         fixable: false,
       };
     }
@@ -93,7 +93,7 @@ function checkCredentials(profileName: string): CheckResult {
         label,
         passed: false,
         message: `Profile "${profileName}" has no API key`,
-        fix: 'Run `agent-media login` to re-authenticate.',
+        fix: 'Run `vantly-ugc login` to re-authenticate.',
         fixable: false,
       };
     }
@@ -111,7 +111,7 @@ function checkCredentials(profileName: string): CheckResult {
       label,
       passed: false,
       message: 'Failed to read credentials file',
-      fix: 'Run `agent-media login` to create credentials.',
+      fix: 'Run `vantly-ugc login` to create credentials.',
       fixable: false,
     };
   }
@@ -158,7 +158,7 @@ async function checkApiReachable(): Promise<CheckResult> {
       label,
       passed: false,
       message: msg,
-      fix: 'Check your internet connection or verify the API URL with `agent-media config get api_url`.',
+      fix: 'Check your internet connection or verify the API URL with `vantly-ugc config get api_url`.',
     };
   }
 }
@@ -177,13 +177,13 @@ async function checkAuthValid(profileName: string): Promise<CheckResult> {
       label,
       passed: false,
       message: 'No API key available',
-      fix: 'Run `agent-media login` to authenticate.',
+      fix: 'Run `vantly-ugc login` to authenticate.',
       fixable: false,
     };
   }
 
   try {
-    const api = new AgentMediaAPI(apiKey);
+    const api = new VantlyUgcAPI(apiKey);
     const data = await api.whoami();
     const email = data.user_id || 'unknown';
 
@@ -199,7 +199,7 @@ async function checkAuthValid(profileName: string): Promise<CheckResult> {
       label,
       passed: false,
       message: 'API key is invalid or expired',
-      fix: 'Run `agent-media login` to re-authenticate.',
+      fix: 'Run `vantly-ugc login` to re-authenticate.',
       fixable: false,
     };
   }
@@ -218,7 +218,7 @@ function checkConfigValid(): CheckResult {
       label,
       passed: false,
       message: `No configuration file at ${CONFIG_FILE}`,
-      fix: 'Run `agent-media config set output_format human` to create a default config.',
+      fix: 'Run `vantly-ugc config set output_format human` to create a default config.',
       fixable: true,
     };
   }
@@ -234,7 +234,7 @@ function checkConfigValid(): CheckResult {
         label,
         passed: false,
         message: 'Config file has invalid structure',
-        fix: 'Run `agent-media config reset` to restore defaults.',
+        fix: 'Run `vantly-ugc config reset` to restore defaults.',
         fixable: true,
       };
     }
@@ -251,7 +251,7 @@ function checkConfigValid(): CheckResult {
       label,
       passed: false,
       message: 'Config file contains invalid JSON',
-      fix: 'Run `agent-media config reset` to restore defaults.',
+      fix: 'Run `vantly-ugc config reset` to restore defaults.',
       fixable: true,
     };
   }
@@ -317,7 +317,7 @@ function checkDiskSpace(): CheckResult {
         label,
         passed: false,
         message: `Only ${freeLabel} available in ${displayDir} (100 MB minimum)`,
-        fix: 'Free up disk space or change download_dir with `agent-media config set download_dir /path/to/dir`.',
+        fix: 'Free up disk space or change download_dir with `vantly-ugc config set download_dir /path/to/dir`.',
       };
     }
 
@@ -424,7 +424,7 @@ function attemptFix(result: CheckResult): string | null {
 
     case 'credentials': {
       // Cannot auto-fix -- requires interactive login
-      return 'Run `agent-media login` to set up credentials.';
+      return 'Run `vantly-ugc login` to set up credentials.';
     }
 
     case 'node_version': {
@@ -439,7 +439,7 @@ function attemptFix(result: CheckResult): string | null {
 export function registerDoctorCommand(program: Command): void {
   program
     .command('doctor')
-    .description('Run diagnostic checks on your agent-media setup')
+    .description('Run diagnostic checks on your vantly-ugc setup')
     .option('--fix', 'Attempt to auto-fix known issues')
     .action(async (cmdOpts: { fix?: boolean }) => {
       const globalOpts = program.opts<{
@@ -498,7 +498,7 @@ export function registerDoctorCommand(program: Command): void {
 
           default: {
             console.log();
-            console.log(chalk.bold('agent-media doctor'));
+            console.log(chalk.bold('vantly-ugc doctor'));
             console.log();
 
             // Calculate label padding for alignment

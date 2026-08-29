@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 //
 // A7 + A10: the curated agent surface. When MAKE_UGC_ENABLED is on, the connector
 // lists exactly the agentFacing vNext skills (make_ugc, make_podcast,

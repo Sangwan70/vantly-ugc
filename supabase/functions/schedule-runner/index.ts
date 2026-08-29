@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * schedule-runner edge function — pg_cron's "tick" target.
@@ -12,7 +12,7 @@
  *   - the /jobs dashboard finds them (filters by input_params.schedule_id)
  *   - the webhook-provider edge function fans out to the right Postiz
  *     integrations on completion (uses input_params.postiz_integration_ids
- *     when present, else falls back to profiles.postiz_default_integrations).
+ *     when present, else falls back to profiles.vantly_default_integrations).
  *
  * v1 supports character_video only. Other generator_ids are rejected
  * at the schedule level (validation in api-v2 + runner skip here).

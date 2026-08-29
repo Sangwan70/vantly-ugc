@@ -1,18 +1,18 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * POST /mcp — public HTTP MCP server for agent-media.
+ * POST /mcp — public HTTP MCP server for vantly-ugc.
  *
  * What this is: a Model Context Protocol server exposed over HTTP so
  * clients that can't run local stdio MCP processes (Claude.ai, Cowork,
  * Claude Desktop's web mode, anything else that wants a remote MCP
- * URL) can use agent-media's one generation tool: make_ugc
- * ("Agent-Media UGC Video") — give a script plus a person/image/
+ * URL) can use vantly-ugc's one generation tool: make_ugc
+ * ("Vantly UGC Video") — give a script plus a person/image/
  * character and get back a finished vertical video (captions are
  * opt-in — the agent asks before adding them).
  *
  * Tools exposed:
- *   - make_ugc — "Agent-Media UGC Video", the single agent-facing
+ *   - make_ugc — "Vantly UGC Video", the single agent-facing
  *     generation tool. One call: script + a person/image/character in,
  *     finished vertical video out (captions opt-in). The agent never
  *     picks a sub-skill; make_ugc resolves identity and routes internally.
@@ -43,12 +43,12 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import { V2_GENERATORS, type V2GeneratorRecord } from '@agentmedia/schema/v2';
+import { V2_GENERATORS, type V2GeneratorRecord } from '@vantly-ugc/schema/v2';
 import { SKILLS } from '../skills/registry.js';
 import { isPrimitivesRouteEnabled } from './v1/primitives.js';
 
 const PUBLIC_API_BASE =
-  process.env.PUBLIC_API_BASE ?? 'https://api.agent-media.ai';
+  process.env.PUBLIC_API_BASE ?? 'https://api.vantly-ugc.com';
 
 /**
  * Build an MCP server scoped to a single user's API key. Tool handlers
@@ -58,7 +58,7 @@ const PUBLIC_API_BASE =
  */
 function buildMcpServer(apiKey: string): Server {
   const server = new Server(
-    { name: 'agent-media', version: '0.4.0' },
+    { name: 'vantly-ugc', version: '0.4.0' },
     { capabilities: { tools: {} } },
   );
 
@@ -196,7 +196,7 @@ function buildMcpServer(apiKey: string): Server {
         );
       } catch (err) {
         return {
-          content: [{ type: 'text', text: `agent-media API did not respond in time (${(err as Error).message}). The run may or may not have started — use the list/status tools to check.` }],
+          content: [{ type: 'text', text: `vantly-ugc API did not respond in time (${(err as Error).message}). The run may or may not have started — use the list/status tools to check.` }],
           isError: true,
         };
       }

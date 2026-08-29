@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 import type { NextConfig } from 'next';
 import { withSentryConfig } from '@sentry/nextjs';
@@ -44,7 +44,7 @@ function imageHosts(): { protocol: 'http' | 'https'; hostname: string }[] {
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  transpilePackages: ['@agent-media/ui'],
+  transpilePackages: ['@vantly-ugc/ui'],
   // Emit a self-contained server bundle so the Docker image does not need the
   // whole pnpm workspace at runtime. See apps/web/Dockerfile.
   output: 'standalone',

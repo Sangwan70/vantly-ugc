@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * POST /v1/generate/:generatorId
@@ -21,14 +21,14 @@ import {
   LAPTOP_UGC_IMAGE_MIME_TYPES,
   CHARACTER_VIDEO_DURATIONS,
   CHARACTER_VIDEO_RATIOS,
-} from '@agentmedia/schema';
+} from '@vantly-ugc/schema';
 import { supabase } from '../server.js';
 import { USE_DURABLE_QUEUE, enqueueDispatch, type DispatchTarget } from '../queue.js';
+import { callAnthropicMessages, hasProviderCredential, missingCredentialEnvVar } from '../lib/anthropic-client.js';
 
 const WORKER_V2_URL = process.env.WORKER_V2_URL;
 const WORKER_SECRET = process.env.WORKER_SECRET;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 // Script generation is user-visible and quality-sensitive — Opus 4.7 only.
 // Override with SCRIPT_MODEL env var if needed.
 const SCRIPT_MODEL = process.env.SCRIPT_MODEL ?? process.env.HAIKU_MODEL ?? 'claude-opus-4-7';
@@ -91,24 +91,15 @@ async function detectVoiceFromFace(imageUrl: string): Promise<{ voice: string; l
  * with limitWords as defense in depth.
  */
 async function callClaude(systemPrompt: string, userMsg: string, maxTokens: number, _temperature: number): Promise<string> {
-  if (!ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not configured');
+  if (!hasProviderCredential()) throw new Error(`${missingCredentialEnvVar()} not configured`);
   // Opus 4.7 doesn't accept `temperature` — kept as a parameter for caller
   // compatibility but no longer forwarded to the API.
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: SCRIPT_MODEL,
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMsg }],
-    }),
-    signal: AbortSignal.timeout(45_000),
-  });
+  const resp = await callAnthropicMessages({
+    model: SCRIPT_MODEL,
+    max_tokens: maxTokens,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userMsg }],
+  }, { signal: AbortSignal.timeout(45_000) });
   if (!resp.ok) {
     const body = await resp.text().catch(() => '');
     throw new Error(`Anthropic error: ${resp.status} ${body.slice(0, 200)}`);
@@ -967,7 +958,7 @@ export async function generateRoute(req: Request, res: Response): Promise<void> 
       const creditCost = duration === 5 ? 350 : duration === 15 ? 1050 : 700;
 
       // Auto-publish fields. Persisted on the job row so webhook-provider
-      // can fan the rendered MP4 out to Postiz on completion — same path
+      // can fan the rendered MP4 out to Vantly on completion — same path
       // the schedule-runner uses for scheduled jobs.
       const postizIntegrationIds = Array.isArray(body.postiz_integration_ids)
         ? (body.postiz_integration_ids as string[]).filter((s) => typeof s === 'string' && s.length > 0)

@@ -1,11 +1,11 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * POST /v2/subtitle
  *
  * Public REST entry for the v2 subtitle generator.
  *   1. Auth (bearer token via parent router middleware)
- *   2. Validate input with @agentmedia/schema/v2 → SubtitleSchema
+ *   2. Validate input with @vantly-ugc/schema/v2 → SubtitleSchema
  *   3. Create generation_jobs row (operation='subtitle')
  *   4. Deduct credits via deduct_credits RPC
  *   5. Dispatch to media-worker-v2 POST /v2/subtitle
@@ -28,7 +28,7 @@ import {
   SubtitleSchema,
   V2_GENERATORS,
   quoteV2Credits,
-} from '@agentmedia/schema/v2';
+} from '@vantly-ugc/schema/v2';
 import { supabase } from '../../server.js';
 import { uploadUserVideoFromUrl } from '../../lib/r2-upload.js';
 

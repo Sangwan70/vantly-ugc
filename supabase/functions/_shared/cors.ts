@@ -3,7 +3,7 @@
  *
  * Origin-aware: checks the request Origin against an allow-list loaded from
  * the ALLOWED_ORIGINS env var (comma-separated). Defaults to
- * https://agent-media.ai and http://localhost:3000 when not set.
+ * https://vantly-ugc.com and http://localhost:3000 when not set.
  *
  * Migrated from wildcard "*" to explicit origin reflection for production
  * hardening. Functions that previously imported `corsHeaders` (the static
@@ -14,7 +14,7 @@
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_ALLOWED_ORIGINS: string[] = [
-  "https://agent-media.ai",
+  "https://vantly-ugc.com",
   "http://localhost:3000",
   "https://*.vercel.app",
 ];

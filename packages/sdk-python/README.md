@@ -1,25 +1,25 @@
-# agent-media
+# vantly-ugc
 
-Python SDK for [agent-media](https://agent-media.ai) — UGC video generation for developers.
+Python SDK for [vantly-ugc](https://vantly-ugc.com) — UGC video generation for developers.
 
 Generate AI videos with realistic talking heads, B-roll, voiceover, animated subtitles, and music. One function call, finished video.
 
-[![PyPI version](https://img.shields.io/pypi/v/agent-media)](https://pypi.org/project/agent-media/)
-[![Python](https://img.shields.io/pypi/pyversions/agent-media)](https://pypi.org/project/agent-media/)
-[![license](https://img.shields.io/pypi/l/agent-media)](https://github.com/gitroomhq/agent-media-app/blob/main/LICENSE)
+[![PyPI version](https://img.shields.io/pypi/v/vantly-ugc)](https://pypi.org/project/vantly-ugc/)
+[![Python](https://img.shields.io/pypi/pyversions/vantly-ugc)](https://pypi.org/project/vantly-ugc/)
+[![license](https://img.shields.io/pypi/l/vantly-ugc)](https://github.com/gitroomhq/agent-media-app/blob/main/LICENSE)
 
 ## Install
 
 ```bash
-pip install agent-media
+pip install vantly-ugc
 ```
 
 ## Quick Start
 
 ```python
-from agent_media import AgentMedia
+from vantly_ugc import VantlyUgc
 
-client = AgentMedia(api_key="ma_YOUR_KEY")
+client = VantlyUgc(api_key="ma_YOUR_KEY")
 
 # Generate a video — blocks until complete, returns the URL
 video = client.create_video(
@@ -36,9 +36,9 @@ print(video["video_url"])
 ## Async
 
 ```python
-from agent_media.client import AsyncAgentMedia
+from vantly_ugc.client import AsyncVantlyUgc
 
-async with AsyncAgentMedia(api_key="ma_YOUR_KEY") as client:
+async with AsyncVantlyUgc(api_key="ma_YOUR_KEY") as client:
     video = await client.create_video(
         script="Your script here...",
         actor_slug="sofia",
@@ -49,7 +49,7 @@ async with AsyncAgentMedia(api_key="ma_YOUR_KEY") as client:
 
 ## API Reference
 
-### `AgentMedia(api_key, base_url?, timeout?)`
+### `VantlyUgc(api_key, base_url?, timeout?)`
 
 | Parameter | Type | Required | Default |
 |---|---|---|---|
@@ -167,7 +167,7 @@ video = client.submit_character_video(
 )
 ```
 
-The `AsyncAgentMedia` class exposes `await client.create_character_video(...)` and the same `submit_*` / `suggest_storyboard` methods with identical signatures.
+The `AsyncVantlyUgc` class exposes `await client.create_character_video(...)` and the same `submit_*` / `suggest_storyboard` methods with identical signatures.
 
 ### `client.list_actors(limit?, offset?)`
 
@@ -192,23 +192,23 @@ if status["status"] == "completed":
 ## Error Handling
 
 ```python
-from agent_media import AgentMedia, AgentMediaError
+from vantly_ugc import VantlyUgc, VantlyUgcError
 
 try:
     video = client.create_video(script="...")
-except AgentMediaError as e:
+except VantlyUgcError as e:
     print(f"{e.code}: {e} (HTTP {e.status})")
 ```
 
 ## Webhooks
 
-Skip polling — pass `webhook_url` and agent-media will POST to it when the job completes or fails.
+Skip polling — pass `webhook_url` and vantly-ugc will POST to it when the job completes or fails.
 
 ```python
 job = client.submit_video(
     script="...",
     actor_slug="sofia",
-    webhook_url="https://example.com/webhooks/agent-media?secret=MY_TOKEN",
+    webhook_url="https://example.com/webhooks/vantly-ugc?secret=MY_TOKEN",
 )
 ```
 
@@ -218,7 +218,7 @@ job = client.submit_video(
 {
   "job_id": "550e8400-e29b-41d4-a716-446655440000",
   "status": "completed",
-  "video_url": "https://media.agent-media.ai/videos/550e8400.mp4"
+  "video_url": "https://media.vantly-ugc.com/videos/550e8400.mp4"
 }
 ```
 
@@ -260,16 +260,16 @@ for v in videos:
 
 | Package | Registry | Description |
 |---|---|---|
-| [`@agentmedia/sdk`](https://www.npmjs.com/package/@agentmedia/sdk) | npm | TypeScript SDK |
-| [`@agentmedia/mcp-server`](https://www.npmjs.com/package/@agentmedia/mcp-server) | npm | MCP server for Claude Code, Cursor, Windsurf |
-| [`agent-media-cli`](https://www.npmjs.com/package/agent-media-cli) | npm | CLI tool |
-| [`@agentmedia/schema`](https://www.npmjs.com/package/@agentmedia/schema) | npm | Shared schema, types, Zod validation |
+| [`@vantly-ugc/sdk`](https://www.npmjs.com/package/@vantly-ugc/sdk) | npm | TypeScript SDK |
+| [`@vantly-ugc/mcp-server`](https://www.npmjs.com/package/@vantly-ugc/mcp-server) | npm | MCP server for Claude Code, Cursor, Windsurf |
+| [`vantly-ugc-cli`](https://www.npmjs.com/package/vantly-ugc-cli) | npm | CLI tool |
+| [`@vantly-ugc/schema`](https://www.npmjs.com/package/@vantly-ugc/schema) | npm | Shared schema, types, Zod validation |
 
 ## Links
 
-- [Interactive API Docs](https://agent-media.ai/docs/api-reference)
-- [OpenAPI Spec](https://agent-media.ai/openapi.json)
-- [Website](https://agent-media.ai)
+- [Interactive API Docs](https://vantly-ugc.com/docs/api-reference)
+- [OpenAPI Spec](https://vantly-ugc.com/openapi.json)
+- [Website](https://vantly-ugc.com)
 - [GitHub](https://github.com/gitroomhq/agent-media-app)
 
 ## License

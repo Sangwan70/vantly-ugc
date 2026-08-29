@@ -1,10 +1,10 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media subtitle` — burn styled subtitles onto a video.
+ * `vantly-ugc subtitle` — burn styled subtitles onto a video.
  *
- *   agent-media subtitle --video https://… --style hormozi
- *   agent-media subtitle --video https://… --transcript "exact words" --style neon
+ *   vantly-ugc subtitle --video https://… --style hormozi
+ *   vantly-ugc subtitle --video https://… --transcript "exact words" --style neon
  *
  * Pricing comes from V2_GENERATORS.subtitle.pricing — single source.
  */
@@ -15,8 +15,8 @@ import { readFileSync } from 'node:fs';
 import {
   V2_GENERATORS,
   V2_SUBTITLE_STYLES,
-} from '@agentmedia/schema/v2';
-import { AgentMediaAPI } from '../../lib/api.js';
+} from '@vantly-ugc/schema/v2';
+import { VantlyUgcAPI } from '../../lib/api.js';
 import { getApiKey, resolveProfileName } from '../../lib/credentials.js';
 import { CLIError, handleError } from '../../lib/errors.js';
 import { detectOutputMode, printJson, printQuiet } from '../../lib/output.js';
@@ -59,11 +59,11 @@ export function registerSubtitleCommand(program: Command): void {
         const profile = resolveProfileName(globals.profile);
         const apiKey = getApiKey(profile);
         if (!apiKey) {
-          throw new CLIError('Not authenticated. Run `agent-media login` first.', {
+          throw new CLIError('Not authenticated. Run `vantly-ugc login` first.', {
             code: 'UNAUTHENTICATED',
           });
         }
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
 
         const videoUrl = String(opts.video);
         const style = String(opts.style ?? 'hormozi');

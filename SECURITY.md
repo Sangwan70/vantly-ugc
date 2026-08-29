@@ -16,7 +16,7 @@ window to ship a fix before any public disclosure.
 ## Scope
 
 - The code in this repository (API, workers, CLI, SDKs, MCP server, web app)
-- The hosted service at `api.agent-media.ai` — **read-only testing only**;
+- The hosted service at `api.vantly-ugc.com` — **read-only testing only**;
   never run tests that spend credits, access other users' data, or degrade
   service for others.
 

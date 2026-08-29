@@ -1,10 +1,10 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media update` command.
+ * `vantly-ugc update` command.
  *
  * Checks the npm registry for the latest published version of the
- * agent-media package, compares it against the locally installed version,
+ * vantly-ugc package, compares it against the locally installed version,
  * installs the update, and refreshes the Claude Code skill docs.
  *
  * Flags:
@@ -28,7 +28,7 @@ const pkg = require('../../package.json') as { name: string; version: string };
 const REGISTRY_URL = `https://registry.npmjs.org/${pkg.name}/latest`;
 
 /** Canonical Claude Code skill repo installed by the public docs. */
-const SKILL_REPO = 'gitroomhq/agent-media';
+const SKILL_REPO = 'gitroomhq/vantly-ugc';
 
 /** Timeout for the registry fetch (5 seconds). */
 const FETCH_TIMEOUT_MS = 5_000;
@@ -109,7 +109,7 @@ async function fetchLatestVersion(): Promise<string> {
     if (!data.version) {
       throw new CLIError('Unexpected response from npm registry.', {
         code: 'REGISTRY_PARSE_ERROR',
-        suggestion: 'Try again later or check https://www.npmjs.com/package/agent-media-cli manually.',
+        suggestion: 'Try again later or check https://www.npmjs.com/package/vantly-ugc-cli manually.',
       });
     }
 
@@ -138,10 +138,10 @@ async function fetchLatestVersion(): Promise<string> {
  *
  * Default to npm because the public install path is `npm install -g`.
  * Users who intentionally manage globals with pnpm/yarn can override with
- * AGENT_MEDIA_UPDATE_PM=pnpm or AGENT_MEDIA_UPDATE_PM=yarn.
+ * VANTLY_UGC_UPDATE_PM=pnpm or VANTLY_UGC_UPDATE_PM=yarn.
  */
 function detectPackageManager(): PackageManager {
-  const override = process.env['AGENT_MEDIA_UPDATE_PM'];
+  const override = process.env['VANTLY_UGC_UPDATE_PM'];
   if (override === 'npm' || override === 'pnpm' || override === 'yarn') {
     return override;
   }
@@ -191,7 +191,7 @@ export function registerUpdateCommand(program: Command): void {
       if (cliOnly && skillsOnly) {
         handleError(new CLIError('Choose either --cli-only or --skills-only, not both.', {
           code: 'UPDATE_INVALID_FLAGS',
-          suggestion: 'Run either agent-media update --cli-only or agent-media update --skills-only.',
+          suggestion: 'Run either vantly-ugc update --cli-only or vantly-ugc update --skills-only.',
         }));
       }
 
@@ -245,7 +245,7 @@ export function registerUpdateCommand(program: Command): void {
                 cliState.updated = true;
                 if (mode === 'human') {
                   installSpinner.succeed(
-                    `Updated agent-media CLI from v${currentVersion} to v${latestVersion}`,
+                    `Updated vantly-ugc CLI from v${currentVersion} to v${latestVersion}`,
                   );
                 }
               } catch (installError: unknown) {

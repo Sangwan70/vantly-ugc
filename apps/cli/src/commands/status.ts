@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media status <job-id>` command.
+ * `vantly-ugc status <job-id>` command.
  *
  * Fetches and displays the current state of a generation job.
  * Supports --watch mode for live polling, plus JSON and quiet output modes.
@@ -16,7 +16,7 @@ import {
   createSpinner,
 } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
-import { AgentMediaAPI, type GenerationJob } from '../lib/api.js';
+import { VantlyUgcAPI, type GenerationJob } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
 
 /** Status labels with color coding. */
@@ -101,7 +101,7 @@ function printJobCard(job: GenerationJob): void {
     console.log(`    ${chalk.bold('Output:')}     ${chalk.underline(job.output_media_url)}`);
     console.log();
     console.log(
-      chalk.dim(`    Download with: agent-media download ${job.id}`),
+      chalk.dim(`    Download with: vantly-ugc download ${job.id}`),
     );
   }
 
@@ -139,12 +139,12 @@ export function registerStatusCommand(program: Command): void {
       if (!apiKey) {
         throw new CLIError('Not logged in.', {
           code: 'NOT_AUTHENTICATED',
-          suggestion: "Run 'agent-media login' to authenticate.",
+          suggestion: "Run 'vantly-ugc login' to authenticate.",
         });
       }
 
       try {
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
 
         if (cmdOpts.watch && mode === 'human') {
           // ── Watch mode: poll every 3s, update in-place ─────────────

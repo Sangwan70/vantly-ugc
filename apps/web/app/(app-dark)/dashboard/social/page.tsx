@@ -1,15 +1,21 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
 /**
  * /dashboard/social — connect TikTok / Instagram / X and publish generated
- * videos to them (via Postiz Enterprise, server-side).
+ * videos to them (via Vantly, server-side). Connecting a channel finishes on
+ * vantly.social in a new tab (Vantly's connect flow doesn't support a custom
+ * redirect back into vantly-ugc-app), so this page also offers a manual
+ * "Refresh channels" action for after the user returns. Requires the user to
+ * have already connected an account on /integrations/vantly (OAuth or a
+ * pasted API key) — see vantly_not_connected handling below.
  */
 
 import { useEffect, useState, useCallback } from 'react';
-import { Loader2, Plus, Trash2, Send, Check } from 'lucide-react';
-import { NetworkLogo, PoweredByPostiz } from '@/components/brand-icons';
+import Link from 'next/link';
+import { Loader2, Plus, Trash2, Send, Check, RefreshCw, Link2 } from 'lucide-react';
+import { NetworkLogo, PoweredByVantly } from '@/components/brand-icons';
 
 interface Provider { name: string; identifier: string; toolTip?: string }
 interface Channel { id: string; name: string; provider: string; profile?: string | null }
@@ -25,7 +31,9 @@ export default function SocialPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [channels, setChannels] = useState<Channel[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notConnected, setNotConnected] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   // publish form
   const [videoUrl, setVideoUrl] = useState('');
@@ -37,10 +45,19 @@ export default function SocialPage() {
     try {
       const r = await fetch('/api/v1/social/channels', { credentials: 'include' });
       const j = await r.json();
-      if (!r.ok) { setError(j?.detail || j?.error || `channels ${r.status}`); setChannels([]); return; }
+      if (!r.ok) {
+        if (j?.error === 'vantly_not_connected') { setNotConnected(true); setChannels([]); return; }
+        setError(j?.detail || j?.error || `channels ${r.status}`); setChannels([]); return;
+      }
+      setNotConnected(false);
       setChannels(j.channels ?? []);
     } catch (e) { setError((e as Error).message); setChannels([]); }
   }, []);
+
+  async function refreshChannels() {
+    setRefreshing(true); setError(null);
+    try { await loadChannels(); } finally { setRefreshing(false); }
+  }
 
   useEffect(() => {
     (async () => {
@@ -62,7 +79,10 @@ export default function SocialPage() {
         body: JSON.stringify({ provider }),
       });
       const j = await r.json();
-      if (!r.ok || !j.url) throw new Error(j?.detail || j?.error || `connect ${r.status}`);
+      if (!r.ok || !j.url) {
+        if (j?.error === 'vantly_not_connected') { setNotConnected(true); return; }
+        throw new Error(j?.detail || j?.error || `connect ${r.status}`);
+      }
       window.open(j.url, '_blank', 'noopener,noreferrer');
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(null); }
@@ -91,7 +111,7 @@ export default function SocialPage() {
       const j = await r.json();
       if (!r.ok) throw new Error(j?.detail || j?.error || `publish ${r.status}`);
       const n = Array.isArray(j?.post_ids) ? j.post_ids.length : 0;
-      if (n === 0) throw new Error('Postiz accepted the request but created no post — nothing was published.');
+      if (n === 0) throw new Error('Vantly accepted the request but created no post — nothing was published.');
       setPublishMsg(`Published to ${n} channel${n === 1 ? '' : 's'}! 🎉`);
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(null); }
@@ -104,12 +124,31 @@ export default function SocialPage() {
       <p className="mt-1 max-w-2xl text-sm" style={{ color: 'rgba(255,255,255,0.55)' }}>
         Connect TikTok, Instagram, and X, then publish any generated video straight to them.
       </p>
-      <div className="mt-2"><PoweredByPostiz /></div>
+      <div className="mt-2"><PoweredByVantly /></div>
+
+      {notConnected ? (
+        <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm" style={{ border: '1px solid rgba(167,139,250,0.35)', background: 'rgba(167,139,250,0.08)', color: '#E9E9F0' }}>
+          <span>Connect a Vantly account before adding channels here.</span>
+          <Link href="/integrations/vantly" className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold" style={{ background: '#A78BFA', color: '#0F1015' }}>
+            <Link2 className="h-3.5 w-3.5" /> Connect Vantly
+          </Link>
+        </div>
+      ) : null}
 
       {error ? <div className="mt-4 rounded-2xl px-4 py-3 text-sm" style={{ border: '1px solid rgba(255,79,79,0.3)', background: 'rgba(255,79,79,0.08)', color: '#FCA5A5' }}>{error}</div> : null}
 
       {/* Connect */}
-      <h2 className="mt-8 text-sm font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.55)' }}>Connect a channel</h2>
+      <div className="mt-8 flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.55)' }}>Connect a channel</h2>
+        <button type="button" onClick={refreshChannels} disabled={refreshing}
+          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium disabled:opacity-60"
+          style={{ background: '#14151F', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)' }}>
+          <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} /> Refresh channels
+        </button>
+      </div>
+      <p className="mt-1 text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>
+        Connecting opens vantly.social in a new tab to finish authorizing — once you&rsquo;re done there, come back here and hit &ldquo;Refresh channels&rdquo;.
+      </p>
       <div className="mt-3 flex flex-wrap gap-3">
         {providers.length === 0 ? <span className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>Loading…</span> :
           providers.map((p) => {

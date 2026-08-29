@@ -89,10 +89,10 @@
  * not invent fallbacks — if a value is missing, ask before guessing.
  * No border token: Cryptix has zero rendered borders site-wide; surfaces
  * separate via mint glow + surface-2 elevation only. */
-/* Retargeted to the agent-media.ai palette (2026-08). The token NAMES are
+/* Retargeted to the vantly-ugc.com palette (2026-08). The token NAMES are
  * kept — they are referenced by ~every component — but every value now comes
  * from the marketing site's design system, so the app and the site are one
- * brand instead of two. Reference: agent-media-website/src/app/globals.css.
+ * brand instead of two. Reference: vantly-ugc-website/src/app/globals.css.
  *
  *   background   #000000   (site body)
  *   card         #0D0E12   (site card fill)
@@ -287,7 +287,7 @@ body {
 }
 
 /* ── Marketing card border, ported verbatim from the site ──────────────────
- * agent-media-website/src/app/globals.css. The masked-border trick is what
+ * vantly-ugc-website/src/app/globals.css. The masked-border trick is what
  * makes a card read as the site's rather than as a plain 1px rule: a
  * transparent border filled by a gradient background, with the content box
  * masked out so only the border shows.

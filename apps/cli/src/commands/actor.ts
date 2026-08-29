@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media actor` command group.
+ * `vantly-ugc actor` command group.
  *
  * Browse and preview actors from the actor library.
  *
@@ -18,7 +18,7 @@ import {
   printQuiet,
   createSpinner,
 } from '../lib/output.js';
-import { AgentMediaAPI } from '../lib/api.js';
+import { VantlyUgcAPI } from '../lib/api.js';
 
 interface ActorRecord {
   id: string;
@@ -58,7 +58,7 @@ export function registerActorCommand(program: Command): void {
       const mode = detectOutputMode(globalOpts);
 
       try {
-        const api = new AgentMediaAPI(); // no auth needed for public endpoint
+        const api = new VantlyUgcAPI(); // no auth needed for public endpoint
         const spinner = createSpinner('Fetching actors...');
         if (mode === 'human') spinner.start();
 
@@ -111,7 +111,7 @@ export function registerActorCommand(program: Command): void {
         }
 
         console.log('');
-        console.log(chalk.dim(`  Use: agent-media ugc "script..." --actor <slug> --sync`));
+        console.log(chalk.dim(`  Use: vantly-ugc ugc "script..." --actor <slug> --sync`));
       } catch (err) {
         if (mode === 'human') {
           console.error(chalk.red(`Error: ${(err as Error).message}`));
@@ -133,7 +133,7 @@ export function registerActorCommand(program: Command): void {
       const mode = detectOutputMode(globalOpts);
 
       try {
-        const api = new AgentMediaAPI();
+        const api = new VantlyUgcAPI();
         const spinner = createSpinner(`Fetching actor ${slug}...`);
         if (mode === 'human') spinner.start();
 
@@ -163,8 +163,8 @@ export function registerActorCommand(program: Command): void {
         console.log(`  ${chalk.gray('Lip Sync:')} ${a.lip_sync_engine}`);
         console.log(`  ${chalk.gray('Portrait:')} ${a.portrait_url}`);
         console.log('');
-        console.log(chalk.dim(`  Usage: agent-media ugc "your script..." --actor ${a.slug} --sync`));
-        console.log(chalk.dim(`  Variants: agent-media actor variants ${a.slug}`));
+        console.log(chalk.dim(`  Usage: vantly-ugc ugc "your script..." --actor ${a.slug} --sync`));
+        console.log(chalk.dim(`  Variants: vantly-ugc actor variants ${a.slug}`));
       } catch (err) {
         if (mode === 'human') {
           console.error(chalk.red(`Error: ${(err as Error).message}`));
@@ -186,7 +186,7 @@ export function registerActorCommand(program: Command): void {
       const mode = detectOutputMode(globalOpts);
 
       try {
-        const api = new AgentMediaAPI();
+        const api = new VantlyUgcAPI();
         const spinner = createSpinner(`Fetching variants for ${slug}...`);
         if (mode === 'human') spinner.start();
 
@@ -234,7 +234,7 @@ export function registerActorCommand(program: Command): void {
 
         console.log('');
         console.log(chalk.dim(`  To use a specific variant, pass --face-url with the variant image URL.`));
-        console.log(chalk.dim(`  Example: agent-media ugc "script..." --face-url <variant-url> --sync`));
+        console.log(chalk.dim(`  Example: vantly-ugc ugc "script..." --face-url <variant-url> --sync`));
       } catch (err) {
         if (mode === 'human') {
           console.error(chalk.red(`Error: ${(err as Error).message}`));

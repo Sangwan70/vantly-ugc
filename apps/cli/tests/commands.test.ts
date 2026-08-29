@@ -1,10 +1,10 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * CLI integration tests using node:test.
  *
  * Tests cover command parsing, output formatting, and error handling
- * for the agent-media CLI. Commands that require API calls are tested
+ * for the vantly-ugc CLI. Commands that require API calls are tested
  * with mocked fetch responses.
  *
  * Run with: node --test --loader ts-node/esm apps/cli/tests/commands.test.ts
@@ -30,7 +30,7 @@ const EXEC_OPTS: ExecSyncOptionsWithStringEncoding = {
   env: {
     ...process.env,
     // Prevent credential lookups during testing
-    AGENT_MEDIA_CONFIG_DIR: '/tmp/agent-media-test-config',
+    VANTLY_UGC_CONFIG_DIR: '/tmp/vantly-ugc-test-config',
     // Suppress colors for predictable output matching
     NO_COLOR: '1',
     FORCE_COLOR: '0',
@@ -68,10 +68,10 @@ function runExpectFail(args: string): { stdout: string; stderr: string } {
 // version command
 // =============================================================================
 
-describe('agent-media version', () => {
+describe('vantly-ugc version', () => {
   it('prints version string in human mode', () => {
     const output = run('version');
-    assert.match(output, /agent-media v\d+\.\d+\.\d+/);
+    assert.match(output, /vantly-ugc v\d+\.\d+\.\d+/);
   });
 
   it('prints version in JSON mode', () => {
@@ -91,11 +91,11 @@ describe('agent-media version', () => {
 // help command
 // =============================================================================
 
-describe('agent-media --help', () => {
+describe('vantly-ugc --help', () => {
   it('shows help with usage and commands', () => {
     const output = run('--help');
     assert.ok(output.includes('Usage:'));
-    assert.ok(output.includes('agent-media'));
+    assert.ok(output.includes('vantly-ugc'));
     assert.ok(output.includes('Commands:'));
   });
 
@@ -117,7 +117,7 @@ describe('agent-media --help', () => {
 // saas-review command
 // =============================================================================
 
-describe('agent-media saas-review', () => {
+describe('vantly-ugc saas-review', () => {
   it('remains callable as a hidden deprecated command', () => {
     const topLevelHelp = run('--help');
     assert.ok(!topLevelHelp.includes('saas-review'), 'top-level help hides legacy saas-review command');
@@ -142,7 +142,7 @@ describe('agent-media saas-review', () => {
 // credits command (auth required)
 // =============================================================================
 
-describe('agent-media credits', () => {
+describe('vantly-ugc credits', () => {
   it('credits command shows help with subcommands', () => {
     const output = run('credits --help');
     assert.ok(output.includes('Show credit balance'));
@@ -169,14 +169,14 @@ describe('agent-media credits', () => {
 // config command
 // =============================================================================
 
-describe('agent-media config', () => {
-  const tmpDir = `/tmp/agent-media-test-config-${Date.now()}`;
+describe('vantly-ugc config', () => {
+  const tmpDir = `/tmp/vantly-ugc-test-config-${Date.now()}`;
 
   const configExecOpts: ExecSyncOptionsWithStringEncoding = {
     ...EXEC_OPTS,
     env: {
       ...EXEC_OPTS.env,
-      AGENT_MEDIA_CONFIG_DIR: tmpDir,
+      VANTLY_UGC_CONFIG_DIR: tmpDir,
     },
   };
 
@@ -216,22 +216,22 @@ describe('agent-media config', () => {
 // completions command
 // =============================================================================
 
-describe('agent-media completions', () => {
+describe('vantly-ugc completions', () => {
   it('generates bash completions', () => {
     const output = run('completions bash');
-    assert.ok(output.includes('_agent_media_completions'));
+    assert.ok(output.includes('_vantly_ugc_completions'));
     assert.ok(output.includes('complete -F'));
   });
 
   it('generates zsh completions', () => {
     const output = run('completions zsh');
-    assert.ok(output.includes('#compdef agent-media'));
-    assert.ok(output.includes('_agent-media'));
+    assert.ok(output.includes('#compdef vantly-ugc'));
+    assert.ok(output.includes('_vantly-ugc'));
   });
 
   it('generates fish completions', () => {
     const output = run('completions fish');
-    assert.ok(output.includes('complete -c agent-media'));
+    assert.ok(output.includes('complete -c vantly-ugc'));
     assert.ok(output.includes('__fish_use_subcommand'));
   });
 
@@ -248,7 +248,7 @@ describe('agent-media completions', () => {
 // update command
 // =============================================================================
 
-describe('agent-media update', () => {
+describe('vantly-ugc update', () => {
   it('update command is registered and shows in help', () => {
     const output = run('update --help');
     assert.ok(output.includes('Update the CLI and Claude Code skill docs'));
@@ -260,7 +260,7 @@ describe('agent-media update', () => {
 // doctor command
 // =============================================================================
 
-describe('agent-media doctor', () => {
+describe('vantly-ugc doctor', () => {
   it('doctor command is registered and shows in help', () => {
     const output = run('doctor --help');
     assert.ok(output.includes('Run diagnostic checks'));
@@ -319,7 +319,7 @@ describe('command registration', () => {
 // character-video command (Content Machine pipeline)
 // =============================================================================
 
-describe('agent-media character-video', () => {
+describe('vantly-ugc character-video', () => {
   it('shows usage in --help', () => {
     const output = run('character-video --help');
     assert.ok(output.includes('character sheet'), 'help should mention character sheet step');

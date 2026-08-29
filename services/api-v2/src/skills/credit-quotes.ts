@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Quote how many credits a skill run will cost, given its input. The
@@ -13,7 +13,7 @@
 import { decideMakeUgcRoute, type MakeUgcProps } from './make-ugc-router.js';
 // Shared take planner — the SAME module the worker plans with, so quote and run
 // cannot disagree. See packages/schema/src/take-planner.ts.
-import { countWords, fitDuration, planTakeDurations } from '@agentmedia/schema';
+import { countWords, fitDuration, planTakeDurations } from '@vantly-ugc/schema';
 
 // Portraits are free; a character sheet is charged only standalone (a sheet
 // generated inside make_ugc_video is free — see the make_ugc_video case).
@@ -39,7 +39,7 @@ function selfieFor(duration: unknown): number {
 // The worker sizes each take to its own word count and chunks long scripts, so
 // the quote has to plan the same takes — otherwise preflight under-charges and a
 // run can fail mid-way on INSUFFICIENT_CREDITS.
-// Take planning lives in @agentmedia/schema so the quote and the worker cannot
+// Take planning lives in @vantly-ugc/schema so the quote and the worker cannot
 // drift. This file previously held a private copy whose constants differed from
 // the worker's (packed at 28 words and hard-split at 22, vs the worker's 33/33),
 // so a 34-word script quoted 560 while the worker rendered 420 — a false 402 for

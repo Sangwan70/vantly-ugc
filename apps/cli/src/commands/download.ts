@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media download <job-id>` command.
+ * `vantly-ugc download <job-id>` command.
  *
  * Downloads the output media file from a completed generation job.
  * Flow:
@@ -22,7 +22,7 @@ import {
   createSpinner,
 } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
-import { AgentMediaAPI } from '../lib/api.js';
+import { VantlyUgcAPI } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
 
 /** Map content-type to file extension. */
@@ -88,12 +88,12 @@ export function registerDownloadCommand(program: Command): void {
       if (!apiKey) {
         throw new CLIError('Not logged in.', {
           code: 'NOT_AUTHENTICATED',
-          suggestion: "Run 'agent-media login' to authenticate.",
+          suggestion: "Run 'vantly-ugc login' to authenticate.",
         });
       }
 
       try {
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
 
         // ── Step 1: Fetch the job ────────────────────────────────────
         const fetchSpinner = createSpinner('Fetching job...');
@@ -125,7 +125,7 @@ export function registerDownloadCommand(program: Command): void {
           );
           console.log();
           console.log(
-            chalk.dim(`  Run 'agent-media status ${jobId} --watch' to track progress.`),
+            chalk.dim(`  Run 'vantly-ugc status ${jobId} --watch' to track progress.`),
           );
           console.log();
           process.exit(1);

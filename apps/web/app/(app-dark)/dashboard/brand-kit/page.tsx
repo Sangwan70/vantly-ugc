@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -360,7 +360,7 @@ function UrlForm({
     const raw = url.trim();
     if (!raw || submitting) return;
     // Accept bare domains - prepend https:// when no scheme is present
-    // so the user can paste "agent-media.ai" and have it work.
+    // so the user can paste "vantly-ugc.com" and have it work.
     const normalized = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
     setSubmitting(true);
     setOuterError(null);

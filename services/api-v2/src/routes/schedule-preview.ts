@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * POST /v1/schedules/preview-brief
@@ -25,8 +25,8 @@
  */
 
 import type { Request, Response } from 'express';
+import { callAnthropicMessages, hasProviderCredential, missingCredentialEnvVar } from '../lib/anthropic-client.js';
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 // Brief generation is user-visible and quality-sensitive — Opus 4.7 only.
 // Haiku output was too generic/templated; user explicitly rejected it.
@@ -160,28 +160,19 @@ interface PreviewSuccess {
 }
 
 async function callClaude(brief: string, recentTopics: string[], assetType: string | null): Promise<PreviewSuccess> {
-  if (!ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not configured');
+  if (!hasProviderCredential()) throw new Error(`${missingCredentialEnvVar()} not configured`);
 
   const assetLine = assetType ? `Reference asset attached: ${assetType}\n\n` : '';
   const userMsg = recentTopics.length > 0
     ? `${assetLine}Series brief:\n${brief}\n\nRecently posted topics (do not repeat):\n${recentTopics.map((t) => `- ${t}`).join('\n')}\n\nWrite today's script.`
     : `${assetLine}Series brief:\n${brief}\n\nThis is the first run. Write today's script.`;
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: SCRIPT_MODEL,
-      max_tokens: 600,
-      system: buildSystemPrompt(assetType),
-      messages: [{ role: 'user', content: userMsg }],
-    }),
-    signal: AbortSignal.timeout(30_000),
-  });
+  const resp = await callAnthropicMessages({
+    model: SCRIPT_MODEL,
+    max_tokens: 600,
+    system: buildSystemPrompt(assetType),
+    messages: [{ role: 'user', content: userMsg }],
+  }, { signal: AbortSignal.timeout(30_000) });
   if (!resp.ok) {
     const body = await resp.text().catch(() => '');
     throw new Error(`Anthropic ${resp.status}: ${body.slice(0, 200)}`);

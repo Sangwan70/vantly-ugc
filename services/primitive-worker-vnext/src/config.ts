@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Env-driven config for primitive-worker-vnext.
@@ -74,6 +74,14 @@ function readNumber(name: string, fallback: number): number {
 
 export function getConfig(): WorkerConfig {
   const simulate = (process.env.SIMULATE_OPENAI ?? 'false').toLowerCase().trim() === 'true';
+  // MODEL_PROVIDER selects which credential/endpoint client/anthropic.ts talks
+  // to for every Claude call this worker makes (portrait/sheet/wireframe/
+  // simple-selfie/product-in-hands prompt building):
+  //   'anthropic' (default): ANTHROPIC_API_KEY, api.anthropic.com directly.
+  //   'openrouter': OPENROUTER_API_KEY, routed through OpenRouter's
+  //     Anthropic-Messages-compatible endpoint instead. See client/anthropic.ts.
+  const modelProvider = (process.env.MODEL_PROVIDER ?? 'anthropic').toLowerCase().trim();
+  const anthropicKeyVar = modelProvider === 'openrouter' ? 'OPENROUTER_API_KEY' : 'ANTHROPIC_API_KEY';
   return {
     temporal: {
       address: required('TEMPORAL_ADDRESS'),
@@ -84,7 +92,7 @@ export function getConfig(): WorkerConfig {
       taskQueue: optional('TEMPORAL_PRIMITIVE_TASK_QUEUE') ?? 'primitive-vnext-v1',
     },
     anthropic: {
-      apiKey: simulate ? (optional('ANTHROPIC_API_KEY') ?? 'simulate') : required('ANTHROPIC_API_KEY'),
+      apiKey: simulate ? (optional(anthropicKeyVar) ?? 'simulate') : required(anthropicKeyVar),
       model: optional('ANTHROPIC_PORTRAIT_PROMPT_MODEL') ?? 'claude-haiku-4-5',
     },
     openai: {
@@ -111,7 +119,7 @@ export function getConfig(): WorkerConfig {
         : required('R2_ACCOUNT_ID'),
       accessKeyId: required('R2_ACCESS_KEY_ID'),
       secretAccessKey: required('R2_SECRET_ACCESS_KEY'),
-      bucket: optional('R2_BUCKET') ?? 'agent-media-outputs',
+      bucket: optional('R2_BUCKET') ?? 'vantly-ugc',
       publicUrl: optional('R2_PUBLIC_URL') ?? 'https://pub-16e2ed8f6be84691845e91436920ce0a.r2.dev',
     },
     supabase: {

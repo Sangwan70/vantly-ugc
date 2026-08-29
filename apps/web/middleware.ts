@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Next.js middleware for auth route protection, subscription wall,
@@ -19,25 +19,26 @@ import {
   checkSubscription,
   checkOnboarded,
 } from '@/lib/supabase/middleware';
+import { isExemptedEmail } from '@/lib/exempted-emails';
 
 /** Routes that require NO authentication. */
 const PUBLIC_ROUTES = new Set(['/', '/login', '/device', '/terms', '/privacy', '/docs', '/status', '/showcase']);
 
 /**
- * Hostname routing: the marketing site lives on the apex (agent-media.ai)
- * and the product surface lives on app.agent-media.ai. Both domains are
+ * Hostname routing: the marketing site lives on the apex (vantly-ugc.com)
+ * and the product surface lives on app.vantly-ugc.com. Both domains are
  * served by the same Vercel project for now; middleware enforces which
  * paths render on which host.
  *
  * APP_PREFIXES is the set of routes that ONLY make sense on the app
  * subdomain. A request for one of these on the apex is permanently
- * redirected to the same path on app.agent-media.ai.
+ * redirected to the same path on app.vantly-ugc.com.
  *
  * The check is skipped on localhost / preview deployments so dev keeps
  * working without DNS.
  */
-const APP_HOST = 'app.agent-media.ai';
-const MARKETING_HOSTS = new Set(['agent-media.ai', 'www.agent-media.ai']);
+const APP_HOST = 'app.vantly-ugc.com';
+const MARKETING_HOSTS = new Set(['vantly-ugc.com', 'www.vantly-ugc.com']);
 const APP_PREFIXES = [
   '/login',
   '/onboarding',
@@ -93,15 +94,37 @@ const ENFORCE_SUBSCRIPTION_WALL = true;
 const ENFORCE_ONBOARDING = process.env.ENFORCE_ONBOARDING !== 'false';
 const SUBSCRIPTION_REDIRECT = process.env.SUBSCRIPTION_REDIRECT ?? '/onboarding/plan';
 
+/**
+ * The origin the BROWSER calls for Supabase (auth/rest/storage), needed so
+ * the CSP `connect-src` below can allow it.
+ *
+ * Deliberately NOT read as `NEXT_PUBLIC_SUPABASE_URL` here: Next.js inlines
+ * every `process.env.NEXT_PUBLIC_*` reference at build time, anywhere it
+ * appears (this file included), which would bake a build-time value into the
+ * image forever - see lib/supabase/client.ts for the same trap. A self-hosted
+ * deployment (this codebase's default) needs this resolved at CONTAINER
+ * START, so it's carried in a plain, non-`NEXT_PUBLIC_`-prefixed var instead
+ * (`SUPABASE_PUBLIC_URL`, set alongside `NEXT_PUBLIC_SUPABASE_URL` to the same
+ * value in docker-compose.yml). Falls back to the hosted-Supabase wildcard
+ * domains below for Vercel/hosted-Supabase deployments that never set it.
+ */
+const SUPABASE_PUBLIC_URL = process.env.SUPABASE_PUBLIC_URL ?? '';
+
 /** Security headers applied to every response. */
 const SECURITY_HEADERS: Record<string, string> = {
   'Content-Security-Policy': [
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://plausible.io https://www.dubcdn.com",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob: *.supabase.co *.fal.media fal.media *.r2.dev *.postiz.com uploads.postiz.com platform.postiz.com *.licdn.com *.pbs.twimg.com *.cdninstagram.com *.fbcdn.net *.googleusercontent.com *.ytimg.com *.tiktokcdn.com *.tiktokcdn-us.com *.bsky.social",
+    "img-src 'self' data: blob: *.supabase.co *.fal.media fal.media *.r2.dev vantly.social *.vantly.social *.licdn.com *.pbs.twimg.com *.cdninstagram.com *.fbcdn.net *.googleusercontent.com *.ytimg.com *.tiktokcdn.com *.tiktokcdn-us.com *.bsky.social",
     "media-src 'self' blob: *.supabase.co *.fal.media fal.media *.r2.dev",
-    "connect-src 'self' *.supabase.co *.supabase.in wss://*.supabase.co https://api.stripe.com https://plausible.io https://api.dub.co",
+    [
+      "connect-src 'self' *.supabase.co *.supabase.in wss://*.supabase.co https://api.stripe.com https://plausible.io https://api.dub.co",
+      SUPABASE_PUBLIC_URL,
+      SUPABASE_PUBLIC_URL.replace(/^http/, 'ws'),
+    ]
+      .filter(Boolean)
+      .join(' '),
     "frame-src 'self' https://js.stripe.com https://hooks.stripe.com",
     "frame-ancestors 'none'",
   ].join('; '),
@@ -292,8 +315,12 @@ export async function middleware(request: NextRequest) {
   // Subscription wall. Logged-in, onboarded user without an active
   // sub trying to use a paid surface gets sent to /onboarding/plan
   // (the in-flow plan picker), which is exempt from this gate.
+  // EXEMPTED_EMAILS (lib/exempted-emails.ts) bypasses this entirely -
+  // internal employees/admins configured there are treated as if
+  // subscribed, without touching the subscriptions table.
   if (ENFORCE_SUBSCRIPTION_WALL && requiresSubscription && user && supabase) {
-    const hasSubscription = await checkSubscription(supabase, user.id);
+    const hasSubscription =
+      isExemptedEmail(user.email) || (await checkSubscription(supabase, user.id));
     if (!hasSubscription) {
       const planUrl = new URL(SUBSCRIPTION_REDIRECT, request.url);
       const redirectResponse = NextResponse.redirect(planUrl);
@@ -301,9 +328,9 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // If user is already subscribed and lands on either the in-flow
-  // plan picker or the old standalone /subscribe page, send them on
-  // to the app. /onboarding is intentionally NOT in this branch -
+  // If user is already subscribed (or exempted) and lands on either the
+  // in-flow plan picker or the old standalone /subscribe page, send them
+  // on to the app. /onboarding is intentionally NOT in this branch -
   // users can revisit other onboarding steps if they want.
   if (
     ENFORCE_SUBSCRIPTION_WALL &&
@@ -311,7 +338,8 @@ export async function middleware(request: NextRequest) {
     user &&
     supabase
   ) {
-    const hasSubscription = await checkSubscription(supabase, user.id);
+    const hasSubscription =
+      isExemptedEmail(user.email) || (await checkSubscription(supabase, user.id));
     if (hasSubscription) {
       const dashboardUrl = new URL('/dashboard', request.url);
       const redirectResponse = NextResponse.redirect(dashboardUrl);

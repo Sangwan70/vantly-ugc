@@ -13,10 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
-      AGENT_MEDIA_E2E_LIVE: "1"
-      AGENT_MEDIA_E2E_CONFIRM_COST: "1"
-      AGENT_MEDIA_API_KEY: ${{ secrets.AGENT_MEDIA_E2E_API_KEY }}
-      AGENT_MEDIA_API_BASE_URL: ${{ inputs.api_base_url }}
+      VANTLY_UGC_E2E_LIVE: "1"
+      VANTLY_UGC_E2E_CONFIRM_COST: "1"
+      VANTLY_UGC_API_KEY: ${{ secrets.VANTLY_UGC_E2E_API_KEY }}
+      VANTLY_UGC_API_BASE_URL: ${{ inputs.api_base_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

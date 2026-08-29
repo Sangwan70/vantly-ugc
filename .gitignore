@@ -64,3 +64,10 @@ agent-media-vault/
 # Internal agent-automation scratch (contained a hardcoded service_role key)
 .a5c/
 .env*
+
+# Read-only reference copy of the separate Postiz fork (vantly.social).
+# Not part of this project's own source — never tracked/pushed here.
+/vantly/
+
+# pnpm's local package store — never part of source, huge, machine-specific.
+.pnpm-store/

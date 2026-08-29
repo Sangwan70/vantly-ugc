@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Skill auto-update helper.
@@ -6,18 +6,18 @@
  * What this does:
  *   - On every CLI invocation, fires a background check (throttled to
  *     once / 24h) against the public SKILL.md on github.com/gitroomhq/
- *     agent-media.
+ *     vantly-ugc.
  *   - If the remote `version:` is newer than the local copy in
- *     `~/.claude/skills/agent-media-v2/SKILL.md`, prints a one-line
- *     stderr nudge: "→ skill update available, run agent-media skill update".
- *   - If env var `AGENT_MEDIA_AUTO_UPDATE_SKILL=1` is set, writes the new
+ *     `~/.claude/skills/vantly-ugc-v2/SKILL.md`, prints a one-line
+ *     stderr nudge: "→ skill update available, run vantly-ugc skill update".
+ *   - If env var `VANTLY_UGC_AUTO_UPDATE_SKILL=1` is set, writes the new
  *     SKILL.md in place (no prompt). Off by default — we never silently
  *     mutate files in another tool's config directory.
  *
  * What this does NOT do:
  *   - Force-update without user opt-in.
  *   - Touch Claude.ai / MCP integrations (those auto-update because
- *     the MCP server lives on our backend at api.agent-media.ai/mcp —
+ *     the MCP server lives on our backend at api.vantly-ugc.com/mcp —
  *     no client cache).
  *   - Run inline / block the user's command. The check runs in the
  *     background and the CLI exits when the user's command exits,
@@ -29,18 +29,18 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import chalk from 'chalk';
 
-const SKILL_NAME = 'agent-media-v2';
+const SKILL_NAME = 'vantly-ugc-v2';
 const SKILL_DIR = join(homedir(), '.claude', 'skills', SKILL_NAME);
 const SKILL_PATH = join(SKILL_DIR, 'SKILL.md');
-const CHECK_STAMP = join(homedir(), '.agent-media', '.skill-update-check');
+const CHECK_STAMP = join(homedir(), '.vantly-ugc', '.skill-update-check');
 
 const REMOTE_BASE =
-  'https://raw.githubusercontent.com/gitroomhq/agent-media/main';
+  'https://raw.githubusercontent.com/gitroomhq/vantly-ugc/main';
 
 // Canonical version anchor. The public repo is multi-skill now; the
-// agent-media-ugc playbook is the "main" skill and carries the bundle's
+// vantly-ugc-ugc playbook is the "main" skill and carries the bundle's
 // `x-skill-version`. We compare against it (the old root /SKILL.md is gone).
-const REMOTE_URL = `${REMOTE_BASE}/skills/agent-media-ugc/SKILL.md`;
+const REMOTE_URL = `${REMOTE_BASE}/skills/vantly-ugc-ugc/SKILL.md`;
 
 // Skill tree manifest — { remote path in the public repo → local path under
 // the install dir }. The playbook is mirrored as the top-level SKILL.md so a
@@ -48,7 +48,7 @@ const REMOTE_URL = `${REMOTE_BASE}/skills/agent-media-ugc/SKILL.md`;
 // reference docs come along. Hard-coded (not fetched) so a partial network
 // failure never writes a broken half.
 const SKILL_TREE: ReadonlyArray<{ remote: string; local: string }> = [
-  { remote: 'skills/agent-media-ugc/SKILL.md', local: 'SKILL.md' },
+  { remote: 'skills/vantly-ugc-ugc/SKILL.md', local: 'SKILL.md' },
   { remote: 'skills/make-portrait/SKILL.md', local: 'skills/make-portrait/SKILL.md' },
   { remote: 'skills/make-character-sheet/SKILL.md', local: 'skills/make-character-sheet/SKILL.md' },
   { remote: 'skills/make-simple-selfie/SKILL.md', local: 'skills/make-simple-selfie/SKILL.md' },
@@ -120,7 +120,7 @@ async function fetchRemoteSkill(timeoutMs = 4_000): Promise<{ md: string; versio
 }
 
 async function shouldCheckNow(): Promise<boolean> {
-  if (process.env.AGENT_MEDIA_SKIP_SKILL_CHECK === '1') return false;
+  if (process.env.VANTLY_UGC_SKIP_SKILL_CHECK === '1') return false;
   try {
     const s = await stat(CHECK_STAMP);
     if (Date.now() - s.mtimeMs < CHECK_INTERVAL_MS) return false;
@@ -132,7 +132,7 @@ async function shouldCheckNow(): Promise<boolean> {
 
 async function writeCheckStamp(): Promise<void> {
   try {
-    await mkdir(join(homedir(), '.agent-media'), { recursive: true });
+    await mkdir(join(homedir(), '.vantly-ugc'), { recursive: true });
     await writeFile(CHECK_STAMP, String(Date.now()), 'utf8');
   } catch {
     // best-effort
@@ -141,7 +141,7 @@ async function writeCheckStamp(): Promise<void> {
 
 /**
  * Replace the local SKILL.md with the given content. Creates the
- * `~/.claude/skills/agent-media-v2/` directory if needed.
+ * `~/.claude/skills/vantly-ugc-v2/` directory if needed.
  */
 async function writeLocalSkill(md: string): Promise<void> {
   await mkdir(SKILL_DIR, { recursive: true });
@@ -150,7 +150,7 @@ async function writeLocalSkill(md: string): Promise<void> {
 
 /**
  * Pull every file in the skill tree (SKILL.md + reference/*) and write
- * to ~/.claude/skills/agent-media-v2/. Returns counts.
+ * to ~/.claude/skills/vantly-ugc-v2/. Returns counts.
  *
  * Failure-mode: if ANY file in the tree can't be fetched we abort and
  * don't write anything — partial trees are worse than a stale full
@@ -210,12 +210,12 @@ export async function maybeCheckSkillUpdate(): Promise<void> {
   if (compareVersions(remoteV, localV) <= 0) return;
 
   // Remote is newer.
-  if (process.env.AGENT_MEDIA_AUTO_UPDATE_SKILL === '1') {
+  if (process.env.VANTLY_UGC_AUTO_UPDATE_SKILL === '1') {
     try {
       await writeLocalSkill(remote.md);
       process.stderr.write(
         chalk.dim(
-          `\n→ agent-media skill auto-updated to ${remote.version} ` +
+          `\n→ vantly-ugc skill auto-updated to ${remote.version} ` +
             `(was ${local.version})\n`,
         ),
       );
@@ -227,17 +227,17 @@ export async function maybeCheckSkillUpdate(): Promise<void> {
 
   process.stderr.write(
     chalk.yellow(
-      `\n→ agent-media skill update available: ${local.version} → ${remote.version}` +
-        `\n  Run: ${chalk.bold('agent-media skill update')}` +
-        `\n  Or:  ${chalk.dim('AGENT_MEDIA_AUTO_UPDATE_SKILL=1')} to update silently next time.\n`,
+      `\n→ vantly-ugc skill update available: ${local.version} → ${remote.version}` +
+        `\n  Run: ${chalk.bold('vantly-ugc skill update')}` +
+        `\n  Or:  ${chalk.dim('VANTLY_UGC_AUTO_UPDATE_SKILL=1')} to update silently next time.\n`,
     ),
   );
 }
 
 /**
- * Subcommand handler: `agent-media skill update`.
+ * Subcommand handler: `vantly-ugc skill update`.
  * Pulls the FULL skill tree (SKILL.md + reference/*) into
- * ~/.claude/skills/agent-media-v2/. Aborts atomically if any file
+ * ~/.claude/skills/vantly-ugc-v2/. Aborts atomically if any file
  * fails — a partial tree is worse than a stale full tree.
  */
 export async function runSkillUpdate(): Promise<void> {
@@ -255,7 +255,7 @@ export async function runSkillUpdate(): Promise<void> {
   await writeCheckStamp();
   process.stderr.write(
     chalk.green(
-      `✓ agent-media skill updated to ${result.version ?? '(no version)'} ` +
+      `✓ vantly-ugc skill updated to ${result.version ?? '(no version)'} ` +
         `(was ${fromVer})\n` +
         chalk.dim(
           `  ${result.written} files · ${result.totalBytes} bytes\n  ${SKILL_DIR}\n`,
@@ -265,7 +265,7 @@ export async function runSkillUpdate(): Promise<void> {
 }
 
 /**
- * Subcommand handler: `agent-media skill status`.
+ * Subcommand handler: `vantly-ugc skill status`.
  * Prints what's installed locally vs. what's on GitHub.
  */
 export async function runSkillStatus(): Promise<void> {
@@ -273,7 +273,7 @@ export async function runSkillStatus(): Promise<void> {
   const remote = await fetchRemoteSkill(10_000);
   process.stdout.write(
     [
-      chalk.bold('agent-media skill'),
+      chalk.bold('vantly-ugc skill'),
       `  local:  ${local?.version ?? chalk.dim('(not installed)')}`,
       `  remote: ${remote?.version ?? chalk.dim('(unreachable)')}`,
       `  path:   ${SKILL_PATH}`,
@@ -286,7 +286,7 @@ export async function runSkillStatus(): Promise<void> {
     if (localV && remoteV && compareVersions(remoteV, localV) > 0) {
       process.stdout.write(
         chalk.yellow(
-          `→ update available. Run: ${chalk.bold('agent-media skill update')}\n`,
+          `→ update available. Run: ${chalk.bold('vantly-ugc skill update')}\n`,
         ),
       );
     } else {

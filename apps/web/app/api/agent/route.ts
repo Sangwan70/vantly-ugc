@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Same-origin proxy for POST /v1/agent — the in-app creative agent brain.
@@ -11,7 +11,7 @@ import { createClient } from '@/lib/supabase/server';
 
 // AGENT_API_V2_URL lets the brain point at a different api-v2 (e.g. a local one
 // with new agent features) while skills/characters/gallery keep using API_V2_URL.
-const API_V2_URL = (process.env.AGENT_API_V2_URL ?? process.env.API_V2_URL)?.replace(/\/+$/, '') ?? 'https://api.agent-media.ai';
+const API_V2_URL = (process.env.AGENT_API_V2_URL ?? process.env.API_V2_URL)?.replace(/\/+$/, '') ?? 'https://api.vantly-ugc.com';
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const supabase = await createClient();

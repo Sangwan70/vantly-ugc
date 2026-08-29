@@ -14,7 +14,7 @@
     "sourceMap": true,
     "baseUrl": ".",
     "paths": {
-      "@agent-media/*": ["packages/*/src"]
+      "@vantly-ugc/*": ["packages/*/src"]
     }
   },
   "exclude": ["node_modules", "dist"]

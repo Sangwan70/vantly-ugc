@@ -1,9 +1,9 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Brand glyphs for the social page. SVG paths are the official Simple Icons
- * marks (CC0) for X, TikTok and Instagram, plus a small "Powered by Postiz"
- * badge. Keyed by the Postiz `identifier` value.
+ * marks (CC0) for X, TikTok and Instagram, plus a small "Powered by Vantly"
+ * badge. Keyed by the Vantly `identifier` value.
  */
 
 import type { CSSProperties } from 'react';
@@ -45,7 +45,7 @@ function InstagramMark({ size = 18 }: { size?: number }) {
   );
 }
 
-/** Network glyph keyed by Postiz `identifier`. */
+/** Network glyph keyed by Vantly `identifier`. */
 export function NetworkLogo({ provider, size = 18 }: { provider: string; size?: number }) {
   if (provider === 'x') return <XMark size={size} />;
   if (provider === 'tiktok') return <TikTokMark size={size} />;
@@ -85,11 +85,11 @@ export function CursorIcon(p: ClientIconProps) { return <BrandGlyph {...p} title
 export function AnthropicIcon(p: ClientIconProps) { return <BrandGlyph {...p} title="Claude Desktop" d={ANTHROPIC_D} />; }
 export function OpenAIIcon(p: ClientIconProps) { return <BrandGlyph {...p} title="Codex" d={OPENAI_D} />; }
 
-/** "Powered by Postiz" badge — Postiz brand wordmark on its purple. */
-export function PoweredByPostiz({ style }: { style?: CSSProperties }) {
+/** "Powered by Vantly" badge, linking to the self-hosted Vantly instance. */
+export function PoweredByVantly({ style }: { style?: CSSProperties }) {
   return (
     <a
-      href="https://postiz.com"
+      href="https://vantly.social"
       target="_blank"
       rel="noopener noreferrer"
       className="inline-flex items-center gap-1.5 text-[11px]"
@@ -101,7 +101,7 @@ export function PoweredByPostiz({ style }: { style?: CSSProperties }) {
           <rect width="24" height="24" rx="6" fill="#612BD3" />
           <path d="M7 6h6a4 4 0 0 1 0 8H10v4H7V6Zm3 5h2.6a1.4 1.4 0 0 0 0-2.8H10V11Z" fill="#fff" />
         </svg>
-        <span style={{ color: '#A78BFA', fontWeight: 600 }}>Postiz</span>
+        <span style={{ color: '#A78BFA', fontWeight: 600 }}>Vantly</span>
       </span>
     </a>
   );

@@ -20,9 +20,9 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
 COPY packages/schema/ packages/schema/
 COPY services/primitive-worker-vnext/ services/primitive-worker-vnext/
 
-RUN pnpm install --frozen-lockfile --filter @agentmedia/schema --filter primitive-worker-vnext
+RUN pnpm install --frozen-lockfile --filter @vantly-ugc/schema --filter primitive-worker-vnext
 
-RUN pnpm --filter @agentmedia/schema build
+RUN pnpm --filter @vantly-ugc/schema build
 RUN pnpm --filter primitive-worker-vnext build
 
 WORKDIR /app/services/primitive-worker-vnext

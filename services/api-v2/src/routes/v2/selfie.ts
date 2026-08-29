@@ -1,11 +1,11 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * POST /v2/selfie
  *
  * Public REST entry for the v2 Selfie product.
  *   1. Auth (bearer token via authMiddleware on the parent router)
- *   2. Validate input with @agentmedia/schema/v2 → SelfieSchema
+ *   2. Validate input with @vantly-ugc/schema/v2 → SelfieSchema
  *   3. Create generation_jobs row (operation='selfie', status='submitted')
  *   4. Deduct credits via deduct_credits RPC
  *   5. Dispatch to media-worker-v2 POST /v2/selfie (HTTP for now)
@@ -24,7 +24,7 @@ import {
   SelfieSchema,
   V2_GENERATORS,
   quoteV2Credits,
-} from '@agentmedia/schema/v2';
+} from '@vantly-ugc/schema/v2';
 import { supabase } from '../../server.js';
 import { getOrchestratorEngine } from '../../orchestrator/temporal/config.js';
 import { dispatchSelfieWorkflow } from '../../orchestrator/temporal/dispatch.js';

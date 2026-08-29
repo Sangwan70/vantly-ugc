@@ -1,10 +1,10 @@
 {
-  "name": "@agentmedia/schema",
+  "name": "@vantly-ugc/schema",
   "version": "0.5.5",
-  "description": "Type-safe schema definitions for AI UGC video generation \u2014 enums, Zod validation, and generator registry. Single source of truth for the agent-media platform.",
+  "description": "Type-safe schema definitions for AI UGC video generation \u2014 enums, Zod validation, and generator registry. Single source of truth for the vantly-ugc platform.",
   "type": "module",
   "license": "Apache-2.0",
-  "homepage": "https://agent-media.ai/docs/api-reference",
+  "homepage": "https://vantly-ugc.com/docs/api-reference",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/gitroomhq/agent-media-app.git",
@@ -26,7 +26,7 @@
     "product-ugc",
     "openapi",
     "mcp",
-    "agent-media"
+    "vantly-ugc"
   ],
   "publishConfig": {
     "access": "public"

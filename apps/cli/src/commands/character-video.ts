@@ -1,8 +1,8 @@
 import { printDeprecation } from '../lib/deprecation.js';
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media character-video` command.
+ * `vantly-ugc character-video` command.
  *
  * Runs the 3-step Content Machine pipeline end-to-end:
  *   1. POST /v1/character/sheet-generate     → character_sheet_url
@@ -28,7 +28,7 @@ import {
   createSpinner,
 } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
-import { AgentMediaAPI, type GenerationJob } from '../lib/api.js';
+import { VantlyUgcAPI, type GenerationJob } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
 import type { OutputMode } from '../types.js';
 
@@ -53,7 +53,7 @@ function isUrl(s: string): boolean {
   return /^https?:\/\//i.test(s);
 }
 
-async function uploadLocalImage(api: AgentMediaAPI, filePath: string, mode: OutputMode): Promise<string> {
+async function uploadLocalImage(api: VantlyUgcAPI, filePath: string, mode: OutputMode): Promise<string> {
   if (!existsSync(filePath)) {
     throw new CLIError(`File not found: ${filePath}`, { code: 'FILE_NOT_FOUND' });
   }
@@ -84,7 +84,7 @@ async function uploadLocalImage(api: AgentMediaAPI, filePath: string, mode: Outp
 }
 
 async function pollUntilDone(
-  api: AgentMediaAPI,
+  api: VantlyUgcAPI,
   jobId: string,
   label: string,
   expectedSeconds: number,
@@ -128,22 +128,22 @@ export function registerCharacterVideoCommand(program: Command): void {
     .description(
       'Content Machine: character sheet → storyboard → 720p video, in three orchestrated calls.\n\n' +
       'Examples:\n' +
-      '  $ agent-media character-video \\\n' +
+      '  $ vantly-ugc character-video \\\n' +
       '      --description "Marco, 35yo Italian chef, white uniform, curly black hair" \\\n' +
       '      --script "Marco walks into his sunlit Brooklyn kitchen, takes a bite of fresh bread, smiles." \\\n' +
       '      --duration 10 --aspect 9:16 --sync\n\n' +
-      '  $ agent-media character-video \\\n' +
+      '  $ vantly-ugc character-video \\\n' +
       '      --actor mei \\\n' +
       '      --beats "waves hello,holds up product,thumbs up" \\\n' +
       '      --duration 5 --sync\n\n' +
-      '  $ agent-media character-video \\\n' +
+      '  $ vantly-ugc character-video \\\n' +
       '      --reference-image ./photo.png \\\n' +
       '      --script "..." \\\n' +
       '      --sync\n\n' +
       'Provide ONE of --description / --actor / --reference-image, and ONE of --beats / --script.',
     )
     .option('--description <text>', 'Free-text character description (3-400 chars)')
-    .option('--actor <slug>', 'Actor slug from the agent-media library')
+    .option('--actor <slug>', 'Actor slug from the vantly-ugc library')
     .option('--reference-image <pathOrUrl>', 'Local PNG/JPEG/WebP file or public HTTPS URL of a portrait (max 5 MB)')
     .option('--beats <comma-separated>', 'Comma-separated list of 3-10 beat descriptions for the storyboard')
     .option('--script <text>', 'Free-text script (10-1500 chars); the model splits it into 4-6 panels')
@@ -219,14 +219,14 @@ export function registerCharacterVideoCommand(program: Command): void {
       if (!apiKey) {
         throw new CLIError('Not logged in.', {
           code: 'NOT_AUTHENTICATED',
-          suggestion: "Run 'agent-media login' to authenticate.",
+          suggestion: "Run 'vantly-ugc login' to authenticate.",
         });
       }
 
       const sessionId = randomUUID();
 
       try {
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
 
         // ── Resolve reference image (upload local files) ────────────────
         let referenceImageUrl: string | undefined;
@@ -320,7 +320,7 @@ export function registerCharacterVideoCommand(program: Command): void {
               break;
             default:
               console.log();
-              console.log(chalk.dim(`  Run 'agent-media status ${videoSubmit.job_id}' to follow the video render`));
+              console.log(chalk.dim(`  Run 'vantly-ugc status ${videoSubmit.job_id}' to follow the video render`));
               console.log();
           }
           return;

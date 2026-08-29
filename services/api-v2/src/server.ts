@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * API V2 — Schema-driven API server for agent-media.
+ * API V2 — Schema-driven API server for vantly-ugc.
  *
  * Deployed on Railway. Production is untouched.
  */
@@ -15,7 +15,7 @@ import express from 'express';
 import { logger } from './logger.js';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { createClient } from '@supabase/supabase-js';
-import { GENERATOR_IDS, GENERATORS } from '@agentmedia/schema';
+import { GENERATOR_IDS, GENERATORS } from '@vantly-ugc/schema';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { verifyToken } from './auth.js';
 import { generateRoute } from './routes/generate.js';
@@ -26,7 +26,7 @@ import {
   characterSheetGenerateRoute,
   characterStoryboardGenerateRoute,
 } from './routes/character-sheets.js';
-import { postizListAccountsRoute } from './routes/postiz.js';
+import { vantlyListAccountsRoute } from './routes/vantly.js';
 import {
   listSchedulesRoute,
   createScheduleRoute,
@@ -68,6 +68,7 @@ import { listApiKeysRoute, createApiKeyRoute, revokeApiKeyRoute } from './routes
 import { listSocialProvidersRoute, listSocialChannelsRoute, connectSocialRoute, deleteSocialChannelRoute, publishSocialRoute } from './routes/v1/social.js';
 import { videoConcurrencyGate } from './concurrency.js';
 import { agentRoute } from './routes/v1/agent.js';
+import { creditsCheckRoute } from './routes/v1/credits-check.js';
 import {
   createChatRoute,
   appendMessagesRoute,
@@ -698,8 +699,8 @@ function buildOpenApiSpec() {
   };
   return {
     openapi: '3.1.0',
-    info: { title: 'agent-media API', version: '1.0.0', description: 'AI UGC video production API. Generate talking head videos, SaaS reviews, and styled subtitles.', contact: { url: 'https://agent-media.ai' }, license: { name: 'Apache-2.0' }, termsOfService: 'https://agent-media.ai/terms' },
-    servers: [{ url: 'https://api.agent-media.ai', description: 'Production' }],
+    info: { title: 'vantly-ugc API', version: '1.0.0', description: 'AI UGC video production API. Generate talking head videos, SaaS reviews, and styled subtitles.', contact: { url: 'https://vantly-ugc.com' }, license: { name: 'Apache-2.0' }, termsOfService: 'https://vantly-ugc.com/terms' },
+    servers: [{ url: 'https://api.vantly-ugc.com', description: 'Production' }],
     paths,
     components: {
       securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', description: 'API key (ma_xxx) or Supabase JWT' } },
@@ -802,10 +803,13 @@ app.post('/v1/character/sheet-generate', generateLimiter, authMiddleware, charac
 // Step 2: gpt-image-2 with character sheet as reference → numbered storyboard PNG
 app.post('/v1/character/storyboard-generate', generateLimiter, authMiddleware, characterStoryboardGenerateRoute);
 
-// Postiz integration — list user's connected social accounts via their stored API key.
-app.get('/v1/integrations/postiz/accounts', readLimiter, authMiddleware, postizListAccountsRoute);
+// Vantly integration — list user's connected social accounts via their stored API key.
+app.get('/v1/integrations/vantly/accounts', readLimiter, authMiddleware, vantlyListAccountsRoute);
+// See routes/v1/credits-check.ts's file comment for why this exists as a plain
+// route instead of the Supabase Edge Function of the same name.
+app.get('/v1/credits-check', readLimiter, authMiddleware, creditsCheckRoute);
 
-// Schedules — recurring auto-publish jobs (powers /jobs dashboard + /integrations/postiz UI).
+// Schedules — recurring auto-publish jobs (powers /jobs dashboard + /integrations/vantly UI).
 app.get('/v1/schedules',           readLimiter,     authMiddleware, listSchedulesRoute);
 app.post('/v1/schedules',          generateLimiter, authMiddleware, createScheduleRoute);
 app.patch('/v1/schedules/:id',     generateLimiter, authMiddleware, updateScheduleRoute);

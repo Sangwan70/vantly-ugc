@@ -1,13 +1,13 @@
-# agent-media REST API Reference
+# vantly-ugc REST API Reference
 
-> Complete reference for the agent-media public REST API. All endpoints require authentication via API key unless otherwise noted.
+> Complete reference for the vantly-ugc public REST API. All endpoints require authentication via API key unless otherwise noted.
 
 ## Overview
 
 ### Base URL
 
 ```
-https://api.agent-media.ai/v1
+https://api.vantly-ugc.com/v1
 ```
 
 For local development:
@@ -24,7 +24,7 @@ All API requests require a Bearer token in the `Authorization` header. API keys 
 Authorization: Bearer ma_your_api_key_here
 ```
 
-Get your API key from the [dashboard](https://agent-media.ai/settings) or create one via the API (see [Create API Key](#post-apiv1accountkeys)).
+Get your API key from the [dashboard](https://vantly-ugc.com/settings) or create one via the API (see [Create API Key](#post-apiv1accountkeys)).
 
 ### Rate Limiting
 
@@ -79,10 +79,10 @@ Every response includes:
 
 ### 1. Get an API key
 
-Create an API key from the dashboard at https://agent-media.ai/settings, or via the API:
+Create an API key from the dashboard at https://vantly-ugc.com/settings, or via the API:
 
 ```bash
-curl -X POST https://api.agent-media.ai/v1/account/keys \
+curl -X POST https://api.vantly-ugc.com/v1/account/keys \
   -H "Authorization: Bearer ma_your_existing_key" \
   -H "Content-Type: application/json" \
   -d '{"name": "My New Key"}'
@@ -91,7 +91,7 @@ curl -X POST https://api.agent-media.ai/v1/account/keys \
 ### 2. Create a video
 
 ```bash
-curl -X POST https://api.agent-media.ai/v1/videos \
+curl -X POST https://api.vantly-ugc.com/v1/videos \
   -H "Authorization: Bearer ma_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -117,7 +117,7 @@ Response:
 ### 3. Poll for completion
 
 ```bash
-curl https://api.agent-media.ai/v1/videos/a1b2c3d4-e5f6-7890-abcd-ef1234567890 \
+curl https://api.vantly-ugc.com/v1/videos/a1b2c3d4-e5f6-7890-abcd-ef1234567890 \
   -H "Authorization: Bearer ma_your_api_key"
 ```
 
@@ -213,7 +213,7 @@ When using `prompt` (script generation), the response also includes:
 
 ```bash
 # Minimal — just a script
-curl -X POST https://api.agent-media.ai/v1/videos \
+curl -X POST https://api.vantly-ugc.com/v1/videos \
   -H "Authorization: Bearer ma_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -223,7 +223,7 @@ curl -X POST https://api.agent-media.ai/v1/videos \
   }'
 
 # With AI script generation
-curl -X POST https://api.agent-media.ai/v1/videos \
+curl -X POST https://api.vantly-ugc.com/v1/videos \
   -H "Authorization: Bearer ma_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -235,7 +235,7 @@ curl -X POST https://api.agent-media.ai/v1/videos \
   }'
 
 # PIP composition
-curl -X POST https://api.agent-media.ai/v1/videos \
+curl -X POST https://api.vantly-ugc.com/v1/videos \
   -H "Authorization: Bearer ma_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -280,7 +280,7 @@ List your video generation jobs with optional filtering and pagination.
       "status": "completed",
       "prompt": "Ever wonder why top founders wake up at 5am?...",
       "credit_cost": 300,
-      "output_url": "https://media.agent-media.ai/videos/a1b2c3d4.mp4",
+      "output_url": "https://media.vantly-ugc.com/videos/a1b2c3d4.mp4",
       "created_at": "2026-03-20T14:30:00.000Z",
       "started_at": "2026-03-20T14:30:01.000Z",
       "completed_at": "2026-03-20T14:32:15.000Z"
@@ -294,11 +294,11 @@ List your video generation jobs with optional filtering and pagination.
 
 ```bash
 # List recent videos
-curl "https://api.agent-media.ai/v1/videos?limit=10" \
+curl "https://api.vantly-ugc.com/v1/videos?limit=10" \
   -H "Authorization: Bearer ma_your_api_key"
 
 # List only completed videos
-curl "https://api.agent-media.ai/v1/videos?status=completed&limit=20" \
+curl "https://api.vantly-ugc.com/v1/videos?status=completed&limit=20" \
   -H "Authorization: Bearer ma_your_api_key"
 ```
 
@@ -341,7 +341,7 @@ The response includes a `Retry-After: 5` header when the job is not in a termina
 {
   "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "status": "completed",
-  "output_url": "https://media.agent-media.ai/videos/a1b2c3d4.mp4",
+  "output_url": "https://media.vantly-ugc.com/videos/a1b2c3d4.mp4",
   "completed_at": "2026-03-20T14:32:15.000Z"
 }
 ```
@@ -349,7 +349,7 @@ The response includes a `Retry-After: 5` header when the job is not in a termina
 **curl example:**
 
 ```bash
-curl https://api.agent-media.ai/v1/videos/a1b2c3d4-e5f6-7890-abcd-ef1234567890 \
+curl https://api.vantly-ugc.com/v1/videos/a1b2c3d4-e5f6-7890-abcd-ef1234567890 \
   -H "Authorization: Bearer ma_your_api_key"
 ```
 
@@ -378,7 +378,7 @@ Soft-delete a video generation job. The video can be restored later.
 **curl example:**
 
 ```bash
-curl -X DELETE https://api.agent-media.ai/v1/videos/a1b2c3d4-e5f6-7890-abcd-ef1234567890 \
+curl -X DELETE https://api.vantly-ugc.com/v1/videos/a1b2c3d4-e5f6-7890-abcd-ef1234567890 \
   -H "Authorization: Bearer ma_your_api_key"
 ```
 
@@ -424,7 +424,7 @@ If the refund fails, `refund_pending` will be `true` and `credits_refunded` will
 **curl example:**
 
 ```bash
-curl -X POST https://api.agent-media.ai/v1/videos/a1b2c3d4-e5f6-7890-abcd-ef1234567890/cancel \
+curl -X POST https://api.vantly-ugc.com/v1/videos/a1b2c3d4-e5f6-7890-abcd-ef1234567890/cancel \
   -H "Authorization: Bearer ma_your_api_key"
 ```
 
@@ -474,7 +474,7 @@ The actor is composited onto a green-screen template; the green phone screen is 
 **curl example:**
 
 ```bash
-curl -X POST https://api.agent-media.ai/v1/generate/show_your_app \
+curl -X POST https://api.vantly-ugc.com/v1/generate/show_your_app \
   -H "Authorization: Bearer ma_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -530,7 +530,7 @@ Generate a **Product Acting UGC** video: an AI creator presents, holds, or react
 **curl example:**
 
 ```bash
-curl -X POST https://api.agent-media.ai/v1/generate/product_acting_ugc \
+curl -X POST https://api.vantly-ugc.com/v1/generate/product_acting_ugc \
   -H "Authorization: Bearer ma_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -635,16 +635,16 @@ List available AI actors with optional filtering, or look up a single actor by s
 
 ```bash
 # List all actors (default page size 50)
-curl "https://api.agent-media.ai/v1/actors"
+curl "https://api.vantly-ugc.com/v1/actors"
 
 # Filter by gender, paginated
-curl "https://api.agent-media.ai/v1/actors?gender=female&limit=20&offset=0"
+curl "https://api.vantly-ugc.com/v1/actors?gender=female&limit=20&offset=0"
 
 # Search by name
-curl "https://api.agent-media.ai/v1/actors?search=aali"
+curl "https://api.vantly-ugc.com/v1/actors?search=aali"
 
 # Look up a specific actor by slug
-curl "https://api.agent-media.ai/v1/actors?slug=aaliyah"
+curl "https://api.vantly-ugc.com/v1/actors?slug=aaliyah"
 ```
 
 ---
@@ -693,7 +693,7 @@ Get account information including plan details, credit balances, and feature lim
 **curl example:**
 
 ```bash
-curl https://api.agent-media.ai/v1/account \
+curl https://api.vantly-ugc.com/v1/account \
   -H "Authorization: Bearer ma_your_api_key"
 ```
 
@@ -750,11 +750,11 @@ Get usage statistics for your account over a specified time period.
 
 ```bash
 # Last 30 days (default)
-curl "https://api.agent-media.ai/v1/account/usage" \
+curl "https://api.vantly-ugc.com/v1/account/usage" \
   -H "Authorization: Bearer ma_your_api_key"
 
 # Last 7 days
-curl "https://api.agent-media.ai/v1/account/usage?period=7d" \
+curl "https://api.vantly-ugc.com/v1/account/usage?period=7d" \
   -H "Authorization: Bearer ma_your_api_key"
 ```
 
@@ -789,7 +789,7 @@ Maximum 25 active keys per account.
 **curl example:**
 
 ```bash
-curl -X POST https://api.agent-media.ai/v1/account/keys \
+curl -X POST https://api.vantly-ugc.com/v1/account/keys \
   -H "Authorization: Bearer ma_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{"name": "Production Key"}'
@@ -820,7 +820,7 @@ List all active API keys for your account. Returns metadata only -- the full key
 **curl example:**
 
 ```bash
-curl https://api.agent-media.ai/v1/account/keys \
+curl https://api.vantly-ugc.com/v1/account/keys \
   -H "Authorization: Bearer ma_your_api_key"
 ```
 
@@ -848,7 +848,7 @@ Revoke (soft-delete) an API key. The key can no longer be used for authenticatio
 **curl example:**
 
 ```bash
-curl -X DELETE https://api.agent-media.ai/v1/account/keys/key-uuid-here \
+curl -X DELETE https://api.vantly-ugc.com/v1/account/keys/key-uuid-here \
   -H "Authorization: Bearer ma_your_api_key"
 ```
 
@@ -911,21 +911,21 @@ Credits are deducted immediately when a job is created. If the job fails at the 
 
 ## Webhooks
 
-When a video generation job completes (or fails), agent-media sends an HTTP POST to the `webhook_url` you supplied in the create request. This removes the need to poll.
+When a video generation job completes (or fails), vantly-ugc sends an HTTP POST to the `webhook_url` you supplied in the create request. This removes the need to poll.
 
 ### Requesting a webhook
 
 Include `webhook_url` in the POST body when creating the job:
 
 ```bash
-curl -X POST https://api.agent-media.ai/v1/videos \
+curl -X POST https://api.vantly-ugc.com/v1/videos \
   -H "Authorization: Bearer ma_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{
     "script": "Ever wonder why top founders wake up at 5am?...",
     "actor_slug": "emma",
     "target_duration": 10,
-    "webhook_url": "https://example.com/webhooks/agent-media?secret=MY_TOKEN"
+    "webhook_url": "https://example.com/webhooks/vantly-ugc?secret=MY_TOKEN"
   }'
 ```
 
@@ -942,7 +942,7 @@ On **success**:
 {
   "job_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "status": "completed",
-  "video_url": "https://media.agent-media.ai/videos/a1b2c3d4.mp4"
+  "video_url": "https://media.vantly-ugc.com/videos/a1b2c3d4.mp4"
 }
 ```
 
@@ -960,23 +960,23 @@ The webhook body is `Content-Type: application/json`. The completed video is als
 
 ### Retry policy
 
-If your endpoint returns a non-2xx status code (or times out), agent-media retries up to **3 times** with exponential backoff: 1 s, 4 s, 16 s. After all retries are exhausted the webhook is abandoned — you can still poll `GET /api/v1/videos/:id` for the result.
+If your endpoint returns a non-2xx status code (or times out), vantly-ugc retries up to **3 times** with exponential backoff: 1 s, 4 s, 16 s. After all retries are exhausted the webhook is abandoned — you can still poll `GET /api/v1/videos/:id` for the result.
 
 ### Verifying authenticity
 
-The simplest approach is to include a shared secret as a query parameter in your webhook URL (e.g. `?secret=MY_TOKEN`) and check it on every request. agent-media preserves the query string as-supplied, so any HMAC signing parameters you append will come back unchanged.
+The simplest approach is to include a shared secret as a query parameter in your webhook URL (e.g. `?secret=MY_TOKEN`) and check it on every request. vantly-ugc preserves the query string as-supplied, so any HMAC signing parameters you append will come back unchanged.
 
 ### Example receiver
 
 ```bash
 # What your endpoint will receive
-POST https://example.com/webhooks/agent-media?secret=MY_TOKEN
+POST https://example.com/webhooks/vantly-ugc?secret=MY_TOKEN
 Content-Type: application/json
 
 {
   "job_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "status": "completed",
-  "video_url": "https://media.agent-media.ai/videos/a1b2c3d4.mp4"
+  "video_url": "https://media.vantly-ugc.com/videos/a1b2c3d4.mp4"
 }
 ```
 

@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media character` — manage saved v2 characters.
+ * `vantly-ugc character` — manage saved v2 characters.
  *
  * Subcommands:
  *   create   — generate portrait + sheet, pin seed, persist row, return char_xxxxxxxxxx
@@ -12,8 +12,8 @@
 
 import type { Command } from 'commander';
 import chalk from 'chalk';
-import { V2_GENERATORS, V2_SHOT_PRESETS } from '@agentmedia/schema/v2';
-import { AgentMediaAPI } from '../../lib/api.js';
+import { V2_GENERATORS, V2_SHOT_PRESETS } from '@vantly-ugc/schema/v2';
+import { VantlyUgcAPI } from '../../lib/api.js';
 import { getApiKey, resolveProfileName } from '../../lib/credentials.js';
 import { CLIError, handleError, contentPolicySuggestion } from '../../lib/errors.js';
 import { detectOutputMode, printJson, printQuiet, createSpinner } from '../../lib/output.js';
@@ -40,7 +40,7 @@ export function registerCharacterCommand(program: Command): void {
     .summary(def.summary)
     .description(def.description)
     .requiredOption('--name <text>', 'Display name (letters, digits, space, _, -).')
-    .requiredOption('--description <text>', 'Character description (8-400 chars). agent-media generates the portrait from this.')
+    .requiredOption('--description <text>', 'Character description (8-400 chars). vantly-ugc generates the portrait from this.')
     .option('--photo <file|url>', 'Optional reference photo for an exact real-person likeness.')
     .option('--voice-brief <text>', 'One-line voice direction.')
     .option('--preset <name>', `Default shot preset (one of: ${V2_SHOT_PRESETS.join(', ')})`)
@@ -52,11 +52,11 @@ export function registerCharacterCommand(program: Command): void {
         const profile = resolveProfileName(globals.profile);
         const apiKey = getApiKey(profile);
         if (!apiKey) {
-          throw new CLIError('Not authenticated. Run `agent-media login` first.', {
+          throw new CLIError('Not authenticated. Run `vantly-ugc login` first.', {
             code: 'UNAUTHENTICATED',
           });
         }
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
 
         // Pricing intentionally not surfaced.
 
@@ -141,11 +141,11 @@ export function registerCharacterCommand(program: Command): void {
         const profile = resolveProfileName(globals.profile);
         const apiKey = getApiKey(profile);
         if (!apiKey) {
-          throw new CLIError('Not authenticated. Run `agent-media login` first.', {
+          throw new CLIError('Not authenticated. Run `vantly-ugc login` first.', {
             code: 'UNAUTHENTICATED',
           });
         }
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
 
         // GET /v2/characters
         const resp = await fetch(`${api.baseUrl}/v2/characters`, {
@@ -178,7 +178,7 @@ export function registerCharacterCommand(program: Command): void {
         }
 
         if (!body.characters.length) {
-          console.log(chalk.dim('No saved characters yet. Use `agent-media character create` to make one.'));
+          console.log(chalk.dim('No saved characters yet. Use `vantly-ugc character create` to make one.'));
           return;
         }
 
@@ -208,11 +208,11 @@ export function registerCharacterCommand(program: Command): void {
         const profile = resolveProfileName(globals.profile);
         const apiKey = getApiKey(profile);
         if (!apiKey) {
-          throw new CLIError('Not authenticated. Run `agent-media login` first.', {
+          throw new CLIError('Not authenticated. Run `vantly-ugc login` first.', {
             code: 'UNAUTHENTICATED',
           });
         }
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
 
         // No GET /v2/characters/:id endpoint exists yet — filter the list response.
         const resp = await fetch(`${api.baseUrl}/v2/characters`, {
@@ -238,7 +238,7 @@ export function registerCharacterCommand(program: Command): void {
         if (!match) {
           throw new CLIError(`No saved character with id ${characterId}.`, {
             code: 'CHARACTER_NOT_FOUND',
-            suggestion: 'Run `agent-media character list` to see your saved characters.',
+            suggestion: 'Run `vantly-ugc character list` to see your saved characters.',
           });
         }
 

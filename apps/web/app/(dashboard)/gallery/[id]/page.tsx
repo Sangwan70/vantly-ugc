@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -290,8 +290,8 @@ export default function JobDetailPage() {
 
   // ── Build CLI command for "Generate Similar" ──────────────────────────────
   function generateSimilarCliCommand(): string {
-    if (!job) return 'agent-media generate';
-    const parts = ['agent-media generate', job.model_slug];
+    if (!job) return 'vantly-ugc generate';
+    const parts = ['vantly-ugc generate', job.model_slug];
     parts.push('-p', `"${job.prompt}"`);
     if (job.input_params?.aspect_ratio) parts.push('--aspect-ratio', String(job.input_params.aspect_ratio));
     if (job.duration_seconds !== null) parts.push('--duration', String(job.duration_seconds));

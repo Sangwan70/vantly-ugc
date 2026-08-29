@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -145,7 +145,7 @@ function DeviceAuthPage() {
         // Provide user-friendly error messages
         if (data.error === 'not_found') {
           setError(
-            'Device code not found. It may have expired. Run "agent-media login" again.',
+            'Device code not found. It may have expired. Run "vantly-ugc login" again.',
           );
         } else if (data.error === 'invalid_code') {
           setError(
@@ -153,7 +153,7 @@ function DeviceAuthPage() {
           );
         } else if (data.error === 'expired_token') {
           setError(
-            'This device code has expired. Run "agent-media login" again.',
+            'This device code has expired. Run "vantly-ugc login" again.',
           );
         } else if (data.error === 'invalid_state') {
           setError('This device code has already been used.');
@@ -197,7 +197,7 @@ function DeviceAuthPage() {
           </p>
           <div className="mt-4 w-full rounded-lg border border-border bg-background p-4">
             <p className="font-mono text-sm text-accent">
-              $ agent-media login
+              $ vantly-ugc login
             </p>
           </div>
           <p className="mt-3 text-sm text-text-muted">
@@ -242,7 +242,7 @@ function DeviceAuthPage() {
           <div className="mt-6 w-full rounded-lg border border-border bg-background p-4">
             <div className="space-y-1 font-mono text-xs">
               <p className="text-text-muted">
-                <span className="text-accent">$</span> agent-media whoami
+                <span className="text-accent">$</span> vantly-ugc whoami
               </p>
               <p className="text-accent">
                 {'  '}Logged in as {userEmail ?? 'user'}
@@ -272,7 +272,7 @@ function DeviceAuthPage() {
           </p>
           <p className="mt-2 text-sm text-text-muted">
             If this was a mistake, run{' '}
-            <span className="font-mono text-accent">agent-media login</span>{' '}
+            <span className="font-mono text-accent">vantly-ugc login</span>{' '}
             again.
           </p>
         </div>
@@ -355,7 +355,7 @@ function DeviceAuthPage() {
         <p className="mt-1.5 font-mono text-xs text-text-muted">
           <Terminal className="mr-1 inline h-3 w-3" />
           This code was displayed when you ran{' '}
-          <span className="text-accent">agent-media login</span>
+          <span className="text-accent">vantly-ugc login</span>
         </p>
       </div>
 

@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Same-origin proxy for /v1/me/api-keys — list + create the signed-in user's
@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-const API_V2_URL = process.env.API_V2_URL?.replace(/\/+$/, '') ?? 'https://api.agent-media.ai';
+const API_V2_URL = process.env.API_V2_URL?.replace(/\/+$/, '') ?? 'https://api.vantly-ugc.com';
 
 async function token(): Promise<string | null> {
   const supabase = await createClient();

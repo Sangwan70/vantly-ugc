@@ -24,7 +24,7 @@ export default function LiquidEther({
   takeoverDuration = 0.25,
   autoResumeDelay = 1000,
   autoRampDuration = 0.6,
-  // agent-media additions:
+  // vantly-ugc additions:
   // - autoMargin: how far from canvas edge auto-driver targets can land.
   //   default 0.2 keeps the original react-bits behaviour. Larger
   //   values (e.g. 0.7) confine motion to a tight ring near centre.

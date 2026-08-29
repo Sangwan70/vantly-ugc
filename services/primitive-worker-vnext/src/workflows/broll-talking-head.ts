@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Composed skill workflow: broll_talking_head.
@@ -147,7 +147,7 @@ export function splitScript(script: string, segDurations: number[]): string[] {
   return parts.map((p) => p.trim()).filter(Boolean);
 }
 
-// Take planning is imported from @agentmedia/schema — the SAME module api-v2
+// Take planning is imported from @vantly-ugc/schema — the SAME module api-v2
 // quotes with — so the price quoted and the takes rendered cannot diverge. This
 // file used to own the canonical copy while api-v2 kept a subtly different one;
 // re-implementing any of it here would reopen that bug. Re-exported below so
@@ -161,7 +161,7 @@ import {
   fitDuration,
   chunkScript,
   splitIntroMoves,
-} from '@agentmedia/schema';
+} from '@vantly-ugc/schema';
 
 export { INTRO_SECONDS, countWords, fitDuration, chunkScript, splitIntroMoves };
 

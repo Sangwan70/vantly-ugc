@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * Error handling utilities for the agent-media CLI.
+ * Error handling utilities for the vantly-ugc CLI.
  */
 
 import chalk from 'chalk';
@@ -78,7 +78,7 @@ export function handleError(error: unknown): never {
   }
 
   console.error(chalk.red('✗ An unexpected error occurred.'));
-  console.error(chalk.yellow(`  → Run 'agent-media doctor' to diagnose common issues.`));
+  console.error(chalk.yellow(`  → Run 'vantly-ugc doctor' to diagnose common issues.`));
   console.error(chalk.dim(`  Error code: UNKNOWN_ERROR`));
   process.exit(1);
 }
@@ -101,7 +101,7 @@ export function classifyError(error: Error): { code: string; suggestion: string 
   ) {
     return {
       code: 'NETWORK_UNREACHABLE',
-      suggestion: "Check your internet connection or run 'agent-media doctor' to verify API connectivity.",
+      suggestion: "Check your internet connection or run 'vantly-ugc doctor' to verify API connectivity.",
     };
   }
 
@@ -125,7 +125,7 @@ export function classifyError(error: Error): { code: string; suggestion: string 
     return { code: 'BAD_RESPONSE', suggestion: 'Received an invalid response. The API may be temporarily unavailable.' };
   }
 
-  return { code: 'UNEXPECTED_ERROR', suggestion: "Run 'agent-media doctor' to diagnose common issues." };
+  return { code: 'UNEXPECTED_ERROR', suggestion: "Run 'vantly-ugc doctor' to diagnose common issues." };
 }
 
 /**

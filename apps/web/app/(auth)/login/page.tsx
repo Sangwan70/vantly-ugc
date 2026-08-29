@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -6,7 +6,7 @@
  * Login page - Huly-styled.
  *
  * Dark full-bleed surface with a react-bits Aurora canvas glowing
- * behind a glass card. Email OTP (6-digit) + Google OAuth + Postiz
+ * behind a glass card. Email OTP (6-digit) + Google OAuth
  * OAuth. No password, no signup route — OTP auto-creates accounts.
  */
 
@@ -17,7 +17,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, Mail, ArrowLeft } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { analytics } from '@/lib/analytics';
-import { AgentMediaLogo } from '@/components/agent-media-logo';
+import { VantlyLogo } from '@/components/vantly-logo';
 import { Home2CTAButton } from '@/components/home2-cta-button';
 import { MARKETING_URL } from '@/lib/marketing';
 
@@ -53,12 +53,12 @@ export default function LoginPage() {
           Home
         </Link>
         <Link href={MARKETING_URL} className="inline-flex items-center gap-2.5">
-          <AgentMediaLogo size={26} />
+          <VantlyLogo size={26} />
           <span
             className="text-base font-semibold"
             style={{ color: 'var(--cryptix-text)', letterSpacing: '-0.01em' }}
           >
-            agent-media
+            vantly-ugc
           </span>
         </Link>
       </header>
@@ -98,7 +98,7 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState(false);
-  const [postizLoading, setPostizLoading] = useState(false);
+  const [vantlyLoading, setVantlyLoading] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
   const [verifying, setVerifying] = useState(false);
 
@@ -213,11 +213,11 @@ function LoginForm() {
     }
   }
 
-  function handlePostizLogin() {
+  function handleSignInWithVantly() {
     setError(null);
-    setPostizLoading(true);
-    analytics.trackEvent('login_completed', { method: 'postiz' });
-    window.location.href = `/api/auth/postiz?redirect=${encodeURIComponent(redirectTo)}`;
+    setVantlyLoading(true);
+    analytics.trackEvent('login_completed', { method: 'vantly' });
+    window.location.href = `/api/auth/vantly?redirect=${encodeURIComponent(redirectTo)}`;
   }
 
   // ── OTP screen ───────────────────────────────────────────────────────────
@@ -336,13 +336,36 @@ function LoginForm() {
           />
         </div>
 
-        {/* Primary CTA - Huly pill */}
+        {/* Primary CTA - Huly pill.
+            NOTE: Home2CTAButton renders a next/link <a>, so it can't be
+            nested inside a <button type="submit"> — a <button><a>...</a></button>
+            DOM is invalid, and the Link's own click handler calls
+            preventDefault() on the shared click event before it bubbles up
+            to the button, which silently blocks the button's native
+            "submit the form" behavior. Net effect: clicking did nothing.
+            Fixed by driving submission from a manual onClick instead of
+            relying on native submit-button activation. */}
         <div className="flex justify-center">
-          <button type="submit" disabled={loading} className="contents">
+          <div
+            role="button"
+            tabIndex={0}
+            aria-disabled={loading}
+            className={loading ? 'pointer-events-none opacity-70' : 'cursor-pointer'}
+            onClick={(e) => {
+              e.preventDefault();
+              if (!loading) void handleSendOtp(e as unknown as React.FormEvent);
+            }}
+            onKeyDown={(e) => {
+              if ((e.key === 'Enter' || e.key === ' ') && !loading) {
+                e.preventDefault();
+                void handleSendOtp(e as unknown as React.FormEvent);
+              }
+            }}
+          >
             <Home2CTAButton href="#" variant="light" size="lg" showArrow={false}>
               {loading ? 'Sending code...' : 'Continue with email'}
             </Home2CTAButton>
-          </button>
+          </div>
         </div>
       </form>
 
@@ -360,10 +383,10 @@ function LoginForm() {
           label="Sign in with Google"
         />
         <ProviderButton
-          onClick={handlePostizLogin}
-          loading={postizLoading}
-          icon={<PostizIcon className="h-4 w-4" />}
-          label="Sign in with Postiz"
+          onClick={handleSignInWithVantly}
+          loading={vantlyLoading}
+          icon={<VantlyIcon className="h-4 w-4" />}
+          label="Sign in with Vantly"
         />
       </div>
     </Card>
@@ -436,11 +459,11 @@ function ErrorBox({ message }: { message: string }) {
   );
 }
 
-function PostizIcon({ className }: { className?: string }) {
+function VantlyIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="currentColor">
       <rect x="3" y="3" width="18" height="18" rx="4" fill="#7C3AED" />
-      <text x="12" y="17" textAnchor="middle" fontSize="14" fontWeight="bold" fill="white" fontFamily="sans-serif">P</text>
+      <text x="12" y="17" textAnchor="middle" fontSize="14" fontWeight="bold" fill="white" fontFamily="sans-serif">V</text>
     </svg>
   );
 }

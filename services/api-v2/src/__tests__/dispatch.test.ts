@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Pure-helper tests for the Temporal dispatch surface.
@@ -28,7 +28,7 @@ const PAYLOAD: SelfieDispatchPayload = {
 
 const CFG: TemporalConfig = {
   address: 'example.tmprl.cloud:7233',
-  namespace: 'agent-media.test',
+  namespace: 'vantly-ugc.test',
   tlsEnabled: true,
   taskQueue: 'selfie-v1',
   connectTimeoutMs: 10_000,

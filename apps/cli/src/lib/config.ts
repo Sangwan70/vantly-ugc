@@ -1,9 +1,9 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * Configuration management for the agent-media CLI.
+ * Configuration management for the vantly-ugc CLI.
  *
- * Stores config at ~/.agent-media/config.json (or AGENT_MEDIA_CONFIG_DIR).
+ * Stores config at ~/.vantly-ugc/config.json (or VANTLY_UGC_CONFIG_DIR).
  *
  * Supported keys:
  * - api_url: Supabase Edge Functions URL
@@ -17,7 +17,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from '
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-export const CONFIG_DIR = process.env['AGENT_MEDIA_CONFIG_DIR'] ?? join(homedir(), '.agent-media');
+export const CONFIG_DIR = process.env['VANTLY_UGC_CONFIG_DIR'] ?? join(homedir(), '.vantly-ugc');
 export const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 
 export type ConfigData = Record<string, unknown>;

@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -163,7 +163,7 @@ export default function SettingsPage() {
       setApiKeysLoading(false);
 
       // Webhook config from profiles (RLS scopes to own row).
-      // Postiz config has its own page at /integrations/postiz.
+      // Vantly config has its own page at /integrations/vantly.
       const { data: profile } = await supabase
         .from('profiles')
         .select('webhook_url, webhook_secret')
@@ -444,7 +444,7 @@ export default function SettingsPage() {
         </h2>
         <div className="mt-4">
           <p className="text-sm text-text-muted">
-            API keys allow programmatic access to the Agent Media platform via
+            API keys allow programmatic access to the Vantly UGC platform via
             the CLI and REST API.
           </p>
 
@@ -722,10 +722,10 @@ export default function SettingsPage() {
         </h2>
         <div className="mt-4 space-y-4">
           <p className="text-sm text-text-muted">
-            agent-media POSTs <code className="rounded bg-zinc-100 px-1 font-mono text-xs">job.completed</code> and{' '}
+            vantly-ugc POSTs <code className="rounded bg-zinc-100 px-1 font-mono text-xs">job.completed</code> and{' '}
             <code className="rounded bg-zinc-100 px-1 font-mono text-xs">job.failed</code> events to this URL when any of your
             jobs reaches a terminal state. Each request is signed with{' '}
-            <code className="rounded bg-zinc-100 px-1 font-mono text-xs">X-AgentMedia-Signature: t=&lt;ts&gt;,v1=&lt;hmac&gt;</code>{' '}
+            <code className="rounded bg-zinc-100 px-1 font-mono text-xs">X-VantlyUgc-Signature: t=&lt;ts&gt;,v1=&lt;hmac&gt;</code>{' '}
             using your secret below. Verify the HMAC of <code className="rounded bg-zinc-100 px-1 font-mono text-xs">{`${'`${t}.${rawBody}`'}`}</code> against the <code className="rounded bg-zinc-100 px-1 font-mono text-xs">v1</code> value before trusting the payload.
           </p>
 
@@ -739,7 +739,7 @@ export default function SettingsPage() {
                 type="url"
                 value={webhookUrl}
                 onChange={(e) => setWebhookUrl(e.target.value)}
-                placeholder="https://your-app.com/agent-media-webhook"
+                placeholder="https://your-app.com/vantly-ugc-webhook"
                 className="w-full rounded-md border border-border bg-card px-3 py-2 font-mono text-sm text-text placeholder:text-text-muted focus:border-accent focus:outline-none"
               />
               <p className="mt-1 text-xs text-text-muted">

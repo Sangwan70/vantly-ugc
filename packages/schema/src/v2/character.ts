@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * v2 · Character create input schema.
@@ -16,7 +16,7 @@ import { V2_SHOT_PRESETS } from './selfie.js';
 import { V2_LOOK_PRESETS } from './crazy-look.js';
 
 export const CharacterCreateSchema = z.object({
-  // Optional source photo — if absent, agent-media generates the
+  // Optional source photo — if absent, vantly-ugc generates the
   // portrait from `description` alone. Pass a real person's photo
   // ONLY when you want that exact person's likeness.
   photo_url: z.string().url().optional(),

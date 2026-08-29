@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Claude vision pass over the desktop screenshot.
@@ -27,6 +27,27 @@ const MODEL = 'claude-sonnet-4-6';
 const MAX_TOKENS = 1024;
 const REQUEST_TIMEOUT_MS = 25_000;
 
+// MODEL_PROVIDER=openrouter routes this same Anthropic Messages API call
+// through OpenRouter's Anthropic-compatible endpoint instead of Anthropic
+// directly. The SDK supports this natively: `baseURL` repoints the client,
+// and `authToken` (instead of `apiKey`) sends the key as an `Authorization:
+// Bearer` header — which is what OpenRouter expects — instead of `x-api-key`.
+// OpenRouter also requires provider-prefixed model ids (e.g.
+// "anthropic/claude-sonnet-4-6").
+const MODEL_PROVIDER = (process.env.MODEL_PROVIDER || 'anthropic').toLowerCase().trim();
+
+/**
+ * Resolve which model id to send. OPENROUTER_MODEL (when set) overrides
+ * MODEL entirely — lets an operator pin brand-extraction to any OpenRouter
+ * model, Claude or otherwise, without touching code. Only used in
+ * OpenRouter mode; direct-Anthropic mode always uses MODEL as-is.
+ */
+function resolveOpenRouterModel() {
+  const override = (process.env.OPENROUTER_MODEL || '').trim();
+  const chosen = override || MODEL;
+  return chosen.includes('/') ? chosen : `anthropic/${chosen}`;
+}
+
 const SYSTEM_PROMPT = `You are a brand identity extractor. You will be shown a screenshot of a website's homepage. Return ONLY a JSON object with this exact shape and no prose:
 
 {
@@ -45,9 +66,10 @@ const USER_PROMPT = 'Extract this site\'s brand identity from the screenshot. Re
  * or null on any failure.
  */
 export async function callVision({ screenshotBuf, viewport }) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const usingOpenRouter = MODEL_PROVIDER === 'openrouter';
+  const apiKey = usingOpenRouter ? process.env.OPENROUTER_API_KEY : process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    console.warn('[ai-vision] ANTHROPIC_API_KEY not set, skipping');
+    console.warn(`[ai-vision] ${usingOpenRouter ? 'OPENROUTER_API_KEY' : 'ANTHROPIC_API_KEY'} not set, skipping`);
     return null;
   }
 
@@ -65,12 +87,14 @@ export async function callVision({ screenshotBuf, viewport }) {
     return null;
   }
 
-  const client = new Anthropic({ apiKey });
+  const client = usingOpenRouter
+    ? new Anthropic({ baseURL: 'https://openrouter.ai/api/v1', authToken: apiKey })
+    : new Anthropic({ apiKey });
   let resp;
   try {
     resp = await client.messages.create(
       {
-        model: MODEL,
+        model: usingOpenRouter ? resolveOpenRouterModel() : MODEL,
         max_tokens: MAX_TOKENS,
         system: SYSTEM_PROMPT,
         messages: [

@@ -1,24 +1,24 @@
-# @agentmedia/sdk
+# @vantly-ugc/sdk
 
-TypeScript SDK for [agent-media](https://agent-media.ai) — UGC video generation for developers.
+TypeScript SDK for [vantly-ugc](https://vantly-ugc.com) — UGC video generation for developers.
 
 Generate AI videos with realistic talking heads, B-roll, voiceover, animated subtitles, and music. One function call, finished video.
 
-[![npm version](https://img.shields.io/npm/v/@agentmedia/sdk)](https://www.npmjs.com/package/@agentmedia/sdk)
-[![license](https://img.shields.io/npm/l/@agentmedia/sdk)](https://github.com/gitroomhq/agent-media-app/blob/main/LICENSE)
+[![npm version](https://img.shields.io/npm/v/@vantly-ugc/sdk)](https://www.npmjs.com/package/@vantly-ugc/sdk)
+[![license](https://img.shields.io/npm/l/@vantly-ugc/sdk)](https://github.com/gitroomhq/agent-media-app/blob/main/LICENSE)
 
 ## Install
 
 ```bash
-npm install @agentmedia/sdk
+npm install @vantly-ugc/sdk
 ```
 
 ## Quick Start
 
 ```typescript
-import { AgentMedia } from '@agentmedia/sdk';
+import { VantlyUgc } from '@vantly-ugc/sdk';
 
-const client = new AgentMedia({ apiKey: 'ma_YOUR_KEY' });
+const client = new VantlyUgc({ apiKey: 'ma_YOUR_KEY' });
 
 // Generate a video — polls until complete, returns the URL
 const video = await client.createVideo({
@@ -37,12 +37,12 @@ That's it. Script in, video URL out.
 
 ## API Reference
 
-### `new AgentMedia(config)`
+### `new VantlyUgc(config)`
 
 | Parameter | Type | Required | Default |
 |---|---|---|---|
 | `apiKey` | `string` | Yes | — |
-| `baseUrl` | `string` | No | `https://api.agent-media.ai` |
+| `baseUrl` | `string` | No | `https://api.vantly-ugc.com` |
 
 ### `client.createVideo(input, options?)`
 
@@ -176,12 +176,12 @@ if (status.status === 'completed') console.log(status.video_url);
 ## Error Handling
 
 ```typescript
-import { AgentMedia, AgentMediaError } from '@agentmedia/sdk';
+import { VantlyUgc, VantlyUgcError } from '@vantly-ugc/sdk';
 
 try {
   const video = await client.createVideo({ script: '...' });
 } catch (err) {
-  if (err instanceof AgentMediaError) {
+  if (err instanceof VantlyUgcError) {
     console.error(`${err.code}: ${err.message} (HTTP ${err.status})`);
   }
 }
@@ -189,10 +189,10 @@ try {
 
 ## Types
 
-All input types are exported from `@agentmedia/schema`:
+All input types are exported from `@vantly-ugc/schema`:
 
 ```typescript
-import type { CreateVideoInput, SubtitleInput, ProductReviewInput, ProductActingInput } from '@agentmedia/sdk';
+import type { CreateVideoInput, SubtitleInput, ProductReviewInput, ProductActingInput } from '@vantly-ugc/sdk';
 ```
 
 ## PIP (Picture-in-Picture) Mode
@@ -216,13 +216,13 @@ const video = await client.createVideo({
 
 ## Webhooks
 
-Skip polling — pass `webhook_url` and agent-media will POST to it when the job completes or fails.
+Skip polling — pass `webhook_url` and vantly-ugc will POST to it when the job completes or fails.
 
 ```typescript
 const job = await client.submitVideo({
   script: '...',
   actor_slug: 'sofia',
-  webhook_url: 'https://example.com/webhooks/agent-media?secret=MY_TOKEN',
+  webhook_url: 'https://example.com/webhooks/vantly-ugc?secret=MY_TOKEN',
 });
 ```
 
@@ -232,7 +232,7 @@ const job = await client.submitVideo({
 {
   "job_id": "550e8400-e29b-41d4-a716-446655440000",
   "status": "completed",
-  "video_url": "https://media.agent-media.ai/videos/550e8400.mp4"
+  "video_url": "https://media.vantly-ugc.com/videos/550e8400.mp4"
 }
 ```
 
@@ -271,16 +271,16 @@ videos.forEach(v => console.log(v.video_url));
 
 | Package | Description |
 |---|---|
-| [`agent-media-cli`](https://www.npmjs.com/package/agent-media-cli) | CLI tool — generate videos from your terminal |
-| [`@agentmedia/mcp-server`](https://www.npmjs.com/package/@agentmedia/mcp-server) | MCP server for Claude Code, Cursor, Windsurf |
-| [`@agentmedia/schema`](https://www.npmjs.com/package/@agentmedia/schema) | Shared schema — enums, types, Zod validation |
-| [`agent-media`](https://pypi.org/project/agent-media/) | Python SDK |
+| [`vantly-ugc-cli`](https://www.npmjs.com/package/vantly-ugc-cli) | CLI tool — generate videos from your terminal |
+| [`@vantly-ugc/mcp-server`](https://www.npmjs.com/package/@vantly-ugc/mcp-server) | MCP server for Claude Code, Cursor, Windsurf |
+| [`@vantly-ugc/schema`](https://www.npmjs.com/package/@vantly-ugc/schema) | Shared schema — enums, types, Zod validation |
+| [`vantly-ugc`](https://pypi.org/project/vantly-ugc/) | Python SDK |
 
 ## Links
 
-- [Interactive API Docs](https://agent-media.ai/docs/api-reference)
-- [OpenAPI Spec](https://agent-media.ai/openapi.json)
-- [Website](https://agent-media.ai)
+- [Interactive API Docs](https://vantly-ugc.com/docs/api-reference)
+- [OpenAPI Spec](https://vantly-ugc.com/openapi.json)
+- [Website](https://vantly-ugc.com)
 - [GitHub](https://github.com/gitroomhq/agent-media-app)
 
 ## License

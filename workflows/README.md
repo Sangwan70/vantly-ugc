@@ -1,4 +1,4 @@
-# agent-media Lobster Workflows
+# vantly-ugc Lobster Workflows
 
 Typed workflow pipelines for [OpenClaw](https://openclaw.ai)'s Lobster runtime. These workflows provide guided, multi-step UGC video generation with approval gates.
 

@@ -1,8 +1,8 @@
-// Copyright 2026 agent-media contributors
+// Copyright 2026 Vantly UGC contributors
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * Security types for the agent-media platform.
+ * Security types for the vantly-ugc platform.
  *
  * Covers rate limiting, content moderation, input validation,
  * CORS configuration, and HTTP security headers. These types are

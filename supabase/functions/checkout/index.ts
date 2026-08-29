@@ -14,7 +14,7 @@
  *   { "payg_pack_id": "pack_3900" }
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright 2026 agent-media contributors
+ * Copyright 2026 Vantly UGC contributors
  */
 
 import { corsResponse } from "../_shared/cors.ts";
@@ -654,7 +654,7 @@ async function createDynamicPaygCheckout(
         price_data: {
           currency: "usd",
           product_data: {
-            name: `${credits.toLocaleString("en-US")} agent-media credits`,
+            name: `${credits.toLocaleString("en-US")} vantly-ugc credits`,
             description: "Pay-as-you-go credit top-up. Credits never expire.",
           },
           unit_amount: amountCents,

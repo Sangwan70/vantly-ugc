@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 //
 // The Evolink governor must never submit more concurrent tasks than a key allows
 // (Seedance 2.0 = ~3/account), and must spread load across a pool of keys so

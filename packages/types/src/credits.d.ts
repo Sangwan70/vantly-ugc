@@ -1,5 +1,5 @@
 /**
- * Credit and billing types for the agent-media platform.
+ * Credit and billing types for the vantly-ugc platform.
  *
  * Credits are the platform currency (1 credit = $0.01). Users receive
  * monthly credits from their subscription plan and can purchase

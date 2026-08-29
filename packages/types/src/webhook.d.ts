@@ -1,5 +1,5 @@
 /**
- * Webhook lifecycle types for the agent-media platform.
+ * Webhook lifecycle types for the vantly-ugc platform.
  *
  * These types cover the full webhook processing pipeline: incoming
  * provider payloads, checkpoint-based idempotent state tracking,

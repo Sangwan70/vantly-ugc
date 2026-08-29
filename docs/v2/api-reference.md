@@ -1,14 +1,14 @@
 <!--
   AUTO-GENERATED — do not hand-edit.
   Source: packages/schema/src/v2/generators.ts
-  Regenerate: pnpm --filter @agentmedia/schema gen:v2-docs
+  Regenerate: pnpm --filter @vantly-ugc/schema gen:v2-docs
 -->
 
-# agent-media v2 — API reference
+# vantly-ugc v2 — API reference
 
 _Public REST surface for v2 generators (Selfie, Character). Auth is a Bearer API key (`ma_xxx`)._
 
-**Base URL:** `https://api.agent-media.ai`
+**Base URL:** `https://api.vantly-ugc.com`
 
 ## Endpoints
 
@@ -133,9 +133,9 @@ Returns a job submission. Poll `GET /v1/videos/{job_id}` until `status: "complet
 ### CLI examples
 
 ```bash
-agent-media selfie --description "25yo asian woman, long wavy dark hair, soft smile" --script "I keep getting DMs about my hair oil routine" --scene-action "standing by a bright vanity, showing a small amber hair-oil bottle and scrunching one curl mid-line" --duration 10
-agent-media selfie --character char_8x2vqp --script "..." --scene-action "sitting at a desk, gesturing toward an open laptop beside them" --duration 10
-agent-media selfie --photo me.png --description "25yo creator, casual black tee" --script "..." --duration 10
+vantly-ugc selfie --description "25yo asian woman, long wavy dark hair, soft smile" --script "I keep getting DMs about my hair oil routine" --scene-action "standing by a bright vanity, showing a small amber hair-oil bottle and scrunching one curl mid-line" --duration 10
+vantly-ugc selfie --character char_8x2vqp --script "..." --scene-action "sitting at a desk, gesturing toward an open laptop beside them" --duration 10
+vantly-ugc selfie --photo me.png --description "25yo creator, casual black tee" --script "..." --duration 10
 ```
 
 ---
@@ -223,8 +223,8 @@ Returns a job submission. Poll `GET /v1/videos/{job_id}` until `status: "complet
 ### CLI examples
 
 ```bash
-agent-media character create --name "sofia" --description "25yo asian woman, long wavy dark hair, soft smile"
-agent-media character create --name "sofia" --description "..." --photo me.png
+vantly-ugc character create --name "sofia" --description "25yo asian woman, long wavy dark hair, soft smile"
+vantly-ugc character create --name "sofia" --description "..." --photo me.png
 ```
 
 ---
@@ -304,15 +304,15 @@ Returns a job submission. Poll `GET /v1/videos/{job_id}` until `status: "complet
 ### CLI examples
 
 ```bash
-agent-media subs --video https://r2/clip.mp4 --style hormozi
-agent-media subs --video https://r2/clip.mp4 --transcript "exact script text" --style neon
+vantly-ugc subs --video https://r2/clip.mp4 --style hormozi
+vantly-ugc subs --video https://r2/clip.mp4 --transcript "exact script text" --style neon
 ```
 
 ## Shared
 
 ### Authentication
 
-Every v2 request sends `Authorization: Bearer ma_xxx`. Get a key via `agent-media login` (CLI) or the dashboard.
+Every v2 request sends `Authorization: Bearer ma_xxx`. Get a key via `vantly-ugc login` (CLI) or the dashboard.
 
 ### Polling
 

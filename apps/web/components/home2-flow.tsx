@@ -1,11 +1,11 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
 /**
  * /home2 - Pipeline flow visualization.
  *
- *   [agent]  →  [agent-media]  →  [VIDEO]  ⇗  TikTok
+ *   [agent]  →  [vantly-ugc]  →  [VIDEO]  ⇗  TikTok
  *                                          → Instagram
  *                                          ⇘  YouTube
  *
@@ -21,7 +21,7 @@
 
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { AgentMediaLogo } from '@/components/agent-media-logo';
+import { VantlyLogo } from '@/components/vantly-logo';
 import {
   siInstagram,
   siTiktok,
@@ -424,14 +424,14 @@ export function Home2Flow() {
             <Step visible={step >= 3}>
               <div className="relative">
                 <NodeCard hero size={96}>
-                  <AgentMediaLogo size={60} />
+                  <VantlyLogo size={60} />
                 </NodeCard>
                 <div className="absolute left-1/2 top-full mt-3 -translate-x-1/2 whitespace-nowrap text-center">
                   <p
                     className="text-sm font-medium"
                     style={{ color: 'var(--cryptix-text)' }}
                   >
-                    agent-media
+                    vantly-ugc
                   </p>
                 </div>
               </div>

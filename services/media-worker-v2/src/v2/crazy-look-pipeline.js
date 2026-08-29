@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * v2 · Crazy Look pipeline.
@@ -92,7 +92,7 @@ const DEFAULT_QUALITY = '720p';
 const DEFAULT_ASPECT = '9:16';
 
 // ── Look preset briefs ────────────────────────────────────────────────────
-// Keys mirror V2_LOOK_PRESETS in @agentmedia/schema/v2 (crazy-look.ts).
+// Keys mirror V2_LOOK_PRESETS in @vantly-ugc/schema/v2 (crazy-look.ts).
 // Same split as shot presets: keys in the schema, prompt briefs here.
 //   pose:   the frozen expression for the Stage C wireframe still
 //   action: the motion direction for the Stage D Seedance prompt

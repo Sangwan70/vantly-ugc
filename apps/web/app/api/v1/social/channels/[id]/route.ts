@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 import { NextRequest } from 'next/server';
 import { proxy } from '../../_proxy';
 export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {

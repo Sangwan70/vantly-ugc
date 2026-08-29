@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * AgentMediaAPI - HTTP client wrapping fetch to Supabase Edge Functions.
+ * VantlyUgcAPI - HTTP client wrapping fetch to Supabase Edge Functions.
  *
  * All CLI-to-server communication goes through this class. It handles
  * authentication headers, base URL resolution, JSON parsing, and
@@ -12,8 +12,8 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { CLIError, type ApiIssue } from './errors.js';
 
-/** Default API URL. Override via AGENT_MEDIA_API_URL. */
-const DEFAULT_API_URL = 'https://api.agent-media.ai';
+/** Default API URL. Override via VANTLY_UGC_API_URL. */
+const DEFAULT_API_URL = 'https://api.vantly-ugc.com';
 
 /** Public Supabase project URL for actor-library reads. */
 const DEFAULT_SUPABASE_URL = 'https://ppwvarkmpffljlqxkjux.supabase.co';
@@ -21,7 +21,7 @@ const DEFAULT_SUPABASE_URL = 'https://ppwvarkmpffljlqxkjux.supabase.co';
 // ── Local disk cache for models/pricing (avoids cold API calls) ─────────
 
 const CACHE_DIR = join(
-  process.env['AGENT_MEDIA_CONFIG_DIR'] ?? join(process.env['HOME'] ?? '.', '.agent-media'),
+  process.env['VANTLY_UGC_CONFIG_DIR'] ?? join(process.env['HOME'] ?? '.', '.vantly-ugc'),
   'cache',
 );
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -50,7 +50,7 @@ function writeCache<T>(key: string, data: T): void {
 
 // Public anon key — safe to embed. All access is gated by RLS policies.
 // This is equivalent to NEXT_PUBLIC_SUPABASE_ANON_KEY on the frontend.
-// Override for local dev via AGENT_MEDIA_ANON_KEY env var.
+// Override for local dev via VANTLY_UGC_ANON_KEY env var.
 const DEFAULT_ANON_KEY =
   '***REMOVED-UPSTREAM-ANON-JWT***';
 
@@ -505,7 +505,7 @@ interface ApiErrorBody {
   details?: ApiIssue[];
 }
 
-export class AgentMediaAPI {
+export class VantlyUgcAPI {
   readonly baseUrl: string;
   private readonly supabaseUrl: string;
   private readonly apiKey: string;
@@ -514,11 +514,11 @@ export class AgentMediaAPI {
   constructor(apiKey?: string) {
     this.apiKey = apiKey ?? '';
     this.baseUrl =
-      process.env['AGENT_MEDIA_API_URL']?.replace(/\/+$/, '') ?? DEFAULT_API_URL;
+      process.env['VANTLY_UGC_API_URL']?.replace(/\/+$/, '') ?? DEFAULT_API_URL;
     this.supabaseUrl =
-      process.env['AGENT_MEDIA_SUPABASE_URL']?.replace(/\/+$/, '') ?? DEFAULT_SUPABASE_URL;
+      process.env['VANTLY_UGC_SUPABASE_URL']?.replace(/\/+$/, '') ?? DEFAULT_SUPABASE_URL;
     this.anonKey =
-      process.env['AGENT_MEDIA_ANON_KEY'] ?? DEFAULT_ANON_KEY;
+      process.env['VANTLY_UGC_ANON_KEY'] ?? DEFAULT_ANON_KEY;
   }
 
   /**
@@ -527,11 +527,11 @@ export class AgentMediaAPI {
    */
   static async initiateDeviceFlow(baseUrl?: string): Promise<DeviceAuthResponse> {
     const url =
-      (baseUrl ?? process.env['AGENT_MEDIA_API_URL'] ?? DEFAULT_API_URL).replace(
+      (baseUrl ?? process.env['VANTLY_UGC_API_URL'] ?? DEFAULT_API_URL).replace(
         /\/+$/,
         '',
       );
-    const anonKey = process.env['AGENT_MEDIA_ANON_KEY'] ?? DEFAULT_ANON_KEY;
+    const anonKey = process.env['VANTLY_UGC_ANON_KEY'] ?? DEFAULT_ANON_KEY;
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (anonKey) {
@@ -562,11 +562,11 @@ export class AgentMediaAPI {
     baseUrl?: string,
   ): Promise<DevicePollResponse> {
     const url =
-      (baseUrl ?? process.env['AGENT_MEDIA_API_URL'] ?? DEFAULT_API_URL).replace(
+      (baseUrl ?? process.env['VANTLY_UGC_API_URL'] ?? DEFAULT_API_URL).replace(
         /\/+$/,
         '',
       );
-    const anonKey = process.env['AGENT_MEDIA_ANON_KEY'] ?? DEFAULT_ANON_KEY;
+    const anonKey = process.env['VANTLY_UGC_ANON_KEY'] ?? DEFAULT_ANON_KEY;
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (anonKey) {
@@ -653,7 +653,7 @@ export class AgentMediaAPI {
    */
   async createPortalSession(returnUrl?: string): Promise<PortalResponse> {
     const res = await this.request('POST', '/functions/v1/stripe-portal', {
-      returnUrl: returnUrl ?? 'https://agent-media.ai/billing',
+      returnUrl: returnUrl ?? 'https://vantly-ugc.com/billing',
     });
     return (await res.json()) as PortalResponse;
   }
@@ -816,7 +816,7 @@ export class AgentMediaAPI {
     if (params.reference_image_url) body['reference_image_url'] = params.reference_image_url;
     if (params.session_id) body['session_id'] = params.session_id;
     const res = await this.request('POST', '/v1/character/sheet-generate', body, 60_000);
-    return (await res.json()) as Awaited<ReturnType<AgentMediaAPI['characterSheetGenerate']>>;
+    return (await res.json()) as Awaited<ReturnType<VantlyUgcAPI['characterSheetGenerate']>>;
   }
 
   async characterStoryboardSuggest(params: {
@@ -851,7 +851,7 @@ export class AgentMediaAPI {
     if (params.ratio) body['ratio'] = params.ratio;
     if (params.session_id) body['session_id'] = params.session_id;
     const res = await this.request('POST', '/v1/character/storyboard-generate', body, 60_000);
-    return (await res.json()) as Awaited<ReturnType<AgentMediaAPI['characterStoryboardGenerate']>>;
+    return (await res.json()) as Awaited<ReturnType<VantlyUgcAPI['characterStoryboardGenerate']>>;
   }
 
   async characterVideoGenerate(params: {
@@ -882,7 +882,7 @@ export class AgentMediaAPI {
     if (params.session_id) body['session_id'] = params.session_id;
     if (params.webhook_url) body['webhook_url'] = params.webhook_url;
     const res = await this.request('POST', '/v1/generate/character_video', body, 60_000);
-    return (await res.json()) as Awaited<ReturnType<AgentMediaAPI['characterVideoGenerate']>>;
+    return (await res.json()) as Awaited<ReturnType<VantlyUgcAPI['characterVideoGenerate']>>;
   }
 
   async textToVideoGenerate(params: {
@@ -891,7 +891,7 @@ export class AgentMediaAPI {
     aspect_ratio?: '9:16' | '16:9' | '1:1';
     generate_audio?: boolean;
     webhook_url?: string;
-    /** When set, auto-publish to these Postiz integrations on completion. */
+    /** When set, auto-publish to these Vantly integrations on completion. */
     postiz_integration_ids?: string[];
     /** 'static' = use `caption` verbatim. 'ai' = Claude writes one biased by caption_guidance. */
     caption_mode?: 'ai' | 'static';
@@ -918,7 +918,7 @@ export class AgentMediaAPI {
       if (params.caption_guidance) body['caption_guidance'] = params.caption_guidance;
     }
     const res = await this.request('POST', '/v1/generate/text_to_video', body, 60_000);
-    return (await res.json()) as Awaited<ReturnType<AgentMediaAPI['textToVideoGenerate']>>;
+    return (await res.json()) as Awaited<ReturnType<VantlyUgcAPI['textToVideoGenerate']>>;
   }
 
   /**
@@ -1443,7 +1443,7 @@ export class AgentMediaAPI {
 
   /**
    * List the skills registered on api-v2. The only public, agent-facing
-   * entry is make_ugc (Agent-Media UGC Video); the former primitives
+   * entry is make_ugc (Vantly UGC Video); the former primitives
    * (make_portrait, make_character_sheet, make_simple_selfie, etc.) are
    * now internal pipeline steps. Each entry includes its JSON-schema'd input.
    */
@@ -1476,7 +1476,7 @@ export class AgentMediaAPI {
       input,
       headers,
     );
-    return (await res.json()) as Awaited<ReturnType<AgentMediaAPI['runSkill']>>;
+    return (await res.json()) as Awaited<ReturnType<VantlyUgcAPI['runSkill']>>;
   }
 
   /**
@@ -1733,14 +1733,14 @@ async function throwApiError(res: Response, fallbackMessage: string): Promise<ne
   if (res.status === 401) {
     throw new CLIError(message, {
       code: 'AUTH_UNAUTHORIZED',
-      suggestion: 'Run `agent-media login` to authenticate.',
+      suggestion: 'Run `vantly-ugc login` to authenticate.',
     });
   }
 
   if (res.status === 402) {
     throw new CLIError(message, {
       code: 'INSUFFICIENT_CREDITS',
-      suggestion: 'Buy credits at https://agent-media.ai/billing',
+      suggestion: 'Buy credits at https://vantly-ugc.com/billing',
     });
   }
 

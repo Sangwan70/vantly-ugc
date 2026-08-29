@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Video-related enums, types, and validation schemas.
@@ -489,10 +489,10 @@ export const TextToVideoSchema = z.object({
     'HTTPS URL to receive a callback when the job completes or fails.',
   ),
   /** When set, on completion the webhook-provider fans the rendered MP4
-   *  out to these Postiz integrations (X, LinkedIn, etc.). Use the IDs
-   *  returned from GET /v1/integrations/postiz/accounts. */
+   *  out to these Vantly integrations (X, LinkedIn, etc.). Use the IDs
+   *  returned from GET /v1/integrations/vantly/accounts. */
   postiz_integration_ids: z.array(z.string()).optional().describe(
-    'Postiz integration IDs to auto-publish to once the video is rendered. Get them from GET /v1/integrations/postiz/accounts.',
+    'Vantly integration IDs to auto-publish to once the video is rendered. Get them from GET /v1/integrations/vantly/accounts.',
   ),
   /** How to compose the social caption. 'static' = use `caption` verbatim. 'ai' = Claude writes one using `caption_guidance` as bias. */
   caption_mode: z.enum(['ai', 'static']).optional().default('static').describe(
@@ -519,7 +519,7 @@ export const CharacterSheetSchema = z.object({
     'Free-text description of the character (e.g. "Marco, a 35yo Italian chef with curly black hair, white uniform"). When provided alongside a reference image, it adds context. When provided alone (no actor_slug, no reference_image_url), the worker first paints a portrait via gpt-image-2 text-to-image, then turns it into the sheet.',
   ),
   actor_slug: z.string().min(1).optional().describe(
-    'Slug of an actor from the agent-media library. The actor\'s portrait is used as the reference image. List actors via GET /v1/actors. Mutually exclusive with reference_image_url.',
+    'Slug of an actor from the vantly-ugc library. The actor\'s portrait is used as the reference image. List actors via GET /v1/actors. Mutually exclusive with reference_image_url.',
   ),
   reference_image_url: z.string().url().optional().describe(
     'Public HTTPS URL of a portrait/reference image (PNG/JPEG/WebP, <5MB recommended). Mutually exclusive with actor_slug.',

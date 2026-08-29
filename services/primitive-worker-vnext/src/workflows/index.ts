@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 // Single entry point for Temporal's workflow bundler. All workflows in
 // this worker must be re-exported here.

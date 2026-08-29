@@ -1,8 +1,8 @@
 import { printDeprecation } from '../lib/deprecation.js';
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media text-to-video` command.
+ * `vantly-ugc text-to-video` command.
  *
  * Pure-prompt video generation via Seedance 2.0 text-to-video at 720p.
  * No character sheet, no storyboard. The prompt IS the entire creative —
@@ -22,7 +22,7 @@ import {
   createSpinner,
 } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
-import { AgentMediaAPI, type GenerationJob } from '../lib/api.js';
+import { VantlyUgcAPI, type GenerationJob } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
 import type { OutputMode } from '../types.js';
 
@@ -33,7 +33,7 @@ const VALID_DURATIONS = new Set([5, 10, 15]);
 const VALID_RATIOS = new Set(['9:16', '16:9', '1:1']);
 
 async function pollUntilDone(
-  api: AgentMediaAPI,
+  api: VantlyUgcAPI,
   jobId: string,
   expectedSeconds: number,
   mode: OutputMode,
@@ -76,10 +76,10 @@ export function registerTextToVideoCommand(program: Command): void {
     .description(
       'Pure-prompt text-to-video via Seedance 2.0 — no character, no storyboard. The prompt is the entire creative.\n\n' +
       'Examples:\n' +
-      '  $ agent-media text-to-video \\\n' +
+      '  $ vantly-ugc text-to-video \\\n' +
       '      --prompt "Handcrafted stop-motion. Miniature practical sets, animation on 2s, warm magical lighting." \\\n' +
       '      --duration 5 --aspect 9:16 --wait\n\n' +
-      '  $ agent-media text-to-video --prompt-file ./prompts/stop-motion.txt --duration 10 --wait\n\n' +
+      '  $ vantly-ugc text-to-video --prompt-file ./prompts/stop-motion.txt --duration 10 --wait\n\n' +
       'Use --wait to block until the video is rendered and print the R2 URL; without --wait the command prints the job_id and exits.',
     )
     .option('--prompt <text>', 'Full video prompt (20–1000 chars). Style + subject + mood + composition all in one string.')
@@ -88,7 +88,7 @@ export function registerTextToVideoCommand(program: Command): void {
     .option('--aspect <ratio>', 'Aspect ratio: 9:16, 16:9, or 1:1', '9:16')
     .option('--no-audio', 'Disable Seedance audio synthesis')
     .option('--webhook-url <url>', 'HTTPS URL to receive a callback on completion')
-    .option('--post <ids>', 'Comma-separated Postiz integration IDs to auto-publish to on completion. Get IDs from `agent-media list-postiz` or the web Postiz page.')
+    .option('--post <ids>', 'Comma-separated Vantly integration IDs to auto-publish to on completion. Get IDs from the web Vantly page.')
     .option('--caption <text>', 'Literal caption text for the social post. Used when --caption-ai is not set.')
     .option('--caption-ai [guidance]', 'Have Claude Opus write the caption on completion. Optionally pass tone/hashtag guidance as the value (e.g. --caption-ai "fun + 3 hashtags").')
     .option('-w, --wait', 'Block until the job completes and print the video URL')
@@ -130,9 +130,9 @@ export function registerTextToVideoCommand(program: Command): void {
 
         const profile = await resolveProfileName(globalOpts.profile);
         const apiKey = await getApiKey(profile);
-        const api = new AgentMediaAPI(apiKey ?? undefined);
+        const api = new VantlyUgcAPI(apiKey ?? undefined);
 
-        // --post = comma-separated Postiz integration IDs.
+        // --post = comma-separated Vantly integration IDs.
         const postIds = typeof cmdOpts.post === 'string'
           ? cmdOpts.post.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
           : [];
@@ -167,7 +167,7 @@ export function registerTextToVideoCommand(program: Command): void {
           else if (mode === 'quiet') printQuiet(submit.job_id);
           else {
             console.log(chalk.green(`✔ Submitted job ${submit.job_id} (${submit.credits_deducted} cr deducted).`));
-            console.log(`  Poll with: ${chalk.cyan(`agent-media inspect ${submit.job_id}`)}`);
+            console.log(`  Poll with: ${chalk.cyan(`vantly-ugc inspect ${submit.job_id}`)}`);
           }
           return;
         }

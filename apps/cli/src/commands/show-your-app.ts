@@ -1,8 +1,8 @@
 import { printDeprecation } from '../lib/deprecation.js';
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media show-your-app` command.
+ * `vantly-ugc show-your-app` command.
  *
  * Generates a Show Your App video: an AI actor holds a phone that shows your
  * app screenshot, reading your script, with Hormozi-style word-by-word
@@ -23,7 +23,7 @@ import {
 } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
 import {
-  AgentMediaAPI,
+  VantlyUgcAPI,
   type GenerationJob,
 } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
@@ -58,7 +58,7 @@ function formatElapsed(seconds: number): string {
 }
 
 async function waitForJob(
-  api: AgentMediaAPI,
+  api: VantlyUgcAPI,
   jobId: string,
   mode: OutputMode,
 ): Promise<GenerationJob | null> {
@@ -131,11 +131,11 @@ export function registerShowYourAppCommand(program: Command): void {
     .description(
       'Generate a Show Your App video — AI actor holds a phone showing your app\n\n' +
       'Examples:\n' +
-      '  $ agent-media show-your-app \\\n' +
+      '  $ vantly-ugc show-your-app \\\n' +
       '      --app-screenshot https://cdn.example.com/app.png \\\n' +
       '      --script "Check out this new AI video tool" \\\n' +
       '      --sync\n\n' +
-      '  $ agent-media show-your-app \\\n' +
+      '  $ vantly-ugc show-your-app \\\n' +
       '      --app-screenshot https://cdn.example.com/app.png \\\n' +
       '      --script "Try our product, it changed my life" \\\n' +
       '      --actor sarah --duration 10 --sync\n\n' +
@@ -172,7 +172,7 @@ export function registerShowYourAppCommand(program: Command): void {
       if (!apiKey) {
         throw new CLIError('Not logged in.', {
           code: 'NOT_AUTHENTICATED',
-          suggestion: "Run 'agent-media login' to authenticate.",
+          suggestion: "Run 'vantly-ugc login' to authenticate.",
         });
       }
 
@@ -199,7 +199,7 @@ export function registerShowYourAppCommand(program: Command): void {
       }
 
       try {
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
 
         const submitSpinner = createSpinner('Submitting Show Your App job...');
         if (mode === 'human') submitSpinner.start();
@@ -230,7 +230,7 @@ export function registerShowYourAppCommand(program: Command): void {
               console.log(`  ${chalk.bold('Subtitles:')}  ${result.subtitle_style}`);
               console.log(`  ${chalk.bold('Credits:')}    ${result.credits_deducted} deducted`);
               console.log();
-              console.log(chalk.dim(`  Run 'agent-media status ${result.job_id}' to check progress`));
+              console.log(chalk.dim(`  Run 'vantly-ugc status ${result.job_id}' to check progress`));
               console.log(chalk.dim(`  Or re-run with --sync to wait for completion`));
               console.log();
           }

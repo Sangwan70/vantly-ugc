@@ -1,15 +1,15 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * GET /openapi.json
  *
  * Proxies the OpenAPI spec from api-v2. Cached for 5 minutes.
- * This makes the spec discoverable at agent-media.ai/openapi.json.
+ * This makes the spec discoverable at vantly-ugc.com/openapi.json.
  */
 
 import { NextResponse } from 'next/server';
 
-const API_V2_URL = process.env.API_V2_URL || 'https://api.agent-media.ai';
+const API_V2_URL = process.env.API_V2_URL || 'https://api.vantly-ugc.com';
 
 export async function GET() {
   try {
@@ -28,7 +28,7 @@ export async function GET() {
 
     // Override server URL to point to the public domain
     spec.servers = [
-      { url: 'https://api.agent-media.ai', description: 'Production API' },
+      { url: 'https://api.vantly-ugc.com', description: 'Production API' },
     ];
 
     return NextResponse.json(spec, {

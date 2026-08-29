@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 import { ApplicationFailure, Context } from '@temporalio/activity';
-import { PortraitGpt2ToolInputSchema } from '@agentmedia/schema';
+import { PortraitGpt2ToolInputSchema } from '@vantly-ugc/schema';
 import type { WorkerConfig } from '../config.js';
 import { getDb } from '../client/db.js';
 import { generateImageWithFallback, classifyOpenAIError } from '../client/openai.js';
@@ -154,7 +154,7 @@ export function makePortraitGpt2Activity(cfg: WorkerConfig) {
     );
     if (upsertErr) throw new Error(`primitive_runs upsert failed: ${upsertErr.message}`);
 
-    // Deduct user credits via the agent-media ledger BEFORE any provider
+    // Deduct user credits via the vantly-ugc ledger BEFORE any provider
     // call. Insufficient balance => non-retryable INSUFFICIENT_CREDITS.
     await deductPrimitiveCredits({
       db,

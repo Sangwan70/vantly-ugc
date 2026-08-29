@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest a feature for agent-media
+about: Suggest a feature for vantly-ugc
 labels: enhancement
 ---
 

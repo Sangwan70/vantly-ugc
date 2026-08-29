@@ -5,8 +5,8 @@
     "NEXT_PUBLIC_SUPABASE_ANON_KEY",
     "SUPABASE_SERVICE_ROLE_KEY",
     "SITE_URL",
-    "POSTIZ_CLIENT_SECRET",
-    "POSTIZ_CLIENT_ID",
+    "VANTLY_CLIENT_SECRET",
+    "VANTLY_CLIENT_ID",
     "DUB_API_KEY",
     "ADMIN_EMAILS",
     "STRIPE_SECRET_KEY",
@@ -31,11 +31,11 @@
       "persistent": true
     },
     "generate:edge-schema": {
-      "dependsOn": ["@agent-media/schema#build"],
+      "dependsOn": ["@vantly-ugc/schema#build"],
       "outputs": ["supabase/functions/_shared/schema.generated.ts"]
     },
     "generate:openapi": {
-      "dependsOn": ["@agent-media/schema#build"],
+      "dependsOn": ["@vantly-ugc/schema#build"],
       "outputs": ["generated/openapi.json"]
     }
   }

@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * OAuth 2.1 for the hosted MCP connector at api.agent-media.ai/mcp.
+ * OAuth 2.1 for the hosted MCP connector at api.vantly-ugc.com/mcp.
  *
  * WHY: connector clients (claude.ai web, ChatGPT, Cursor) cannot use a pasted
  * API key — they discover an authorization server from a 401's
@@ -32,7 +32,7 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY ?? '';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 
 /** Public origin of this API — the OAuth issuer + resource server. */
-const PUBLIC_ORIGIN = (process.env.PUBLIC_API_ORIGIN ?? 'https://api.agent-media.ai').replace(/\/+$/, '');
+const PUBLIC_ORIGIN = (process.env.PUBLIC_API_ORIGIN ?? 'https://api.vantly-ugc.com').replace(/\/+$/, '');
 
 /** Scopes we ask Supabase for. Kept minimal — we only need identity. */
 const SCOPES = ['openid', 'email', 'profile'];
@@ -150,7 +150,7 @@ export function createMcpOAuthRouter(): RequestHandler {
     issuerUrl: new URL(PUBLIC_ORIGIN),
     baseUrl: new URL(PUBLIC_ORIGIN),
     resourceServerUrl: new URL(`${PUBLIC_ORIGIN}/mcp`),
-    resourceName: 'agent-media',
+    resourceName: 'vantly-ugc',
     scopesSupported: SCOPES,
   }) as unknown as RequestHandler;
 }

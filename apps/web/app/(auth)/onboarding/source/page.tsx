@@ -1,9 +1,9 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
 /**
- * Onboarding step - "How did you find agent-media?".
+ * Onboarding step - "How did you find vantly-ugc?".
  *
  * A grid of attribution pills. Exactly one is selectable at a time.
  * "Other" is just recorded as "other" - we intentionally do NOT ask a
@@ -18,7 +18,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { AgentMediaLogo } from '@/components/agent-media-logo';
+import { VantlyLogo } from '@/components/vantly-logo';
 import { Home2CTAButton } from '@/components/home2-cta-button';
 import { useOnboardingEvent, logOnboardingEvent } from '@/components/onboarding/use-onboarding-event';
 
@@ -78,9 +78,9 @@ export default function OnboardingSourcePage() {
         >
           <ArrowLeft className="h-4 w-4" />
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-black text-white">
-            <AgentMediaLogo size={22} color="#FFFFFF" />
+            <VantlyLogo size={22} color="#FFFFFF" />
           </span>
-          <span style={{ letterSpacing: '-0.01em' }}>agent-media</span>
+          <span style={{ letterSpacing: '-0.01em' }}>vantly-ugc</span>
         </Link>
       </header>
 
@@ -93,7 +93,7 @@ export default function OnboardingSourcePage() {
             lineHeight: 1.1,
           }}
         >
-          How did you find agent-media?
+          How did you find vantly-ugc?
         </h1>
         <p
           className="mt-3 text-sm"

@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 //
 // make_podcast: the two-actor podcast skill. Validates the user-facing schema,
 // the credit quote (must sum the exact per-turn talking takes the worker renders),

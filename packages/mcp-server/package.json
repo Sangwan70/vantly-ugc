@@ -1,11 +1,11 @@
 {
-  "name": "@agentmedia/mcp-server",
+  "name": "@vantly-ugc/mcp-server",
   "version": "0.7.9",
-  "mcpName": "io.github.gitroomhq/agent-media-app",
-  "description": "MCP server for agent-media — generate AI UGC videos from Claude Code, Cursor, Windsurf, or any MCP-compatible client.",
+  "mcpName": "io.github.gitroomhq/vantly-ugc-app",
+  "description": "MCP server for vantly-ugc — generate AI UGC videos from Claude Code, Cursor, Windsurf, or any MCP-compatible client.",
   "type": "module",
   "license": "Apache-2.0",
-  "homepage": "https://agent-media.ai/integrations",
+  "homepage": "https://vantly-ugc.com/integrations",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/gitroomhq/agent-media-app.git",
@@ -26,7 +26,7 @@
     "product-ugc",
     "talking-head",
     "text-to-video",
-    "agent-media"
+    "vantly-ugc"
   ],
   "publishConfig": {
     "access": "public"
@@ -39,7 +39,7 @@
   ],
   "bin": {
     "mcp-server": "./dist/index.js",
-    "agent-media-mcp": "./dist/index.js"
+    "vantly-ugc-mcp": "./dist/index.js"
   },
   "main": "./dist/index.js",
   "scripts": {
@@ -50,7 +50,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@agentmedia/schema": "^0.5.5",
+    "@vantly-ugc/schema": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "zod-to-json-schema": "^3.25.0"
   },

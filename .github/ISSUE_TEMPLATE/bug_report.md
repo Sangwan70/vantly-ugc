@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug in agent-media
+about: Report a bug in vantly-ugc
 labels: bug
 ---
 
@@ -25,7 +25,7 @@ A clear description of what actually happened. Include any error messages or log
 ## Environment
 
 - **OS:** (e.g., macOS 15.2, Ubuntu 24.04, Windows 11)
-- **CLI version:** (run `agent-media --version`)
+- **CLI version:** (run `vantly-ugc --version`)
 - **Node version:** (run `node --version`)
 - **Package manager:** (pnpm / npm / yarn)
 

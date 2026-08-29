@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media usage` command.
+ * `vantly-ugc usage` command.
  *
  * Displays usage analytics for the authenticated user, including job
  * counts, credit consumption, per-model breakdowns, and per-operation
@@ -21,7 +21,7 @@ import {
 } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
 import {
-  AgentMediaAPI,
+  VantlyUgcAPI,
   type UsageStats,
   type UsageModelBreakdown,
   type UsageOperationBreakdown,
@@ -402,7 +402,7 @@ export function registerUsageCommand(program: Command): void {
       if (!apiKey) {
         throw new CLIError('Not logged in.', {
           code: 'NOT_AUTHENTICATED',
-          suggestion: "Run 'agent-media login' to authenticate.",
+          suggestion: "Run 'vantly-ugc login' to authenticate.",
         });
       }
 
@@ -416,7 +416,7 @@ export function registerUsageCommand(program: Command): void {
       }
 
       try {
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
 
         const spinner = createSpinner('Fetching usage data...');
         if (mode === 'human') spinner.start();
@@ -469,7 +469,7 @@ export function registerUsageCommand(program: Command): void {
               console.log();
               console.log(
                 chalk.dim(
-                  `  No usage data for the past ${period}. Run 'agent-media generate <model>' to get started.`,
+                  `  No usage data for the past ${period}. Run 'vantly-ugc generate <model>' to get started.`,
                 ),
               );
               console.log();

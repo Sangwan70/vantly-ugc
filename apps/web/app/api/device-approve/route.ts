@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+  const supabaseUrl = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL) ?? '';
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
   // Get the user's session token from the server-side supabase client

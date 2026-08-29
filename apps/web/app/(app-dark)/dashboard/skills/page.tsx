@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -52,10 +52,10 @@ export default function SkillCenterPage() {
           Skill Center
         </p>
         <h1 className="font-normal" style={{ color: '#E9E9F0', fontSize: 'clamp(28px,2.6vw,36px)', letterSpacing: '-0.03em', lineHeight: 1.05 }}>
-          Run any agent-media skill
+          Run any vantly-ugc skill
         </h1>
         <p className="mt-1 max-w-2xl text-sm" style={{ color: 'rgba(255,255,255,0.55)' }}>
-          Run any agent-media skill end-to-end. The same skills are exposed via REST at <code>POST /v1/skills/&lt;slug&gt;/run</code> and via MCP at <code>POST /mcp</code>. Click a card to run it or to copy the MCP install snippet.
+          Run any vantly-ugc skill end-to-end. The same skills are exposed via REST at <code>POST /v1/skills/&lt;slug&gt;/run</code> and via MCP at <code>POST /mcp</code>. Click a card to run it or to copy the MCP install snippet.
         </p>
       </div>
 

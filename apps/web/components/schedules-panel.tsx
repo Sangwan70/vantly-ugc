@@ -1,14 +1,14 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
 /**
  * SchedulesPanel — Schedules list + Recent publications + Create wizard.
  *
- * Originally lived on /integrations/postiz; moved to /jobs so the dashboard
+ * Originally lived on /integrations/vantly; moved to /jobs so the dashboard
  * has one place to see everything automated. Self-contained: loads schedules,
  * publications, integration metadata, and the user's saved default
- * destinations from their profile. The Postiz page now only owns the API
+ * destinations from their profile. The Vantly page now only owns the API
  * key + destination picker (the source of those defaults).
  */
 
@@ -31,7 +31,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/supabase/client';
 
-interface PostizIntegration {
+interface VantlyIntegration {
   id: string;
   name: string;
   identifier: string;
@@ -82,9 +82,9 @@ interface SchedulesPanelProps {
 export function SchedulesPanel({ onJobTriggered }: SchedulesPanelProps = {}) {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [schedulesLoading, setSchedulesLoading] = useState(true);
-  const [integrations, setIntegrations] = useState<PostizIntegration[]>([]);
+  const [integrations, setIntegrations] = useState<VantlyIntegration[]>([]);
   const [savedDefaults, setSavedDefaults] = useState<string[]>([]);
-  const [postizConfigured, setPostizConfigured] = useState(false);
+  const [vantlyConfigured, setVantlyConfigured] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<EditableSchedule | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -118,17 +118,17 @@ export function SchedulesPanel({ onJobTriggered }: SchedulesPanelProps = {}) {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('postiz_api_key, postiz_default_integrations')
+        .select('vantly_api_key, vantly_default_integrations')
         .eq('id', user.id)
         .maybeSingle();
       if (cancelled) return;
-      const hasKey = !!profile?.postiz_api_key;
-      setPostizConfigured(hasKey);
-      setSavedDefaults(Array.isArray(profile?.postiz_default_integrations) ? profile!.postiz_default_integrations : []);
+      const hasKey = !!profile?.vantly_api_key;
+      setVantlyConfigured(hasKey);
+      setSavedDefaults(Array.isArray(profile?.vantly_default_integrations) ? profile!.vantly_default_integrations : []);
 
       if (hasKey) {
         try {
-          const res = await fetch('/api/v1/integrations/postiz/accounts');
+          const res = await fetch('/api/v1/integrations/vantly/accounts');
           if (res.ok) {
             const json = await res.json();
             if (!cancelled) setIntegrations(json.integrations ?? []);
@@ -153,7 +153,7 @@ export function SchedulesPanel({ onJobTriggered }: SchedulesPanelProps = {}) {
 
   async function handleWizardFinish(state: ScheduleWizardState): Promise<string | null> {
     if (savedDefaults.length === 0) {
-      return 'Set default destinations on the Postiz page first.';
+      return 'Set default destinations on the Vantly page first.';
     }
     const isPromptsMode = state.characterMode === 'prompts';
     const body: Record<string, unknown> = {
@@ -290,18 +290,18 @@ export function SchedulesPanel({ onJobTriggered }: SchedulesPanelProps = {}) {
             <p className="mt-0.5 text-xs text-text-muted">
               Recurring auto-publish runs. Each tick generates a fresh video from the same brief and posts it to your
               {' '}
-              <Link href="/integrations/postiz" className="text-accent hover:underline">Postiz destinations</Link>.
+              <Link href="/integrations/vantly" className="text-accent hover:underline">Vantly destinations</Link>.
             </p>
           </div>
           <Button
             size="sm"
             onClick={() => setWizardOpen(true)}
-            disabled={!postizConfigured || savedDefaults.length === 0}
+            disabled={!vantlyConfigured || savedDefaults.length === 0}
             title={
-              !postizConfigured
-                ? 'Connect Postiz first on /integrations/postiz'
+              !vantlyConfigured
+                ? 'Connect Vantly first on /integrations/vantly'
                 : savedDefaults.length === 0
-                  ? 'Pick default destinations on /integrations/postiz first'
+                  ? 'Pick default destinations on /integrations/vantly first'
                   : undefined
             }
           >
@@ -365,20 +365,20 @@ export function SchedulesPanel({ onJobTriggered }: SchedulesPanelProps = {}) {
           {!schedulesLoading && schedules.length === 0 && (
             <p className="text-sm text-text-muted">
               No schedules yet.{' '}
-              {!postizConfigured && (
+              {!vantlyConfigured && (
                 <>
-                  Connect <Link href="/integrations/postiz" className="text-accent hover:underline">Postiz</Link> first,
+                  Connect <Link href="/integrations/vantly" className="text-accent hover:underline">Vantly</Link> first,
                   then click &ldquo;New schedule&rdquo;.
                 </>
               )}
-              {postizConfigured && savedDefaults.length === 0 && (
+              {vantlyConfigured && savedDefaults.length === 0 && (
                 <>
                   Pick default destinations on{' '}
-                  <Link href="/integrations/postiz" className="text-accent hover:underline">/integrations/postiz</Link>,
+                  <Link href="/integrations/vantly" className="text-accent hover:underline">/integrations/vantly</Link>,
                   then click &ldquo;New schedule&rdquo;.
                 </>
               )}
-              {postizConfigured && savedDefaults.length > 0 && <>Click &ldquo;New schedule&rdquo; to create one.</>}
+              {vantlyConfigured && savedDefaults.length > 0 && <>Click &ldquo;New schedule&rdquo; to create one.</>}
             </p>
           )}
           {schedules.map((s) => {

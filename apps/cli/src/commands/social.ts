@@ -1,16 +1,16 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media social ...` — publish-to-social surface.
+ * `vantly-ugc social ...` — publish-to-social surface.
  *
  * Connect the user's TikTok / Instagram / X and publish a generated video to
- * them via the api-v2 /v1/social/* endpoints (Postiz Enterprise under the hood).
+ * them via the api-v2 /v1/social/* endpoints (Vantly under the hood).
  *
- *   agent-media social providers                          — connectable networks
- *   agent-media social channels                           — connected channels
- *   agent-media social connect <provider>                 — get the OAuth URL to authorize
- *   agent-media social disconnect <channel_id>            — remove a channel
- *   agent-media social publish --video <url> --channels <id,id> [--caption ..] [--at <iso>]
+ *   vantly-ugc social providers                          — connectable networks
+ *   vantly-ugc social channels                           — connected channels
+ *   vantly-ugc social connect <provider>                 — get the OAuth URL to authorize
+ *   vantly-ugc social disconnect <channel_id>            — remove a channel
+ *   vantly-ugc social publish --video <url> --channels <id,id> [--caption ..] [--at <iso>]
  *
  * Connecting requires the human to open an OAuth URL — an agent cannot OAuth
  * on their behalf. Publishing is fully programmatic once a channel is connected.
@@ -19,7 +19,7 @@
 import type { Command } from 'commander';
 import chalk from 'chalk';
 import { getApiKey } from '../lib/credentials.js';
-import { AgentMediaAPI } from '../lib/api.js';
+import { VantlyUgcAPI } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
 import { detectOutputMode, printJson, printQuiet } from '../lib/output.js';
 
@@ -36,12 +36,12 @@ interface PublishOpts extends BaseOpts {
   at?: string;
 }
 
-async function requireApi(opts: BaseOpts): Promise<AgentMediaAPI> {
+async function requireApi(opts: BaseOpts): Promise<VantlyUgcAPI> {
   const apiKey = await getApiKey(opts.profile);
   if (!apiKey) {
-    throw new CLIError('Not logged in. Run `agent-media login`.', { code: 'NOT_AUTHENTICATED' });
+    throw new CLIError('Not logged in. Run `vantly-ugc login`.', { code: 'NOT_AUTHENTICATED' });
   }
-  return new AgentMediaAPI(apiKey);
+  return new VantlyUgcAPI(apiKey);
 }
 
 export function registerSocialCommand(program: Command): void {
@@ -86,7 +86,7 @@ export function registerSocialCommand(program: Command): void {
         if (mode === 'json') return printJson({ channels });
         if (mode === 'quiet') return channels.forEach((c) => printQuiet(String(c.id ?? '')));
         if (channels.length === 0) {
-          console.log(chalk.dim('\nNo connected channels. Run `agent-media social connect <provider>`.\n'));
+          console.log(chalk.dim('\nNo connected channels. Run `vantly-ugc social connect <provider>`.\n'));
           return;
         }
         console.log(chalk.bold('\nConnected channels:\n'));
@@ -117,7 +117,7 @@ export function registerSocialCommand(program: Command): void {
         if (mode === 'quiet') return printQuiet(url);
         console.log(`\nOpen this URL to authorize ${chalk.cyan(provider)} (an agent can't OAuth for you):\n`);
         console.log(`  ${chalk.underline(url)}\n`);
-        console.log(chalk.dim('After authorizing, run `agent-media social channels` to see it.\n'));
+        console.log(chalk.dim('After authorizing, run `vantly-ugc social channels` to see it.\n'));
       } catch (err) {
         handleError(err);
       }

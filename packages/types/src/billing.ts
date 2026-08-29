@@ -1,8 +1,8 @@
-// Copyright 2026 agent-media contributors
+// Copyright 2026 Vantly UGC contributors
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * Billing domain types for the agent-media platform.
+ * Billing domain types for the vantly-ugc platform.
  *
  * Defines plan tiers, feature gates, PAYG packs, and billing-cycle
  * configuration. These types are consumed by both the backend
@@ -12,7 +12,7 @@
 // ── Plan Tier ───────────────────────────────────────────────────────────────
 
 /**
- * Subscription plan tiers offered by agent-media.
+ * Subscription plan tiers offered by vantly-ugc.
  *
  * NOTE: `PlanTier` is also exported from index.ts for backward compatibility.
  * This enum-style constant provides runtime values in addition to the type.

@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -377,10 +377,10 @@ export default function GalleryPage() {
               <div className="mt-6 w-full max-w-md overflow-hidden rounded-lg border border-border bg-background">
                 <div className="space-y-2 px-4 py-3">
                   <p className="font-mono text-sm text-text-muted">
-                    <span className="text-text">$ agent-media generate video -p &apos;your prompt&apos; --sync</span>
+                    <span className="text-text">$ vantly-ugc generate video -p &apos;your prompt&apos; --sync</span>
                   </p>
                   <p className="font-mono text-sm text-text-muted">
-                    <span className="text-text">$ agent-media generate video -p &apos;cinematic shot&apos; --wait --download</span>
+                    <span className="text-text">$ vantly-ugc generate video -p &apos;cinematic shot&apos; --wait --download</span>
                   </p>
                 </div>
               </div>

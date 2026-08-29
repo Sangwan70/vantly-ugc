@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -7,7 +7,7 @@
  *
  * Reuses the exact public Skills & CLI hub content (ConnectGuide + live skills
  * grid + REST snippet) so there's a single source of truth for "how to connect
- * agent-media". `internal` keeps it self-contained: the MCP/CLI/Skill tabs
+ * vantly-ugc". `internal` keeps it self-contained: the MCP/CLI/Skill tabs
  * switch via state only and never push the public /mcp /cli /skills URLs that
  * would bounce the signed-in user out to the marketing site.
  */

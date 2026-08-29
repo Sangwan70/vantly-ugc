@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -21,7 +21,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState(false);
-  const [postizLoading, setPostizLoading] = useState(false);
+  const [vantlyLoading, setVantlyLoading] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
   const [verifying, setVerifying] = useState(false);
 
@@ -196,11 +196,11 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     }
   }
 
-  function handlePostizLogin() {
+  function handleSignInWithVantly() {
     setError(null);
-    setPostizLoading(true);
-    analytics.trackEvent('login_completed', { method: 'postiz' });
-    window.location.href = `/api/auth/postiz?redirect=${encodeURIComponent('/dashboard')}`;
+    setVantlyLoading(true);
+    analytics.trackEvent('login_completed', { method: 'vantly' });
+    window.location.href = `/api/auth/vantly?redirect=${encodeURIComponent('/dashboard')}`;
   }
 
   if (!open) return null;
@@ -289,7 +289,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
           /* ── Email Entry ──────────────────────────────────────────── */
           <div className="rounded-2xl border border-[#d4d4d4] bg-white p-8">
             <h2 className="text-xl font-bold text-[#121212]">
-              Sign in to agent-media
+              Sign in to vantly-ugc
             </h2>
             <p className="mt-2 text-sm text-[#6b6b76]">
               Sign in or create your account
@@ -365,19 +365,19 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
                 )}
               </button>
               <button
-                disabled={postizLoading}
-                onClick={handlePostizLogin}
+                disabled={vantlyLoading}
+                onClick={handleSignInWithVantly}
                 className="flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#d4d4d4] bg-white text-sm font-medium text-[#121212] shadow-[0_4px_14px_rgba(0,0,0,0.08)] transition-all duration-200 hover:bg-[#f5f5f5] hover:shadow-[0_6px_20px_rgba(0,0,0,0.12)] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {postizLoading ? (
+                {vantlyLoading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Connecting to Postiz...
+                    Connecting to Vantly...
                   </>
                 ) : (
                   <>
-                    <PostizIcon className="h-4 w-4" />
-                    Continue with Postiz
+                    <VantlyIcon className="h-4 w-4" />
+                    Continue with Vantly
                   </>
                 )}
               </button>
@@ -389,11 +389,11 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
   );
 }
 
-function PostizIcon({ className }: { className?: string }) {
+function VantlyIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="currentColor">
       <rect x="3" y="3" width="18" height="18" rx="4" fill="#7C3AED" />
-      <text x="12" y="17" textAnchor="middle" fontSize="14" fontWeight="bold" fill="white" fontFamily="sans-serif">P</text>
+      <text x="12" y="17" textAnchor="middle" fontSize="14" fontWeight="bold" fill="white" fontFamily="sans-serif">V</text>
     </svg>
   );
 }

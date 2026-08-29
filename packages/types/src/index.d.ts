@@ -1,5 +1,5 @@
 /**
- * @agent-media/types - Shared type definitions for the agent-media platform.
+ * @vantly-ugc/types - Shared type definitions for the vantly-ugc platform.
  */
 export * from './auth.js';
 export * from './billing.js';

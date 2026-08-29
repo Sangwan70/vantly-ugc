@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Edge Function: verify-attestation
@@ -18,7 +18,7 @@
  *     "nonce": "<server-issued nonce>",        // mint via /functions/v1/attestation-nonce (TODO)
  *     "attestation": "<base64 attestation>",   // App Attest assertion or Play Integrity token
  *     "key_id": "<App Attest key id>",         // iOS only — first call only
- *     "bundle_id": "ai.agentmedia.app"         // iOS bundle id or Android package name
+ *     "bundle_id": "ai.vantly-ugc.app"         // iOS bundle id or Android package name
  *   }
  *
  * Response (200):
@@ -53,7 +53,7 @@
  *
  * Env vars (none of these exist yet — set before going live):
  *   APPLE_APP_ATTEST_TEAM_ID         — Apple Developer team id
- *   APPLE_APP_ATTEST_BUNDLE_ID       — e.g. ai.agentmedia.app
+ *   APPLE_APP_ATTEST_BUNDLE_ID       — e.g. ai.vantly-ugc.app
  *   GOOGLE_PLAY_INTEGRITY_PACKAGE    — Android package name
  *   GOOGLE_PLAY_INTEGRITY_SA_JSON    — base64-encoded service account JSON
  *   ATTESTATION_SIGNING_KEY          — HS256 secret for the returned claim

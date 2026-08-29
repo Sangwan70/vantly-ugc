@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * v2 · Persona brief generator.
@@ -20,7 +20,8 @@
  * downstream sheet prompt should leave open rather than guess.
  */
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+import { callAnthropicMessages, hasProviderCredential, missingCredentialEnvVar } from '../anthropic-client.js';
+
 const MODEL =
   process.env.PERSONA_BRIEF_MODEL ??
   process.env.SELFIE_ORCHESTRATOR_MODEL ??
@@ -31,7 +32,7 @@ export const BRIEF_KEYS = [
   'skin_tone', 'clothing', 'energy', 'signature_mannerism',
 ];
 
-const SYSTEM_PROMPT = `You are agent-media's persona-brief generator.
+const SYSTEM_PROMPT = `You are vantly-ugc's persona-brief generator.
 
 You receive a free-text character description. Your job is to produce a 9-field locked persona brief that fully describes the character — every visible detail explicit, no ambiguity.
 
@@ -90,8 +91,8 @@ function parseJsonObject(text) {
  * @returns {Promise<Record<string, string>>}  9-field brief
  */
 export async function generatePersonaBrief({ description, jobId }) {
-  if (!ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY missing — persona brief generation requires it.');
+  if (!hasProviderCredential()) {
+    throw new Error(`${missingCredentialEnvVar()} missing — persona brief generation requires it.`);
   }
   if (typeof description !== 'string' || description.trim().length < 3) {
     throw new Error('persona-brief: description (≥3 chars) required');
@@ -104,19 +105,11 @@ export async function generatePersonaBrief({ description, jobId }) {
     'Return the 9-field persona brief JSON now.',
   ].join('\n');
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 1500,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: user }],
-    }),
+  const resp = await callAnthropicMessages({
+    model: MODEL,
+    max_tokens: 1500,
+    system: SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: user }],
     signal: AbortSignal.timeout(45_000),
   });
 

@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media persona` command group.
+ * `vantly-ugc persona` command group.
  *
  * Manages user personas (voice + face combinations for UGC videos).
  *
@@ -22,7 +22,7 @@ import {
   createSpinner,
 } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
-import { AgentMediaAPI } from '../lib/api.js';
+import { VantlyUgcAPI } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
 
 const VALID_VOICE_EXTENSIONS = new Set(['.mp3', '.wav']);
@@ -64,12 +64,12 @@ export function registerPersonaCommand(program: Command): void {
       if (!apiKey) {
         throw new CLIError('Not logged in.', {
           code: 'NOT_AUTHENTICATED',
-          suggestion: "Run 'agent-media login' to authenticate.",
+          suggestion: "Run 'vantly-ugc login' to authenticate.",
         });
       }
 
       try {
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
         const spinner = createSpinner('Fetching personas...');
         if (mode === 'human') spinner.start();
 
@@ -92,7 +92,7 @@ export function registerPersonaCommand(program: Command): void {
         if (result.personas.length === 0) {
           console.log();
           console.log(chalk.dim('  No personas yet. Create one with:'));
-          console.log(chalk.dim('  agent-media persona create "My Persona" --voice ./voice.mp3 --face ./photo.jpg'));
+          console.log(chalk.dim('  vantly-ugc persona create "My Persona" --voice ./voice.mp3 --face ./photo.jpg'));
           console.log();
           return;
         }
@@ -123,8 +123,8 @@ export function registerPersonaCommand(program: Command): void {
     .description(
       'Create a new persona from a voice sample and face photo\n\n' +
       'Examples:\n' +
-      '  $ agent-media persona create "Alex" --voice ./voice.mp3 --face ./photo.jpg\n' +
-      '  $ agent-media persona create "Sarah" --voice ~/recordings/sarah.wav --face ~/photos/sarah.png',
+      '  $ vantly-ugc persona create "Alex" --voice ./voice.mp3 --face ./photo.jpg\n' +
+      '  $ vantly-ugc persona create "Sarah" --voice ~/recordings/sarah.wav --face ~/photos/sarah.png',
     )
     .requiredOption('--voice <file>', 'Path to voice sample (MP3 or WAV, 1-2 min)')
     .requiredOption('--face <file>', 'Path to face photo (JPG, PNG, or WebP, min 512x512)')
@@ -141,7 +141,7 @@ export function registerPersonaCommand(program: Command): void {
       if (!apiKey) {
         throw new CLIError('Not logged in.', {
           code: 'NOT_AUTHENTICATED',
-          suggestion: "Run 'agent-media login' to authenticate.",
+          suggestion: "Run 'vantly-ugc login' to authenticate.",
         });
       }
 
@@ -189,7 +189,7 @@ export function registerPersonaCommand(program: Command): void {
           console.log(`  Face:  ${chalk.cyan(basename(facePath))} (${(faceBuffer.length / 1024 / 1024).toFixed(1)} MB)`);
         }
 
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
         const spinner = createSpinner('Creating persona (cloning voice)...');
         if (mode === 'human') spinner.start();
 
@@ -226,7 +226,7 @@ export function registerPersonaCommand(program: Command): void {
         console.log(`  ${chalk.bold('Voice:')}    ${result.voice_clone_status === 'ready' ? chalk.green('cloned') : chalk.yellow(result.voice_clone_status)}`);
         console.log(`  ${chalk.bold('ID:')}       ${chalk.dim(result.persona_id)}`);
         console.log();
-        console.log(chalk.dim(`  Use with: agent-media ugc "your script" --persona ${result.slug} --sync`));
+        console.log(chalk.dim(`  Use with: vantly-ugc ugc "your script" --persona ${result.slug} --sync`));
         console.log();
       } catch (error: unknown) {
         handleError(error);
@@ -251,12 +251,12 @@ export function registerPersonaCommand(program: Command): void {
       if (!apiKey) {
         throw new CLIError('Not logged in.', {
           code: 'NOT_AUTHENTICATED',
-          suggestion: "Run 'agent-media login' to authenticate.",
+          suggestion: "Run 'vantly-ugc login' to authenticate.",
         });
       }
 
       try {
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
         const spinner = createSpinner('Deleting persona...');
         if (mode === 'human') spinner.start();
 

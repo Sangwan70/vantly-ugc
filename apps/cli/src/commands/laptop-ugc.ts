@@ -1,8 +1,8 @@
 import { printDeprecation } from '../lib/deprecation.js';
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media laptop-ugc` command.
+ * `vantly-ugc laptop-ugc` command.
  *
  * Generates a 3-scene laptop-UGC ad: actor holds laptop showing your app,
  * scrolling B-roll, then face-only selfie close. Native lip-synced audio.
@@ -19,7 +19,7 @@ import {
   createSpinner,
 } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
-import { AgentMediaAPI, type GenerationJob } from '../lib/api.js';
+import { VantlyUgcAPI, type GenerationJob } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
 import type { OutputMode } from '../types.js';
 
@@ -71,7 +71,7 @@ function isUrl(value: string): boolean {
 }
 
 async function uploadLocalFile(
-  api: AgentMediaAPI,
+  api: VantlyUgcAPI,
   filePath: string,
   isRecording: boolean,
   mode: OutputMode,
@@ -117,7 +117,7 @@ async function uploadLocalFile(
 }
 
 async function waitForJob(
-  api: AgentMediaAPI,
+  api: VantlyUgcAPI,
   jobId: string,
   mode: OutputMode,
 ): Promise<GenerationJob | null> {
@@ -178,11 +178,11 @@ export function registerLaptopUgcCommand(program: Command): void {
     .description(
       'Generate a 3-scene Laptop UGC ad — actor holds laptop showing your app, scrolls, talks\n\n' +
       'Examples:\n' +
-      '  $ agent-media laptop-ugc \\\n' +
+      '  $ vantly-ugc laptop-ugc \\\n' +
       '      --app-recording ./demo.mp4 \\\n' +
       '      --script "Found this AI tool that ships UGC ads in 2 minutes." \\\n' +
       '      --sync\n\n' +
-      '  $ agent-media laptop-ugc \\\n' +
+      '  $ vantly-ugc laptop-ugc \\\n' +
       '      --app-image ./screenshot.png \\\n' +
       '      --script "..." \\\n' +
       '      --actor mei --duration 20 --sync\n\n' +
@@ -217,7 +217,7 @@ export function registerLaptopUgcCommand(program: Command): void {
       if (!apiKey) {
         throw new CLIError('Not logged in.', {
           code: 'NOT_AUTHENTICATED',
-          suggestion: "Run 'agent-media login' to authenticate.",
+          suggestion: "Run 'vantly-ugc login' to authenticate.",
         });
       }
 
@@ -252,7 +252,7 @@ export function registerLaptopUgcCommand(program: Command): void {
       }
 
       try {
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
 
         // Resolve recording or image to a public URL (upload local files)
         let recordingUrl: string | undefined;
@@ -291,7 +291,7 @@ export function registerLaptopUgcCommand(program: Command): void {
               console.log(`  ${chalk.bold('Subtitles:')}  ${result.subtitle_style}`);
               console.log(`  ${chalk.bold('Credits:')}    ${result.credits_deducted} deducted`);
               console.log();
-              console.log(chalk.dim(`  Run 'agent-media status ${result.job_id}' to check progress`));
+              console.log(chalk.dim(`  Run 'vantly-ugc status ${result.job_id}' to check progress`));
               console.log(chalk.dim(`  Or re-run with --sync to wait for completion`));
               console.log();
           }

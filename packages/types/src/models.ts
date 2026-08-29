@@ -1,8 +1,8 @@
-// Copyright 2026 agent-media contributors
+// Copyright 2026 Vantly UGC contributors
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * Model registry types for the agent-media platform.
+ * Model registry types for the vantly-ugc platform.
  *
  * Defines the model, job, and pricing types used across the CLI,
  * Edge Functions, and dashboard.

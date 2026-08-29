@@ -13,10 +13,10 @@ COPY packages/schema/ packages/schema/
 COPY services/api-v2/ services/api-v2/
 
 # Install dependencies for schema + api-v2 only
-RUN pnpm install --frozen-lockfile --filter @agentmedia/schema --filter api-v2
+RUN pnpm install --frozen-lockfile --filter @vantly-ugc/schema --filter api-v2
 
 # Build schema first, then api-v2
-RUN pnpm --filter @agentmedia/schema build
+RUN pnpm --filter @vantly-ugc/schema build
 RUN pnpm --filter api-v2 build
 
 WORKDIR /app/services/api-v2

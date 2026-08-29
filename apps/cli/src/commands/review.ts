@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media saas-review --saas <name>` command.
+ * `vantly-ugc saas-review --saas <name>` command.
  *
  * Generates a UGC-style SaaS review video. Builds a specialized script
  * prompt from the SaaS name, angle, talking points, and optional URL,
@@ -22,7 +22,7 @@ import {
 } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
 import {
-  AgentMediaAPI,
+  VantlyUgcAPI,
   type GenerationJob,
 } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
@@ -55,7 +55,7 @@ function formatElapsed(seconds: number): string {
 }
 
 async function waitForJob(
-  api: AgentMediaAPI,
+  api: VantlyUgcAPI,
   jobId: string,
   mode: OutputMode,
 ): Promise<GenerationJob | null> {
@@ -169,10 +169,10 @@ function buildSaasReviewCommand(program: Command, commandName: 'saas-review' | '
     .description(
       'Generate a SaaS review video with an AI actor\n\n' +
       'Examples:\n' +
-      `  $ agent-media ${commandName} --saas "Linear" --sync\n` +
-      `  $ agent-media ${commandName} --saas "Cursor" --angle enthusiastic --actor sofia --sync\n` +
-      `  $ agent-media ${commandName} --saas "Notion" --url https://notion.so --screenshots img1.png,img2.png --sync\n` +
-      `  $ agent-media ${commandName} --saas "Jira" --angle roast --talking-points "slow, complex, expensive" --sync\n\n` +
+      `  $ vantly-ugc ${commandName} --saas "Linear" --sync\n` +
+      `  $ vantly-ugc ${commandName} --saas "Cursor" --angle enthusiastic --actor sofia --sync\n` +
+      `  $ vantly-ugc ${commandName} --saas "Notion" --url https://notion.so --screenshots img1.png,img2.png --sync\n` +
+      `  $ vantly-ugc ${commandName} --saas "Jira" --angle roast --talking-points "slow, complex, expensive" --sync\n\n` +
       'Provide a SaaS product name and the AI generates a review script,\n' +
       'then produces a complete video with talking heads, B-roll, and subtitles.',
     )
@@ -181,8 +181,8 @@ function buildSaasReviewCommand(program: Command, commandName: 'saas-review' | '
     .option('--screenshots <urls>', 'Comma-separated screenshot URLs for B-roll walkthrough scenes')
     .option('--angle <type>', `Review angle: ${VALID_ANGLES.join(', ')} (default: honest)`)
     .option('--talking-points <text>', 'Key points the reviewer should mention (features, pros/cons, pricing)')
-    .option('--actor <slug>', 'AI actor for talking heads (see `agent-media actor list`)')
-    .option('--persona <slug>', 'Use a persona for voice + face (created via `agent-media persona create`)')
+    .option('--actor <slug>', 'AI actor for talking heads (see `vantly-ugc actor list`)')
+    .option('--persona <slug>', 'Use a persona for voice + face (created via `vantly-ugc persona create`)')
     .option('--voice <name>', 'TTS voice override (alloy, echo, fable, onyx, nova, shimmer)')
     .option('--style <name>', 'Subtitle style (default: hormozi). Options: hormozi, tiktok, minimal, clean, bold, impact, fire, pop, spotlight, aesthetic, pastel, glow, neon, electric, gradient, karaoke, boxed', 'hormozi')
     .option('-d, --duration <seconds>', 'Target video duration in seconds (5, 10, 15)', parseInt)
@@ -224,19 +224,19 @@ function buildSaasReviewCommand(program: Command, commandName: 'saas-review' | '
       const apiKey = getApiKey(profileName);
 
       if (deprecatedAlias && mode === 'human') {
-        console.warn(chalk.yellow("  `agent-media review` is deprecated. Use `agent-media saas-review` instead."));
+        console.warn(chalk.yellow("  `vantly-ugc review` is deprecated. Use `vantly-ugc saas-review` instead."));
         console.warn();
       }
 
       if (!apiKey) {
         throw new CLIError('Not logged in.', {
           code: 'NOT_AUTHENTICATED',
-          suggestion: "Run 'agent-media login' to authenticate.",
+          suggestion: "Run 'vantly-ugc login' to authenticate.",
         });
       }
 
       try {
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
 
         // ── Validate SaaS-specific inputs ──────────────────────────────
         if (cmdOpts.angle && !VALID_ANGLES.includes(cmdOpts.angle as typeof VALID_ANGLES[number])) {
@@ -426,7 +426,7 @@ function buildSaasReviewCommand(program: Command, commandName: 'saas-review' | '
               console.log(`  ${chalk.bold('Duration:')}   ~${result.estimated_duration}s estimated`);
               console.log(`  ${chalk.bold('Credits:')}    ${result.credits_deducted} deducted`);
               console.log();
-              console.log(chalk.dim(`  Run 'agent-media status ${result.job_id}' to check progress`));
+              console.log(chalk.dim(`  Run 'vantly-ugc status ${result.job_id}' to check progress`));
               console.log(chalk.dim(`  Or use --sync to wait for completion`));
               console.log();
               break;

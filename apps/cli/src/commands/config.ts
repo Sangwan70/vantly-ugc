@@ -1,9 +1,9 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media config` command.
+ * `vantly-ugc config` command.
  *
- * Manages CLI configuration stored at ~/.agent-media/config.json.
+ * Manages CLI configuration stored at ~/.vantly-ugc/config.json.
  * Supports get, set, list, and reset subcommands for controlling
  * default behavior of the CLI.
  *
@@ -39,7 +39,7 @@ export function registerConfigCommand(program: Command): void {
     .command('config')
     .description('Manage CLI configuration');
 
-  // agent-media config set <key> <value>
+  // vantly-ugc config set <key> <value>
   configCmd
     .command('set <key> <value>')
     .description('Set a configuration value')
@@ -91,7 +91,7 @@ export function registerConfigCommand(program: Command): void {
       }
     });
 
-  // agent-media config get <key>
+  // vantly-ugc config get <key>
   configCmd
     .command('get <key>')
     .description('Get a configuration value')
@@ -137,7 +137,7 @@ export function registerConfigCommand(program: Command): void {
       }
     });
 
-  // agent-media config list
+  // vantly-ugc config list
   configCmd
     .command('list')
     .description('List all configuration values')
@@ -198,7 +198,7 @@ export function registerConfigCommand(program: Command): void {
       }
     });
 
-  // agent-media config reset
+  // vantly-ugc config reset
   configCmd
     .command('reset')
     .description('Reset all configuration to defaults')
@@ -225,7 +225,7 @@ export function registerConfigCommand(program: Command): void {
       }
     });
 
-  // agent-media config export
+  // vantly-ugc config export
   configCmd
     .command('export')
     .description('Output full configuration as JSON to stdout')
@@ -258,7 +258,7 @@ export function registerConfigCommand(program: Command): void {
       }
     });
 
-  // agent-media config import <file>
+  // vantly-ugc config import <file>
   configCmd
     .command('import <file>')
     .description('Import configuration from a JSON file, merging into current config')

@@ -1,6 +1,6 @@
-# Copyright 2026 agent-media contributors. Apache-2.0 license.
+# Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 #
-# Makefile - Development convenience targets for agent-media.
+# Makefile - Development convenience targets for vantly-ugc.
 #
 # Usage:
 #   make dev       Start Supabase local + web dev server + CLI watch
@@ -31,7 +31,7 @@ SUPABASE := npx supabase
 
 ## Start all development services (Supabase + web + CLI watch)
 dev:
-	@echo "Starting agent-media development environment..."
+	@echo "Starting vantly-ugc development environment..."
 	@$(MAKE) dev-supabase &
 	@sleep 5
 	@$(MAKE) dev-web &

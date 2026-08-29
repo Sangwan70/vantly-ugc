@@ -1,5 +1,5 @@
 #!/usr/bin/env tsx
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Generate the public Claude Skills plugin from the api-v2 skill
@@ -25,7 +25,7 @@ const REPO_ROOT = resolve(__dirname, '..', '..', '..');
 const OUT = resolve(REPO_ROOT, 'public-skill');
 
 // ── Per-skill metadata that does NOT live in the registry (yet) ──
-// Cost (in agent-media credits) and rough wall-clock estimates so
+// Cost (in vantly-ugc credits) and rough wall-clock estimates so
 // agents can budget before calling.
 const COSTS: Record<string, { credits: number | string; seconds: number | string }> = {
   make_portrait: { credits: 35, seconds: 60 },
@@ -149,11 +149,11 @@ function pluginVersion(): string {
  * reading this should be able to call it correctly without a tools/list probe.
  */
 function makeUgcSkillBody(cost: { credits: number | string; seconds: number | string }): string {
-  return `# Agent-Media UGC Video
+  return `# Vantly UGC Video
 
 **One tool. One call. A finished, captioned, vertical UGC video.**
 
-You give a \`script\` and (optionally) who says it — agent-media picks the pipeline, the take count, and the duration for you. You NEVER pick a sub-tool:
+You give a \`script\` and (optionally) who says it — vantly-ugc picks the pipeline, the take count, and the duration for you. You NEVER pick a sub-tool:
 
 - **Short line** → one clean talking-head clip.
 - **Full monologue** (any length) → a seamless multi-take video, **never trimmed to fit a clip**.
@@ -209,12 +209,12 @@ After a video finishes, the character is **saved** — \`GET /v1/characters\` li
 
 ## How to call it
 
-Preferred path: MCP tool \`mcp__agent-media__make_ugc\`. The full schema is auto-published via \`tools/list\`; the fields above are the manual.
+Preferred path: MCP tool \`mcp__vantly-ugc__make_ugc\`. The full schema is auto-published via \`tools/list\`; the fields above are the manual.
 
 Fallback path: REST.
 \`\`\`http
-POST https://api.agent-media.ai/v1/skills/make_ugc/run
-Authorization: Bearer $AGENT_MEDIA_API_KEY
+POST https://api.vantly-ugc.com/v1/skills/make_ugc/run
+Authorization: Bearer $VANTLY_UGC_API_KEY
 Content-Type: application/json
 Idempotency-Key: <any unique string per intent>
 
@@ -230,8 +230,8 @@ Idempotency-Key: <any unique string per intent>
 ## Polling the result
 
 \`\`\`http
-GET https://api.agent-media.ai/v1/skills/runs/<skill_run_id>
-Authorization: Bearer $AGENT_MEDIA_API_KEY
+GET https://api.vantly-ugc.com/v1/skills/runs/<skill_run_id>
+Authorization: Bearer $VANTLY_UGC_API_KEY
 \`\`\`
 
 Returns per-step \`status\` + \`current_step\`; \`final_output.video_url\` is your finished MP4 when \`status\` is \`succeeded\`.
@@ -242,7 +242,7 @@ Returns per-step \`status\` + \`current_step\`; \`final_output.video_url\` is yo
 
 - See [reference/realism-rubric.md](../../reference/realism-rubric.md) for the realism doctrine baked into every prompt.
 - See [reference/pacing.md](../../reference/pacing.md) — you don't manage pacing; make_ugc sizes every take to the words.
-- See [reference/auth.md](../../reference/auth.md) for first-time install and \`agent-media login\`.
+- See [reference/auth.md](../../reference/auth.md) for first-time install and \`vantly-ugc login\`.
 
 ## Source of truth
 
@@ -254,7 +254,7 @@ function skillBody(skill: SkillEntry): string {
   const cost = COSTS[skill.slug] ?? { credits: '?', seconds: '?' };
   if (skill.slug === 'make_ugc') return makeUgcSkillBody(cost);
   const example = EXAMPLE_INPUTS[skill.slug];
-  const toolName = `mcp__agent-media__${skill.slug}`;
+  const toolName = `mcp__vantly-ugc__${skill.slug}`;
   return [
     `# ${skill.name}`,
     '',
@@ -263,8 +263,8 @@ function skillBody(skill: SkillEntry): string {
     '## When to use this',
     '',
     `Call this skill when the user asks for the outcome described above. ` +
-      `It runs on the agent-media vNext primitive runtime via the \`${toolName}\` MCP tool. ` +
-      `Authentication is the user's existing agent-media Bearer token (issued by \`agent-media login\`).`,
+      `It runs on the vantly-ugc vNext primitive runtime via the \`${toolName}\` MCP tool. ` +
+      `Authentication is the user's existing vantly-ugc Bearer token (issued by \`vantly-ugc login\`).`,
     '',
     '## How to call it',
     '',
@@ -274,8 +274,8 @@ function skillBody(skill: SkillEntry): string {
     'Fallback path: REST.',
     '',
     '```http',
-    `POST https://api.agent-media.ai/v1/skills/${skill.slug}/run`,
-    'Authorization: Bearer $AGENT_MEDIA_API_KEY',
+    `POST https://api.vantly-ugc.com/v1/skills/${skill.slug}/run`,
+    'Authorization: Bearer $VANTLY_UGC_API_KEY',
     'Content-Type: application/json',
     'Idempotency-Key: <any unique string per intent>',
     '',
@@ -291,8 +291,8 @@ function skillBody(skill: SkillEntry): string {
     '## Polling the result',
     '',
     skill.primitive.startsWith('composed:')
-      ? '```http\nGET https://api.agent-media.ai/v1/skills/runs/<skill_run_id>\nAuthorization: Bearer $AGENT_MEDIA_API_KEY\n```\n\nReturns per-step status with intermediate artifact URLs as each primitive completes.'
-      : '```http\nGET https://api.agent-media.ai/v1/primitives/runs/<run_id>\nAuthorization: Bearer $AGENT_MEDIA_API_KEY\n```',
+      ? '```http\nGET https://api.vantly-ugc.com/v1/skills/runs/<skill_run_id>\nAuthorization: Bearer $VANTLY_UGC_API_KEY\n```\n\nReturns per-step status with intermediate artifact URLs as each primitive completes.'
+      : '```http\nGET https://api.vantly-ugc.com/v1/primitives/runs/<run_id>\nAuthorization: Bearer $VANTLY_UGC_API_KEY\n```',
     '',
     '## House rules baked into this skill',
     '',
@@ -300,7 +300,7 @@ function skillBody(skill: SkillEntry): string {
     skill.slug === 'make_simple_selfie' || skill.slug === 'make_ugc_video'
       ? '- See [reference/pacing.md](../../reference/pacing.md) for how word count picks the take duration.'
       : null,
-    '- See [reference/auth.md](../../reference/auth.md) for first-time install and `agent-media login`.',
+    '- See [reference/auth.md](../../reference/auth.md) for first-time install and `vantly-ugc login`.',
     '',
     '## Source of truth',
     '',
@@ -313,12 +313,12 @@ function skillBody(skill: SkillEntry): string {
 function pluginJson(): string {
   return JSON.stringify(
     {
-      name: 'agent-media',
+      name: 'vantly-ugc',
       description:
-        'Agent-Media UGC Video — one tool. Give a script + a person (description, photo, or saved character) and get a finished, captioned, lip-synced vertical UGC video. Short line → one clip; full monologue → seamless multi-take; b-roll URL → narrated overlay. One Bearer token, one MCP server.',
+        'Vantly UGC Video — one tool. Give a script + a person (description, photo, or saved character) and get a finished, captioned, lip-synced vertical UGC video. Short line → one clip; full monologue → seamless multi-take; b-roll URL → narrated overlay. One Bearer token, one MCP server.',
       version: pluginVersion(),
       author: { name: 'gitroomhq', url: 'https://github.com/gitroomhq' },
-      homepage: 'https://agent-media.ai',
+      homepage: 'https://vantly-ugc.com',
       repository: 'https://github.com/gitroomhq/agent-media-app',
       license: 'Apache-2.0',
       keywords: [
@@ -335,13 +335,13 @@ function pluginJson(): string {
         'gpt-image-2',
         'seedance',
         'video-generation',
-        'agent-media',
+        'vantly-ugc',
       ],
       categories: ['video', 'media', 'ai-creative'],
       api: {
-        rest: 'https://api.agent-media.ai',
-        openapi: 'https://api.agent-media.ai/openapi.json',
-        mcp: 'https://api.agent-media.ai/mcp',
+        rest: 'https://api.vantly-ugc.com',
+        openapi: 'https://api.vantly-ugc.com/openapi.json',
+        mcp: 'https://api.vantly-ugc.com/mcp',
       },
     },
     null,
@@ -351,7 +351,7 @@ function pluginJson(): string {
 
 /**
  * Marketplace manifest — written to the REPO ROOT (`/.claude-plugin/marketplace.json`),
- * which is where `/plugin marketplace add gitroomhq/agent-media-app` looks.
+ * which is where `/plugin marketplace add gitroomhq/vantly-ugc-app` looks.
  *
  * `source` must be `./public-skill`, NOT `./`.
  *
@@ -364,18 +364,18 @@ function pluginJson(): string {
 function marketplaceJson(): string {
   return JSON.stringify(
     {
-      name: 'agent-media',
+      name: 'vantly-ugc',
       owner: { name: 'gitroomhq', url: 'https://github.com/gitroomhq' },
       metadata: {
-        description: 'Agent-Media UGC Video for Claude Code — one tool: give a script + a person/image/character, get a finished captioned vertical UGC video.',
+        description: 'Vantly UGC Video for Claude Code — one tool: give a script + a person/image/character, get a finished captioned vertical UGC video.',
         version: pluginVersion(),
       },
       plugins: [
         {
-          name: 'agent-media',
+          name: 'vantly-ugc',
           source: './public-skill',
           description:
-            'Agent-Media UGC Video — one tool. Give a script + a person/image/character; get a finished captioned vertical UGC video (short clip, multi-take monologue, or narrated b-roll). Connects over the hosted MCP server with browser sign-in — no API key.',
+            'Vantly UGC Video — one tool. Give a script + a person/image/character; get a finished captioned vertical UGC video (short clip, multi-take monologue, or narrated b-roll). Connects over the hosted MCP server with browser sign-in — no API key.',
         },
       ],
     },
@@ -390,7 +390,7 @@ function marketplaceJson(): string {
  * The hosted server speaks OAuth 2.1 with dynamic client registration, so the
  * client registers itself and opens a browser sign-in — the user never copies an
  * API key and no secret lands in a config file. Emitting the old
- * `npx @agentmedia/mcp-server` + `${AGENT_MEDIA_API_KEY}` form made a
+ * `npx @vantly-ugc/mcp-server` + `${VANTLY_UGC_API_KEY}` form made a
  * zero-config product look like it needed a key.
  *
  * API keys still work (send `Authorization: Bearer ma_...` to the same URL) and
@@ -401,9 +401,9 @@ function mcpJson(): string {
   return JSON.stringify(
     {
       mcpServers: {
-        'agent-media': {
+        'vantly-ugc': {
           type: 'http',
-          url: 'https://api.agent-media.ai/mcp',
+          url: 'https://api.vantly-ugc.com/mcp',
         },
       },
     },
@@ -414,23 +414,23 @@ function mcpJson(): string {
 
 function readme(): string {
   return [
-    '# agent-media — Claude Skill plugin',
+    '# vantly-ugc — Claude Skill plugin',
     '',
-    '[![npm — mcp-server](https://img.shields.io/npm/v/%40agentmedia%2Fmcp-server?label=%40agentmedia%2Fmcp-server)](https://www.npmjs.com/package/@agentmedia/mcp-server)',
-    '[![npm — CLI](https://img.shields.io/npm/v/agent-media-cli?label=agent-media-cli)](https://www.npmjs.com/package/agent-media-cli)',
+    '[![npm — mcp-server](https://img.shields.io/npm/v/%40vantly-ugc%2Fmcp-server?label=%40vantly-ugc%2Fmcp-server)](https://www.npmjs.com/package/@vantly-ugc/mcp-server)',
+    '[![npm — CLI](https://img.shields.io/npm/v/vantly-ugc-cli?label=vantly-ugc-cli)](https://www.npmjs.com/package/vantly-ugc-cli)',
     '[![Claude plugin](https://img.shields.io/badge/claude-%2Fplugin%20install-A78BFA)](https://github.com/gitroomhq/agent-media-app)',
     '[![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)',
     '',
-    '**Agents: read this whole page. It is everything you need to create UGC videos with agent-media — no other docs required.**',
+    '**Agents: read this whole page. It is everything you need to create UGC videos with vantly-ugc — no other docs required.**',
     '',
-    'agent-media turns a short description (or a photo) + a script into a finished, captioned, lip-synced vertical UGC video. Works in Claude Code, Cursor, Claude.ai, or any MCP / HTTP agent — connect with one URL and a browser sign-in, no API key.',
+    'vantly-ugc turns a short description (or a photo) + a script into a finished, captioned, lip-synced vertical UGC video. Works in Claude Code, Cursor, Claude.ai, or any MCP / HTTP agent — connect with one URL and a browser sign-in, no API key.',
     '',
     '## 1. Connect — no API key needed',
     '',
     '**One URL. Sign in with your browser.**',
     '',
     '```',
-    'https://api.agent-media.ai/mcp',
+    'https://api.vantly-ugc.com/mcp',
     '```',
     '',
     'The hosted connector speaks OAuth 2.1 with dynamic client registration: your agent registers itself, opens a sign-in page, and gets a token. Nothing to copy, no secret in a config file.',
@@ -438,33 +438,33 @@ function readme(): string {
     '**Fastest path — paste this to your agent and it sets itself up:**',
     '',
     '```text',
-    'Set up agent-media for me so I can generate UGC videos from here.',
-    '1. Add the agent-media MCP server: https://api.agent-media.ai/mcp (Streamable HTTP).',
+    'Set up vantly-ugc for me so I can generate UGC videos from here.',
+    '1. Add the vantly-ugc MCP server: https://api.vantly-ugc.com/mcp (Streamable HTTP).',
     '2. Authenticate: complete the sign-in in the browser it opens.',
-    '3. Install the companion skills: run `npx skills add gitroomhq/agent-media-app`.',
+    '3. Install the companion skills: run `npx skills add gitroomhq/vantly-ugc-app`.',
     'Once that\'s done, let me know when it\'s ready.',
     '```',
     '',
-    'Other routes: **Claude.ai / Desktop** → Settings → Connectors → add custom connector → paste the URL → Connect. **Claude Code plugin** → `/plugin marketplace add gitroomhq/agent-media-app` then `/plugin install agent-media@agent-media`. **Skills only** → `npx skills add gitroomhq/agent-media-app`.',
+    'Other routes: **Claude.ai / Desktop** → Settings → Connectors → add custom connector → paste the URL → Connect. **Claude Code plugin** → `/plugin marketplace add gitroomhq/vantly-ugc-app` then `/plugin install vantly-ugc@vantly-ugc`. **Skills only** → `npx skills add gitroomhq/vantly-ugc-app`.',
     '',
     '## 2. Auth',
     '',
-    'OAuth (above) is the default and needs no key. You need credits on the account — buy at agent-media.ai.',
+    'OAuth (above) is the default and needs no key. You need credits on the account — buy at vantly-ugc.com.',
     '',
-    '**API keys** remain supported for CI, scripts, and the local stdio server: get one with `npm i -g agent-media-cli && agent-media login` (stored at `~/.agent-media/credentials.json`) or from the dashboard, then send `Authorization: Bearer ma_...` — including to the same hosted URL above.',
+    '**API keys** remain supported for CI, scripts, and the local stdio server: get one with `npm i -g vantly-ugc-cli && vantly-ugc login` (stored at `~/.vantly-ugc/credentials.json`) or from the dashboard, then send `Authorization: Bearer ma_...` — including to the same hosted URL above.',
     '',
     '## 3. Make a video — `make_ugc` (the one tool)',
     '',
     '`make_ugc` is the only generation tool: give it a `script` + a person/image/character and it returns the finished captioned video. Short script → one clip; long monologue → seamless multi-take (never trimmed); add `broll_url` → narrated overlay.',
     '',
     '```bash',
-    'curl -X POST https://api.agent-media.ai/v1/skills/make_ugc/run \\',
+    'curl -X POST https://api.vantly-ugc.com/v1/skills/make_ugc/run \\',
     '  -H "Authorization: Bearer ma_..." -H "Content-Type: application/json" \\',
     '  -d \'{ "script": "Okay, this changed my whole morning routine — you have to try it.",',
     '        "person": "a friendly 28-year-old woman, soft daylight" }\'',
     '#   (captions are opt-in — add "captions": true only if the user asked for them)',
     '# -> 202 { "skill_run_id": "..." }   then poll:',
-    'curl https://api.agent-media.ai/v1/skills/runs/<skill_run_id> -H "Authorization: Bearer ma_..."',
+    'curl https://api.vantly-ugc.com/v1/skills/runs/<skill_run_id> -H "Authorization: Bearer ma_..."',
     '# when status == "succeeded", final_output.video_url is your MP4.',
     '```',
     '',
@@ -472,10 +472,10 @@ function readme(): string {
     '',
     '## 4. Calling it (REST / MCP / CLI)',
     '',
-    '- **REST:** `POST https://api.agent-media.ai/v1/skills/make_ugc/run` (Bearer auth, JSON body) → `202` with a `skill_run_id`.',
+    '- **REST:** `POST https://api.vantly-ugc.com/v1/skills/make_ugc/run` (Bearer auth, JSON body) → `202` with a `skill_run_id`.',
     '- **Poll:** `GET /v1/skills/runs/<skill_run_id>` → `final_output.video_url` when `status` is `succeeded`.',
     '- **MCP:** call the `make_ugc` tool; arguments = its input fields.',
-    '- **Exact input schema (always current):** `GET https://api.agent-media.ai/v1/public/skills` or MCP `tools/list`. Trust that over any hand-written list.',
+    '- **Exact input schema (always current):** `GET https://api.vantly-ugc.com/v1/public/skills` or MCP `tools/list`. Trust that over any hand-written list.',
     '',
     '## Skills',
     '',
@@ -489,9 +489,9 @@ function readme(): string {
     '## Publish to social',
     '',
     'Post a generated video to the user\'s TikTok / Instagram / X — via REST, the CLI, or MCP tools:',
-    '- `POST /v1/social/connect { provider }` → returns an OAuth `url` the user opens to authorize (agents can\'t OAuth for them). CLI: `agent-media social connect x`. MCP: `social_connect`.',
-    '- `GET /v1/social/channels` → the user\'s connected channels `[{ id, name, provider, profile }]`. CLI: `agent-media social channels`. MCP: `social_channels`.',
-    '- `POST /v1/social/publish { video_url, channel_ids, caption, type:"now"|"schedule", date? }` → re-hosts the R2 video on the network and posts/schedules it; returns `{ success, media_id, post_ids }`. CLI: `agent-media social publish`. MCP: `social_publish`.',
+    '- `POST /v1/social/connect { provider }` → returns an OAuth `url` the user opens to authorize (agents can\'t OAuth for them). CLI: `vantly-ugc social connect x`. MCP: `social_connect`.',
+    '- `GET /v1/social/channels` → the user\'s connected channels `[{ id, name, provider, profile }]`. CLI: `vantly-ugc social channels`. MCP: `social_channels`.',
+    '- `POST /v1/social/publish { video_url, channel_ids, caption, type:"now"|"schedule", date? }` → re-hosts the R2 video on the network and posts/schedules it; returns `{ success, media_id, post_ids }`. CLI: `vantly-ugc social publish`. MCP: `social_publish`.',
     '',
     'See `skills/publish-to-social/SKILL.md` for the full flow.',
     '',
@@ -503,7 +503,7 @@ function readme(): string {
     '',
     '## How this repo is built',
     '',
-    'This repo is generated. The source of truth is the agent-media private monorepo. A GitHub Action mirrors the `public-skill/` subtree here on every push. Do not commit hand-edits — they will be overwritten.',
+    'This repo is generated. The source of truth is the vantly-ugc private monorepo. A GitHub Action mirrors the `public-skill/` subtree here on every push. Do not commit hand-edits — they will be overwritten.',
     '',
     'License: Apache-2.0.',
     '',
@@ -514,32 +514,32 @@ function refAuth(): string {
   return [
     '# Auth — first-time setup',
     '',
-    'agent-media uses a `ma_*` Bearer API key. Get one via the CLI:',
+    'vantly-ugc uses a `ma_*` Bearer API key. Get one via the CLI:',
     '',
     '```bash',
-    'npm install -g agent-media-cli',
-    'agent-media login',
+    'npm install -g vantly-ugc-cli',
+    'vantly-ugc login',
     '```',
     '',
-    'This stores the key at `~/.agent-media/credentials.json`. The bundled MCP server reads it via the `AGENT_MEDIA_API_KEY` environment variable; the plugin\'s `.mcp.json` does `${AGENT_MEDIA_API_KEY}` interpolation.',
+    'This stores the key at `~/.vantly-ugc/credentials.json`. The bundled MCP server reads it via the `VANTLY_UGC_API_KEY` environment variable; the plugin\'s `.mcp.json` does `${VANTLY_UGC_API_KEY}` interpolation.',
     '',
     '## Without the CLI',
     '',
     'You can paste the `ma_*` token directly:',
     '',
     '```bash',
-    'export AGENT_MEDIA_API_KEY="ma_..."',
+    'export VANTLY_UGC_API_KEY="ma_..."',
     '```',
     '',
     '## How the key is used',
     '',
-    '- MCP server forwards it as `Authorization: Bearer ma_...` to `api.agent-media.ai`.',
+    '- MCP server forwards it as `Authorization: Bearer ma_...` to `api.vantly-ugc.com`.',
     '- Server resolves it to a `user_id` and runs every primitive against that account.',
     '- Credits debit from the same account.',
     '',
     '## Rotation',
     '',
-    '`agent-media logout && agent-media login` rotates the key. The old key keeps working for ~30 days unless explicitly revoked.',
+    '`vantly-ugc logout && vantly-ugc login` rotates the key. The old key keeps working for ~30 days unless explicitly revoked.',
     '',
   ].join('\n');
 }
@@ -629,11 +629,11 @@ for (const skill of Object.values(SKILLS).filter((s) => s.agentFacing)) {
   const fm = frontmatter({
     name: skill.name,
     description: skill.description,
-    'allowed-tools': [`mcp__agent-media__${skill.slug}`],
+    'allowed-tools': [`mcp__vantly-ugc__${skill.slug}`],
     'x-skill-slug': skill.slug,
     'x-skill-version': skill.version,
     'x-primitive': skill.primitive,
-    'x-mcp-tool': `mcp__agent-media__${skill.slug}`,
+    'x-mcp-tool': `mcp__vantly-ugc__${skill.slug}`,
   });
   writeFile(`skills/${kebab}/SKILL.md`, fm + skillBody(skill));
 }
@@ -644,15 +644,15 @@ for (const skill of Object.values(SKILLS).filter((s) => s.agentFacing)) {
 // (one-shot, step-by-step, image-first, troubleshooting) reference
 // the codegen-controlled per-skill markdowns above.
 writeFile(
-  'skills/agent-media-ugc/SKILL.md',
+  'skills/vantly-ugc-ugc/SKILL.md',
   frontmatter({
-    name: 'Agent-Media UGC Playbook',
+    name: 'Vantly UGC Playbook',
     description:
-      'Playbook for Agent-Media UGC Video — the one tool for UGC video on agent-media. Always call the single make_ugc skill: give it a `script` (any length) and optionally a person/image/character; it returns the finished captioned vertical video. Short script → one clip, long monologue → full multi-take (never trimmed), `broll_url` → narrated overlay. You never pick a sub-skill.',
+      'Playbook for Vantly UGC Video — the one tool for UGC video on vantly-ugc. Always call the single make_ugc skill: give it a `script` (any length) and optionally a person/image/character; it returns the finished captioned vertical video. Short script → one clip, long monologue → full multi-take (never trimmed), `broll_url` → narrated overlay. You never pick a sub-skill.',
     'allowed-tools': Object.values(SKILLS)
       .filter((s) => s.agentFacing)
-      .map((s) => `mcp__agent-media__${s.slug}`),
-    'x-skill-slug': 'agent-media-ugc',
+      .map((s) => `mcp__vantly-ugc__${s.slug}`),
+    'x-skill-slug': 'vantly-ugc-ugc',
     // Bundle version anchor (the CLI update-check compares against this).
     // 1.1.0 = added the publish-to-social skill (TikTok / Instagram / X).
     'x-skill-version': '1.1.0',
@@ -661,13 +661,13 @@ writeFile(
 
 // Social-publishing skill — not a registry primitive; a guide for posting a
 // generated video to the user's connected TikTok/Instagram/X via the
-// /v1/social/* REST endpoints (Postiz Enterprise under the hood).
+// /v1/social/* REST endpoints (Vantly under the hood).
 writeFile(
   'skills/publish-to-social/SKILL.md',
   frontmatter({
     name: 'Publish to Social',
     description:
-      'Publish a generated Agent-Media UGC Video to the user\'s connected TikTok, Instagram, or X. Connect channels (OAuth) and post or schedule via the REST API. Use after producing a video with make_ugc.',
+      'Publish a generated Vantly UGC Video to the user\'s connected TikTok, Instagram, or X. Connect channels (OAuth) and post or schedule via the REST API. Use after producing a video with make_ugc.',
     'x-skill-slug': 'publish-to-social',
     'x-skill-version': '1.0.0',
   }) + socialBody(),
@@ -676,7 +676,7 @@ writeFile(
 // Crazy Look skill — not a vNext registry primitive; it runs on the v2
 // generator surface (media-worker-v2 via POST /v2/crazy-look). The hosted
 // MCP server already exposes it as `create_crazy_look` (derived from
-// V2_GENERATORS in @agentmedia/schema/v2), so the pack documents that
+// V2_GENERATORS in @vantly-ugc/schema/v2), so the pack documents that
 // tool + the sheet-first series flow.
 writeFile(
   'skills/make-crazy-look/SKILL.md',
@@ -684,10 +684,10 @@ writeFile(
     name: 'Make Crazy Look',
     description:
       'Silent 5-10s extreme close-up reaction clip with a static caption overlay ("the crazy look"). One recurring character opens on an exaggerated look and keeps morphing through randomized silent beats — no speech, no subtitles, ambient room tone only. A SERIES MUST START WITH A CHARACTER (create_character first; the saved sheet + pinned seed keeps the SAME face on every clip). Volume workflow: same caption + same character, N calls, N different performances.',
-    'allowed-tools': ['mcp__agent-media__create_crazy_look', 'mcp__agent-media__create_character'],
+    'allowed-tools': ['mcp__vantly-ugc__create_crazy_look', 'mcp__vantly-ugc__create_character'],
     'x-skill-slug': 'make-crazy-look',
     'x-skill-version': '1.0.0',
-    'x-mcp-tool': 'mcp__agent-media__create_crazy_look',
+    'x-mcp-tool': 'mcp__vantly-ugc__create_crazy_look',
   }) + crazyLookBody(),
 );
 
@@ -709,13 +709,13 @@ function crazyLookBody(): string {
     '',
     '## How to call it',
     '',
-    'Preferred path: MCP tools `mcp__agent-media__create_character` then `mcp__agent-media__create_crazy_look`. Schemas are auto-published via `tools/list` — trust the server.',
+    'Preferred path: MCP tools `mcp__vantly-ugc__create_character` then `mcp__vantly-ugc__create_crazy_look`. Schemas are auto-published via `tools/list` — trust the server.',
     '',
     'Fallback path: REST.',
     '',
     '```http',
-    'POST https://api.agent-media.ai/v2/crazy-look',
-    'Authorization: Bearer $AGENT_MEDIA_API_KEY',
+    'POST https://api.vantly-ugc.com/v2/crazy-look',
+    'Authorization: Bearer $VANTLY_UGC_API_KEY',
     'Content-Type: application/json',
     '',
     JSON.stringify(
@@ -729,7 +729,7 @@ function crazyLookBody(): string {
     ),
     '```',
     '',
-    'Poll `GET https://api.agent-media.ai/v1/videos/<job_id>` until `completed` → `video_url`.',
+    'Poll `GET https://api.vantly-ugc.com/v1/videos/<job_id>` until `completed` → `video_url`.',
     '',
     '## Inputs that matter',
     '',
@@ -746,7 +746,7 @@ function crazyLookBody(): string {
     '## House rules',
     '',
     '- Do NOT add subtitles on top — the caption IS the text layer.',
-    '- See [reference/auth.md](../../reference/auth.md) for first-time install and `agent-media login`.',
+    '- See [reference/auth.md](../../reference/auth.md) for first-time install and `vantly-ugc login`.',
     '',
     '## Source of truth',
     '',
@@ -759,7 +759,7 @@ function socialBody(): string {
   return [
     '# Publish to Social',
     '',
-    'Post a finished agent-media video (an R2 `video_url` from any of the video skills) to the user\'s connected social channels — **TikTok, Instagram, or X**. Works from three surfaces: REST, the CLI (`agent-media social ...`), and MCP tools (`social_channels` / `social_connect` / `social_publish`). All calls use the user\'s `Authorization: Bearer ma_...` token against `https://api.agent-media.ai`.',
+    'Post a finished vantly-ugc video (an R2 `video_url` from any of the video skills) to the user\'s connected social channels — **TikTok, Instagram, or X**. Works from three surfaces: REST, the CLI (`vantly-ugc social ...`), and MCP tools (`social_channels` / `social_connect` / `social_publish`). All calls use the user\'s `Authorization: Bearer ma_...` token against `https://api.vantly-ugc.com`.',
     '',
     '## 1. Connect a channel (one-time, requires the human)',
     '',
@@ -772,24 +772,24 @@ function socialBody(): string {
     '',
     'The connect step returns an OAuth URL the **human** must open and authorize — an agent cannot complete OAuth itself. Once authorized, the channel appears in `/v1/social/channels` with an `id` you pass to publish.',
     '',
-    'CLI: `agent-media social providers` · `agent-media social connect x` · `agent-media social channels`.',
+    'CLI: `vantly-ugc social providers` · `vantly-ugc social connect x` · `vantly-ugc social channels`.',
     'MCP: `social_connect { provider }` (returns the URL for the user) · `social_channels`.',
     '',
     '## 2. Publish a video',
     '',
     '```bash',
-    'curl -X POST https://api.agent-media.ai/v1/social/publish \\',
+    'curl -X POST https://api.vantly-ugc.com/v1/social/publish \\',
     '  -H "Authorization: Bearer ma_..." -H "Content-Type: application/json" \\',
     '  -d \'{ "video_url": "https://pub-...r2.dev/generation-outputs/<user>/<job>/...mp4",',
     '        "channel_ids": ["<channel-id-from-/channels>"],',
-    '        "caption": "made with agent-media",',
+    '        "caption": "made with vantly-ugc",',
     '        "type": "now" }\'    # or "type":"schedule" + "date":"2026-06-01T10:00:00.000Z"',
     '```',
     '',
-    'CLI: `agent-media social publish --video <url> --channels <id,id> --caption "..."` (add `--at <iso>` to schedule).',
+    'CLI: `vantly-ugc social publish --video <url> --channels <id,id> --caption "..."` (add `--at <iso>` to schedule).',
     'MCP: `social_publish { video_url, channel_ids, caption, type }`.',
     '',
-    '`video_url` must be an agent-media R2 URL (the output of a video skill) — agent-media re-hosts it on the publishing provider for you. `channel_ids` come from `/v1/social/channels`. Per-network requirements (e.g. X reply settings) are filled in server-side; you don\'t send them.',
+    '`video_url` must be an vantly-ugc R2 URL (the output of a video skill) — vantly-ugc re-hosts it on the publishing provider for you. `channel_ids` come from `/v1/social/channels`. Per-network requirements (e.g. X reply settings) are filled in server-side; you don\'t send them.',
     '',
     '**Returns** `{ success: true, media_id, post_ids: ["..."] }`. A real post was created only when `post_ids` is non-empty — treat an empty `post_ids` as a failure, not a success.',
     '',
@@ -806,9 +806,9 @@ function socialBody(): string {
 
 function playbookBody(): string {
   return [
-    '# Agent-Media UGC Playbook',
+    '# Vantly UGC Playbook',
     '',
-    'You\'re an agent (Claude, Cursor, custom) that needs to produce a finished UGC video on agent-media. There is exactly ONE tool — `make_ugc` (Agent-Media UGC Video). You never pick a sub-skill; make_ugc resolves identity and runs the whole pipeline internally.',
+    'You\'re an agent (Claude, Cursor, custom) that needs to produce a finished UGC video on vantly-ugc. There is exactly ONE tool — `make_ugc` (Vantly UGC Video). You never pick a sub-skill; make_ugc resolves identity and runs the whole pipeline internally.',
     '',
     '## One tool, three shapes',
     '',
@@ -823,8 +823,8 @@ function playbookBody(): string {
     'A single call. The server picks the pipeline, the take count and the duration, runs it in one Temporal workflow, and returns a `skill_run_id` you poll.',
     '',
     '```http',
-    'POST https://api.agent-media.ai/v1/skills/make_ugc/run',
-    'Authorization: Bearer $AGENT_MEDIA_API_KEY',
+    'POST https://api.vantly-ugc.com/v1/skills/make_ugc/run',
+    'Authorization: Bearer $VANTLY_UGC_API_KEY',
     '',
     '{',
     '  "script": "Okay this is wild, I tried the new flow and it actually works.",',
@@ -839,7 +839,7 @@ function playbookBody(): string {
     '',
     '## Step D — publish it (optional)',
     '',
-    'Once you have a `video_url`, you can post it straight to the user\'s TikTok / Instagram / X with the **publish-to-social** skill — `POST /v1/social/publish` (CLI `agent-media social publish`, MCP `social_publish`). The user connects each network once via OAuth (`/v1/social/connect`). See [skills/publish-to-social/SKILL.md](../publish-to-social/SKILL.md).',
+    'Once you have a `video_url`, you can post it straight to the user\'s TikTok / Instagram / X with the **publish-to-social** skill — `POST /v1/social/publish` (CLI `vantly-ugc social publish`, MCP `social_publish`). The user connects each network once via OAuth (`/v1/social/connect`). See [skills/publish-to-social/SKILL.md](../publish-to-social/SKILL.md).',
     '',
     '## Identity',
     '',
@@ -856,10 +856,10 @@ function playbookBody(): string {
     '',
     '## Troubleshooting',
     '',
-    '- **`INSUFFICIENT_CREDITS`** — user is out. Surface the agent-media.ai billing page link.',
+    '- **`INSUFFICIENT_CREDITS`** — user is out. Surface the vantly-ugc.com billing page link.',
     '- **`make_ugc_needs_face`** — a full monologue or a b-roll review needs `image` or `character` (a real face), not just `person`.',
     '- **Video has subject holding a phone** — they used a pose hint mentioning "selfie" or "phone". Strip it or set `pose: ""`.',
-    '- **Step stuck in `submitted`** — Temporal worker may be restarting. Wait 30s and re-poll; if still stuck after 5 min, the workflow is hung — contact agent-media support with the `workflow_id`.',
+    '- **Step stuck in `submitted`** — Temporal worker may be restarting. Wait 30s and re-poll; if still stuck after 5 min, the workflow is hung — contact vantly-ugc support with the `workflow_id`.',
     '',
     '## See also',
     '',

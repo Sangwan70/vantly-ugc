@@ -1,26 +1,26 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media credits` command group.
+ * `vantly-ugc credits` command group.
  *
  * Displays the authenticated user's credit balance with a breakdown
  * of monthly remaining, purchased, and total credits. Shows plan tier
  * context and uses color-coded output to indicate credit health.
  *
  * Subcommands:
- * - `agent-media credits` (default) -- show balance
- * - `agent-media credits estimate <model>` -- estimate cost for a generation
- * - `agent-media credits history` -- show credit transaction history
+ * - `vantly-ugc credits` (default) -- show balance
+ * - `vantly-ugc credits estimate <model>` -- estimate cost for a generation
+ * - `vantly-ugc credits history` -- show credit transaction history
  *
  * Requires a valid API key. If not logged in, prompts the user to
- * authenticate via `agent-media login`.
+ * authenticate via `vantly-ugc login`.
  */
 
 import type { Command } from 'commander';
 import chalk from 'chalk';
 import { detectOutputMode, printJson, printQuiet, createSpinner } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
-import { AgentMediaAPI, type CreditTransaction, type UpdateAutoTopUpConfigParams } from '../lib/api.js';
+import { VantlyUgcAPI, type CreditTransaction, type UpdateAutoTopUpConfigParams } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
 
 /** Valid transaction types for the --type filter. */
@@ -40,7 +40,7 @@ function requireAuth(profileName: string): string {
   if (!apiKey) {
     throw new CLIError('Not logged in.', {
       code: 'NOT_AUTHENTICATED',
-      suggestion: "Run 'agent-media login' to authenticate.",
+      suggestion: "Run 'vantly-ugc login' to authenticate.",
     });
   }
   return apiKey;
@@ -64,7 +64,7 @@ export function registerCreditsCommand(program: Command): void {
         const spinner = createSpinner('Fetching credit balance...');
         if (mode === 'human') spinner.start();
 
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
         const data = await api.getCredits();
 
         if (mode === 'human') spinner.stop();
@@ -138,7 +138,7 @@ export function registerCreditsCommand(program: Command): void {
       }
     });
 
-  // ── agent-media credits history ───────────────────────────────────────────
+  // ── vantly-ugc credits history ───────────────────────────────────────────
   creditsCmd
     .command('history')
     .description('Show credit transaction history')
@@ -176,7 +176,7 @@ export function registerCreditsCommand(program: Command): void {
           const spinner = createSpinner('Fetching credit history...');
           if (mode === 'human') spinner.start();
 
-          const api = new AgentMediaAPI(apiKey);
+          const api = new VantlyUgcAPI(apiKey);
           const transactions = await api.getCreditHistory({
             limit,
             type: cmdOpts.type,
@@ -230,7 +230,7 @@ export function registerCreditsCommand(program: Command): void {
       },
     );
 
-  // ── agent-media credits topup ─────────────────────────────────────────────
+  // ── vantly-ugc credits topup ─────────────────────────────────────────────
   const VALID_PACKS = new Set(['pack_3900']);
   const PACK_LABELS: Record<string, string> = {
     pack_3900: '3,900 credits ($39)',
@@ -262,7 +262,7 @@ export function registerCreditsCommand(program: Command): void {
         const apiKey = requireAuth(profileName);
 
         try {
-          const api = new AgentMediaAPI(apiKey);
+          const api = new VantlyUgcAPI(apiKey);
 
           // Determine if this is a read or write operation
           const hasUpdates =
@@ -288,7 +288,7 @@ export function registerCreditsCommand(program: Command): void {
               if (isNaN(threshold) || threshold < 10) {
                 throw new CLIError('Threshold must be an integer >= 10.', {
                   code: 'INVALID_THRESHOLD',
-                  suggestion: 'Example: agent-media credits topup --threshold 50',
+                  suggestion: 'Example: vantly-ugc credits topup --threshold 50',
                 });
               }
               updates.threshold_credits = threshold;
@@ -312,7 +312,7 @@ export function registerCreditsCommand(program: Command): void {
               if (isNaN(max) || max < 1 || max > 10) {
                 throw new CLIError('Max monthly top-ups must be between 1 and 10.', {
                   code: 'INVALID_MAX_MONTHLY',
-                  suggestion: 'Example: agent-media credits topup --max 3',
+                  suggestion: 'Example: vantly-ugc credits topup --max 3',
                 });
               }
               updates.max_monthly_topups = max;
@@ -505,7 +505,7 @@ export function registerCreditsCommand(program: Command): void {
     if (!enabled) {
       console.log(
         chalk.dim(
-          '  Enable with: agent-media credits topup --enable',
+          '  Enable with: vantly-ugc credits topup --enable',
         ),
       );
       console.log();

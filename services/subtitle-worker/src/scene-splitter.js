@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Scene Splitter — Uses GPT-4o-mini to segment a script into scenes.
@@ -59,7 +59,7 @@ For each scene, provide:
    - NEVER include text overlays, title cards, or abstract visual concepts
    - Focus on the EMOTION or CONCEPT behind the narration, not the literal subject
    - Good: "Slow-motion dolly shot of hands typing on a laptop in a sunlit cafe, shallow depth of field with bokeh, steam rising from a coffee cup, golden hour light"
-   - Bad: "A screen showing the Agent Media CLI interface"
+   - Bad: "A screen showing the Vantly UGC CLI interface"
    - Good: "Steadicam tracking shot of a person walking confidently through a modern office, dramatic rim light streaming through floor-to-ceiling windows, rack focus to their determined expression"
    - Bad: "A screenshot of a product dashboard with analytics"
 

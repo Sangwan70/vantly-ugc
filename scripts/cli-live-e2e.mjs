@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -9,8 +9,8 @@ const root = resolve(new URL('..', import.meta.url).pathname);
 const cliBin = resolve(root, 'apps/cli/dist/index.js');
 
 const requiredEnv = [
-  ['AGENT_MEDIA_E2E_LIVE', '1'],
-  ['AGENT_MEDIA_E2E_CONFIRM_COST', '1'],
+  ['VANTLY_UGC_E2E_LIVE', '1'],
+  ['VANTLY_UGC_E2E_CONFIRM_COST', '1'],
 ];
 
 for (const [name, expected] of requiredEnv) {
@@ -20,19 +20,19 @@ for (const [name, expected] of requiredEnv) {
   }
 }
 
-if (!process.env.AGENT_MEDIA_API_KEY) {
-  console.error('AGENT_MEDIA_API_KEY is required to run live CLI E2E tests.');
+if (!process.env.VANTLY_UGC_API_KEY) {
+  console.error('VANTLY_UGC_API_KEY is required to run live CLI E2E tests.');
   process.exit(2);
 }
 
 if (!existsSync(cliBin)) {
-  console.error(`CLI build not found at ${cliBin}. Run pnpm --filter agent-media-cli build first.`);
+  console.error(`CLI build not found at ${cliBin}. Run pnpm --filter vantly-ugc-cli build first.`);
   process.exit(2);
 }
 
 const env = {
   ...process.env,
-  AGENT_MEDIA_API_URL: process.env.AGENT_MEDIA_API_BASE_URL ?? process.env.AGENT_MEDIA_API_URL,
+  VANTLY_UGC_API_URL: process.env.VANTLY_UGC_API_BASE_URL ?? process.env.VANTLY_UGC_API_URL,
   NO_COLOR: '1',
 };
 
@@ -169,8 +169,8 @@ try {
 
   results.push(runCli('saas-review', [
     'saas-review',
-    '--saas', 'Agent Media',
-    '--url', 'https://agent-media.ai',
+    '--saas', 'Vantly UGC',
+    '--url', 'https://vantly-ugc.com',
     '--screenshots', dashboardUrl,
     '--actor', 'hassan',
     '--duration', '5',
@@ -180,8 +180,8 @@ try {
 
   results.push(runCli('legacy-review', [
     'review',
-    '--saas', 'Agent Media',
-    '--url', 'https://agent-media.ai',
+    '--saas', 'Vantly UGC',
+    '--url', 'https://vantly-ugc.com',
     '--screenshots', dashboardUrl,
     '--actor', 'austin',
     '--duration', '5',
@@ -214,7 +214,7 @@ try {
   results.push(runCli('laptop-ugc', [
     'laptop-ugc',
     '--app-image', appScreenshotUrl,
-    '--script', 'I just made an entire UGC ad in 2 minutes from my terminal. So easy. It is agent-media.',
+    '--script', 'I just made an entire UGC ad in 2 minutes from my terminal. So easy. It is vantly-ugc.',
     '--actor', 'mei',
     '--duration', '20',
     '--subtitle-style', 'hormozi',

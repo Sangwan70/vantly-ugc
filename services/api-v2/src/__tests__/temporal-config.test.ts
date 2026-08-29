@@ -59,14 +59,14 @@ describe('temporal config', () => {
 
   it('uses default task queue when not provided', () => {
     process.env.TEMPORAL_ADDRESS = 'example.tmprl.cloud:7233';
-    process.env.TEMPORAL_NAMESPACE = 'agent-media.test';
+    process.env.TEMPORAL_NAMESPACE = 'vantly-ugc.test';
     const cfg = getTemporalConfig();
     expect(cfg.taskQueue).toBe('selfie-v1');
   });
 
   it('returns optional temporal settings when provided', () => {
     process.env.TEMPORAL_ADDRESS = 'example.tmprl.cloud:7233';
-    process.env.TEMPORAL_NAMESPACE = 'agent-media.test';
+    process.env.TEMPORAL_NAMESPACE = 'vantly-ugc.test';
     process.env.TEMPORAL_API_KEY = 'abc';
     process.env.TEMPORAL_TLS_SERVER_NAME = 'example.tmprl.cloud';
     process.env.TEMPORAL_SELFIE_TASK_QUEUE = 'selfie-custom';
@@ -74,7 +74,7 @@ describe('temporal config', () => {
     const cfg = getTemporalConfig();
     expect(cfg).toMatchObject({
       address: 'example.tmprl.cloud:7233',
-      namespace: 'agent-media.test',
+      namespace: 'vantly-ugc.test',
       apiKey: 'abc',
       tlsEnabled: true,
       tlsServerName: 'example.tmprl.cloud',

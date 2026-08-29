@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 import { ApplicationFailure, Context } from '@temporalio/activity';
-import { SubtitlesV2ToolInputSchema } from '@agentmedia/schema';
+import { SubtitlesV2ToolInputSchema } from '@vantly-ugc/schema';
 import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';

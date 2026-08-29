@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * POST /v1/agent — the in-app creative agent's "brain" (walking skeleton).
@@ -16,11 +16,11 @@ import type { Request, Response } from 'express';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { SKILLS } from '../../skills/registry.js';
 import { supabase } from '../../server.js';
+import { callAnthropicMessages, hasProviderCredential, missingCredentialEnvVar } from '../../lib/anthropic-client.js';
 
-const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = process.env.ANTHROPIC_AGENT_MODEL || 'claude-sonnet-4-6';
 
-const SYSTEM = `You are agent-media's in-app creative assistant. You make short vertical UGC videos for the user by calling the available skill tools.
+const SYSTEM = `You are vantly-ugc's in-app creative assistant. You make short vertical UGC videos for the user by calling the available skill tools.
 
 STYLE: Reply in ONE short sentence (≤12 words) before a tool call — no preamble, no recap, no restating their request. After a tool result, one short sentence too.
 
@@ -43,7 +43,7 @@ How to create — ONE tool does it all:
 
 Rules:
 - make_ugc paces and chunks the script for you — pass the user's FULL line or monologue and do NOT trim it (a long script becomes a seamless multi-take video, never cut). Just don't pad a short idea out to fill time.
-- Any reference image/video URL you pass to a tool must be an agent-media R2 URL — either the output of a previous tool (character_sheet_url, video_url) OR a character_sheet_url the USER hands you to reuse a saved character. Don't invent URLs.
+- Any reference image/video URL you pass to a tool must be an vantly-ugc R2 URL — either the output of a previous tool (character_sheet_url, video_url) OR a character_sheet_url the USER hands you to reuse a saved character. Don't invent URLs.
 - A tool takes a few minutes; you'll get its result (a video_url / artifacts) back and can then call the next tool or finish.
 - IF A TOOL RESULT IS "failed" OR "timeout": do NOT silently call it again — a blind retry just burns more of the user's credits. Say in ONE short sentence that it didn't work, then ASK whether they want you to try again, and only retry after they say yes.
 - IF THE FAILURE SAYS "insufficient_credits" (or mentions not enough credits): do NOT retry and do NOT offer to retry — it will fail again. Tell them plainly in one sentence how many credits it needs vs what they have, and that they can top up on the Billing page (the app shows a Buy credits button next to the failure).
@@ -194,8 +194,10 @@ export async function agentRoute(req: Request, res: Response): Promise<void> {
   const userId = (req as { userId?: string }).userId;
   if (!userId) { res.status(401).json({ error: 'unauthorized' }); return; }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-  if (!apiKey) { res.status(503).json({ error: 'agent_unconfigured', detail: 'ANTHROPIC_API_KEY not set' }); return; }
+  if (!hasProviderCredential()) {
+    res.status(503).json({ error: 'agent_unconfigured', detail: `${missingCredentialEnvVar()} not set` });
+    return;
+  }
 
   const messages = (req.body as { messages?: unknown })?.messages;
   if (!Array.isArray(messages) || messages.length === 0) {
@@ -230,22 +232,13 @@ export async function agentRoute(req: Request, res: Response): Promise<void> {
   const projectContext = buildProjectContext((req.body as { project_context?: unknown })?.project_context);
 
   try {
-    const upstream = await fetch(ANTHROPIC_URL, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 1500,
-        system: SYSTEM + userContext + projectContext,
-        tools: buildTools(supportsAsk),
-        messages: windowed,
-      }),
-      signal: AbortSignal.timeout(60_000),
-    });
+    const upstream = await callAnthropicMessages({
+      model: MODEL,
+      max_tokens: 1500,
+      system: SYSTEM + userContext + projectContext,
+      tools: buildTools(supportsAsk),
+      messages: windowed,
+    }, { signal: AbortSignal.timeout(60_000) });
     const data = await upstream.json().catch(() => ({}));
     if (!upstream.ok) {
       res.status(502).json({ error: 'anthropic_error', detail: (data as { error?: unknown }).error ?? data });

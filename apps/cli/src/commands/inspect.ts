@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media inspect <job-id>` command.
+ * `vantly-ugc inspect <job-id>` command.
  *
  * Displays a detailed inspection view of a generation job including prompt,
  * parameters, timeline, cost breakdown, provider details, and output URLs.
@@ -17,7 +17,7 @@ import {
   createSpinner,
 } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
-import { AgentMediaAPI, type GenerationJob } from '../lib/api.js';
+import { VantlyUgcAPI, type GenerationJob } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
 
 // ── Box-drawing constants ────────────────────────────────────────────
@@ -408,12 +408,12 @@ export function registerInspectCommand(program: Command): void {
       if (!apiKey) {
         throw new CLIError('Not logged in.', {
           code: 'NOT_AUTHENTICATED',
-          suggestion: "Run 'agent-media login' to authenticate.",
+          suggestion: "Run 'vantly-ugc login' to authenticate.",
         });
       }
 
       try {
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
 
         if (cmdOpts.watch && mode === 'human') {
           // ── Watch mode: poll every 3s, update in-place ─────────────

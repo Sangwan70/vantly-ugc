@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -15,6 +15,46 @@ export function getAnthropic(apiKey: string): Anthropic {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
+// MODEL_PROVIDER mirrors the toggle in src/config.ts: 'anthropic' (default)
+// talks to api.anthropic.com with the apiKey as x-api-key; 'openrouter' talks
+// to OpenRouter's Anthropic-Messages-compatible endpoint instead, with the
+// same apiKey (which config.ts already resolved to OPENROUTER_API_KEY in that
+// mode) sent as a Bearer token, and bare Claude model ids prefixed
+// "anthropic/" per OpenRouter's naming convention.
+const MODEL_PROVIDER = (process.env.MODEL_PROVIDER ?? 'anthropic').toLowerCase().trim();
+
+function anthropicEndpoint(apiKey: string): { url: string; headers: Record<string, string> } {
+  if (MODEL_PROVIDER === 'openrouter') {
+    return {
+      url: 'https://openrouter.ai/api/v1/messages',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${apiKey}`,
+        'anthropic-version': '2023-06-01',
+      },
+    };
+  }
+  return {
+    url: 'https://api.anthropic.com/v1/messages',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+  };
+}
+
+// OPENROUTER_MODEL (when set) overrides whatever model the caller asked for —
+// lets an operator pin every OpenRouter call this worker makes to one model
+// (Claude or otherwise), regardless of which model each activity would
+// otherwise request (portrait/sheet/wireframe/etc. all default to Haiku).
+function resolveModelId(model: string): string {
+  if (MODEL_PROVIDER !== 'openrouter') return model;
+  const override = (process.env.OPENROUTER_MODEL ?? '').trim();
+  const chosen = override || model;
+  return chosen.includes('/') ? chosen : `anthropic/${chosen}`;
+}
+
 /**
  * Call Anthropic Messages via plain fetch (like api-v2 does) instead of the
  * SDK. In the worker's container the SDK's pooled keep-alive connections to
@@ -27,20 +67,17 @@ async function createMessageRaw(
   apiKey: string,
   body: { model: string; max_tokens: number; system: string; messages: Array<{ role: string; content: unknown }> },
 ): Promise<{ content: Array<{ type: string; text?: string }> }> {
+  const { url, headers } = anthropicEndpoint(apiKey);
   let lastErr: unknown;
   for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
-      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      const resp = await fetch(url, {
         method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-        },
+        headers,
         // temperature:0 → deterministic prompt builds, so successive takes of the
         // same render get a byte-identical non-script prompt (a major source of
         // take-to-take skin/look variance was the default temperature 1.0).
-        body: JSON.stringify({ temperature: 0, ...body }),
+        body: JSON.stringify({ temperature: 0, ...body, model: resolveModelId(body.model) }),
         signal: AbortSignal.timeout(45_000),
       });
       if (!resp.ok) {

@@ -1,32 +1,32 @@
-# agent-media CLI
+# vantly-ugc CLI
 
 **UGC for developers. Generate AI videos with talking heads, B-roll, voiceover, and subtitles — from your terminal.**
 
-[![npm version](https://img.shields.io/npm/v/agent-media-cli)](https://www.npmjs.com/package/agent-media-cli)
-[![downloads](https://img.shields.io/npm/dm/agent-media-cli)](https://www.npmjs.com/package/agent-media-cli)
+[![npm version](https://img.shields.io/npm/v/vantly-ugc-cli)](https://www.npmjs.com/package/vantly-ugc-cli)
+[![downloads](https://img.shields.io/npm/dm/vantly-ugc-cli)](https://www.npmjs.com/package/vantly-ugc-cli)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ## Install
 
 ```bash
-npm install -g agent-media-cli
+npm install -g vantly-ugc-cli
 ```
 
 ## Quick Start
 
 ```bash
 # 1. Log in
-agent-media login
+vantly-ugc login
 
 # 2. Pick an actor
-agent-media actor list
+vantly-ugc actor list
 
 # 3. Generate a UGC video
-agent-media ugc "Stop scrolling. This tool changed everything for me." \
+vantly-ugc ugc "Stop scrolling. This tool changed everything for me." \
   --actor sofia --style neon --duration 10 --sync
 
 # 4. Add subtitles to any video
-agent-media subtitle ./video.mp4 --style hormozi --sync
+vantly-ugc subtitle ./video.mp4 --style hormozi --sync
 ```
 
 ## UGC Pipeline
@@ -35,23 +35,23 @@ Script → scene splitting → TTS voiceover → AI talking heads → AI B-roll 
 
 ```bash
 # Basic UGC with actor
-agent-media ugc "your script..." --actor marcus --style tiktok --sync
+vantly-ugc ugc "your script..." --actor marcus --style tiktok --sync
 
 # With B-roll cutaway scenes
-agent-media ugc "your script..." --actor sofia --broll --sync
+vantly-ugc ugc "your script..." --actor sofia --broll --sync
 
 # With product screenshots as B-roll
-agent-media ugc "your script..." --actor sofia --broll \
+vantly-ugc ugc "your script..." --actor sofia --broll \
   --broll-images ./dashboard.png,./calendar.png --sync
 
 # AI-generated script from a product description
-agent-media ugc -g "A fitness tracker that monitors sleep quality" --actor naomi --sync
+vantly-ugc ugc -g "A fitness tracker that monitors sleep quality" --actor naomi --sync
 
 # PIP mode (talking head + rotating B-roll overlays)
-agent-media ugc "your script..." --actor adaeze --pip --duration 15 --sync
+vantly-ugc ugc "your script..." --actor adaeze --pip --duration 15 --sync
 
 # Product Acting UGC from a product image URL
-agent-media product-acting \
+vantly-ugc product-acting \
   --product-image https://cdn.example.com/product.png \
   --actor sofia \
   --about "A premium perfume with a warm vanilla dry-down" \
@@ -86,46 +86,46 @@ hormozi, minimal, bold, karaoke, clean, tiktok, neon, fire, glow, pop, aesthetic
 ## All Commands
 
 ```bash
-agent-media ugc "script..."                # Generate UGC video
-agent-media saas-review --saas Linear      # Generate a SaaS Review video
-agent-media product-acting --product-image https://... --actor sofia --about "..." --sync
-agent-media actor list                     # Browse 200+ AI actors
-agent-media subtitle ./video.mp4           # Add subtitles
-agent-media status <job-id>                # Check job status
-agent-media download <job-id>              # Download video
-agent-media list                           # List your jobs
-agent-media credits                        # View credit balance
-agent-media subscribe                      # Subscribe or buy credits
-agent-media apikey list                    # Manage API keys
-agent-media whoami                         # Current user info
-agent-media doctor                         # Run diagnostics
-agent-media update                         # Update CLI + Claude Code skill docs
+vantly-ugc ugc "script..."                # Generate UGC video
+vantly-ugc saas-review --saas Linear      # Generate a SaaS Review video
+vantly-ugc product-acting --product-image https://... --actor sofia --about "..." --sync
+vantly-ugc actor list                     # Browse 200+ AI actors
+vantly-ugc subtitle ./video.mp4           # Add subtitles
+vantly-ugc status <job-id>                # Check job status
+vantly-ugc download <job-id>              # Download video
+vantly-ugc list                           # List your jobs
+vantly-ugc credits                        # View credit balance
+vantly-ugc subscribe                      # Subscribe or buy credits
+vantly-ugc apikey list                    # Manage API keys
+vantly-ugc whoami                         # Current user info
+vantly-ugc doctor                         # Run diagnostics
+vantly-ugc update                         # Update CLI + Claude Code skill docs
 ```
 
 ## Updates
 
 ```bash
 # Update the global CLI package and refresh Claude Code skill docs
-agent-media update
+vantly-ugc update
 
 # Preview what would update without changing anything
-agent-media update --check
+vantly-ugc update --check
 
 # Force reinstall the latest npm CLI and refresh the Claude Code skill
-agent-media update --force
+vantly-ugc update --force
 
 # Update only one side when needed
-agent-media update --cli-only
-agent-media update --skills-only
+vantly-ugc update --cli-only
+vantly-ugc update --skills-only
 ```
 
-Skill docs are refreshed from `gitroomhq/agent-media-app` with Claude Code selected non-interactively:
+Skill docs are refreshed from `gitroomhq/vantly-ugc-app` with Claude Code selected non-interactively:
 
 ```bash
-npx --yes skills add gitroomhq/agent-media-app --agent claude-code --yes
+npx --yes skills add gitroomhq/vantly-ugc-app --agent claude-code --yes
 ```
 
-Self-updates use npm by default. If you intentionally manage global packages with pnpm or yarn, set `AGENT_MEDIA_UPDATE_PM=pnpm` or `AGENT_MEDIA_UPDATE_PM=yarn`.
+Self-updates use npm by default. If you intentionally manage global packages with pnpm or yarn, set `VANTLY_UGC_UPDATE_PM=pnpm` or `VANTLY_UGC_UPDATE_PM=yarn`.
 
 ## Pricing
 
@@ -141,15 +141,15 @@ Self-updates use npm by default. If you intentionally manage global packages wit
 
 | Package | Description |
 |---|---|
-| [`@agentmedia/sdk`](https://www.npmjs.com/package/@agentmedia/sdk) | TypeScript SDK |
-| [`agent-media`](https://pypi.org/project/agent-media/) | Python SDK |
-| [`@agentmedia/mcp-server`](https://www.npmjs.com/package/@agentmedia/mcp-server) | MCP server for Claude Code, Cursor, Windsurf |
+| [`@vantly-ugc/sdk`](https://www.npmjs.com/package/@vantly-ugc/sdk) | TypeScript SDK |
+| [`vantly-ugc`](https://pypi.org/project/vantly-ugc/) | Python SDK |
+| [`@vantly-ugc/mcp-server`](https://www.npmjs.com/package/@vantly-ugc/mcp-server) | MCP server for Claude Code, Cursor, Windsurf |
 
 ## Links
 
-- [Interactive API Docs](https://agent-media.ai/docs/api-reference)
-- [OpenAPI Spec](https://agent-media.ai/openapi.json)
-- [Website](https://agent-media.ai)
+- [Interactive API Docs](https://vantly-ugc.com/docs/api-reference)
+- [OpenAPI Spec](https://vantly-ugc.com/openapi.json)
+- [Website](https://vantly-ugc.com)
 - [GitHub](https://github.com/gitroomhq/agent-media-app)
 
 ## License

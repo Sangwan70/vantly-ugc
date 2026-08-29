@@ -1,10 +1,10 @@
 ---
 name: 'Make Crazy Look'
 description: 'Silent 5-10s extreme close-up reaction clip with a static caption overlay ("the crazy look"). One recurring character opens on an exaggerated look and keeps morphing through randomized silent beats — no speech, no subtitles, ambient room tone only. A SERIES MUST START WITH A CHARACTER (create_character first; the saved sheet + pinned seed keeps the SAME face on every clip). Volume workflow: same caption + same character, N calls, N different performances.'
-allowed-tools: ['mcp__agent-media__create_crazy_look', 'mcp__agent-media__create_character']
+allowed-tools: ['mcp__vantly-ugc__create_crazy_look', 'mcp__vantly-ugc__create_character']
 x-skill-slug: 'make-crazy-look'
 x-skill-version: '1.0.0'
-x-mcp-tool: 'mcp__agent-media__create_crazy_look'
+x-mcp-tool: 'mcp__vantly-ugc__create_crazy_look'
 ---
 # Make Crazy Look
 
@@ -20,13 +20,13 @@ Two guarantees you can rely on: (1) the clip OPENS at peak expression — at 0.0
 
 ## How to call it
 
-Preferred path: MCP tools `mcp__agent-media__create_character` then `mcp__agent-media__create_crazy_look`. Schemas are auto-published via `tools/list` — trust the server.
+Preferred path: MCP tools `mcp__vantly-ugc__create_character` then `mcp__vantly-ugc__create_crazy_look`. Schemas are auto-published via `tools/list` — trust the server.
 
 Fallback path: REST.
 
 ```http
-POST https://api.agent-media.ai/v2/crazy-look
-Authorization: Bearer $AGENT_MEDIA_API_KEY
+POST https://api.vantly-ugc.com/v2/crazy-look
+Authorization: Bearer $VANTLY_UGC_API_KEY
 Content-Type: application/json
 
 {
@@ -36,7 +36,7 @@ Content-Type: application/json
 }
 ```
 
-Poll `GET https://api.agent-media.ai/v1/videos/<job_id>` until `completed` → `video_url`.
+Poll `GET https://api.vantly-ugc.com/v1/videos/<job_id>` until `completed` → `video_url`.
 
 ## Inputs that matter
 
@@ -53,7 +53,7 @@ Same `character_id` + same `caption`, submitted N times → N different performa
 ## House rules
 
 - Do NOT add subtitles on top — the caption IS the text layer.
-- See [reference/auth.md](../../reference/auth.md) for first-time install and `agent-media login`.
+- See [reference/auth.md](../../reference/auth.md) for first-time install and `vantly-ugc login`.
 
 ## Source of truth
 

@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * v2 · Generator registry.
@@ -92,11 +92,11 @@ export const V2_GENERATORS: Record<string, V2GeneratorRecord> = {
       fileFields: ['photo_url'],
       examples: [
         // Lead with the description-only case (the default, no photo needed).
-        'agent-media selfie --description "25yo asian woman, long wavy dark hair, soft smile" --script "I keep getting DMs about my hair oil routine" --scene-action "standing by a bright vanity, showing a small amber hair-oil bottle and scrunching one curl mid-line" --duration 10',
+        'vantly-ugc selfie --description "25yo asian woman, long wavy dark hair, soft smile" --script "I keep getting DMs about my hair oil routine" --scene-action "standing by a bright vanity, showing a small amber hair-oil bottle and scrunching one curl mid-line" --duration 10',
         // Reuse a saved character across multiple videos.
-        'agent-media selfie --character char_8x2vqp --script "..." --scene-action "sitting at a desk, gesturing toward an open laptop beside them" --duration 10',
+        'vantly-ugc selfie --character char_8x2vqp --script "..." --scene-action "sitting at a desk, gesturing toward an open laptop beside them" --duration 10',
         // Pin an exact real-person likeness (optional — only when the user provides a photo).
-        'agent-media selfie --photo me.png --description "25yo creator, casual black tee" --script "..." --duration 10',
+        'vantly-ugc selfie --photo me.png --description "25yo creator, casual black tee" --script "..." --duration 10',
       ],
     },
     mcp: { toolName: 'create_selfie' },
@@ -127,10 +127,10 @@ export const V2_GENERATORS: Record<string, V2GeneratorRecord> = {
       command: 'character create',
       fileFields: ['photo_url'],
       examples: [
-        // Default: description-only — agent-media generates the portrait, no photo upload.
-        'agent-media character create --name "sofia" --description "25yo asian woman, long wavy dark hair, soft smile"',
+        // Default: description-only — vantly-ugc generates the portrait, no photo upload.
+        'vantly-ugc character create --name "sofia" --description "25yo asian woman, long wavy dark hair, soft smile"',
         // Optional: pass a real-person photo when the user wants an exact likeness.
-        'agent-media character create --name "sofia" --description "..." --photo me.png',
+        'vantly-ugc character create --name "sofia" --description "..." --photo me.png',
       ],
     },
     mcp: { toolName: 'create_character' },
@@ -153,15 +153,15 @@ export const V2_GENERATORS: Record<string, V2GeneratorRecord> = {
     output: 'video_url',
 
     cli: {
-      // Command is `subs` (not `subtitle`) because `agent-media subtitle`
+      // Command is `subs` (not `subtitle`) because `vantly-ugc subtitle`
       // is already registered by the legacy CLI surface. Both routes
       // live in parallel: the legacy `subtitle` command calls the v1
       // worker via /v1/generate/subtitle, the new `subs` command calls
       // the v2 worker via /v2/subtitle.
       command: 'subs',
       examples: [
-        'agent-media subs --video https://r2/clip.mp4 --style hormozi',
-        'agent-media subs --video https://r2/clip.mp4 --transcript "exact script text" --style neon',
+        'vantly-ugc subs --video https://r2/clip.mp4 --style hormozi',
+        'vantly-ugc subs --video https://r2/clip.mp4 --transcript "exact script text" --style neon',
       ],
     },
     mcp: { toolName: 'create_subtitle' },
@@ -217,11 +217,11 @@ export const V2_GENERATORS: Record<string, V2GeneratorRecord> = {
       fileFields: ['photo_url'],
       examples: [
         // The volume workflow — saved character, random look each call.
-        'agent-media crazy-look --character char_8x2vqp --caption "WAIT there\'s an app that LOCKS your phone until you PRAY???"',
+        'vantly-ugc crazy-look --character char_8x2vqp --caption "WAIT there\'s an app that LOCKS your phone until you PRAY???"',
         // Pin a specific look + longer hold.
-        'agent-media crazy-look --character char_8x2vqp --caption "how do you pray so consistently???" --look bug-eyed-shock --duration 10',
+        'vantly-ugc crazy-look --character char_8x2vqp --caption "how do you pray so consistently???" --look bug-eyed-shock --duration 10',
         // Inline character (no saved character yet) + freetext look.
-        'agent-media crazy-look --description "21yo woman, long brown wavy hair, argyle cardigan" --caption "it took me 21 years to realize this" --look "custom:slowly raises one eyebrow, then breaks into a huge grin"',
+        'vantly-ugc crazy-look --description "21yo woman, long brown wavy hair, argyle cardigan" --caption "it took me 21 years to realize this" --look "custom:slowly raises one eyebrow, then breaks into a huge grin"',
       ],
     },
     mcp: { toolName: 'create_crazy_look' },

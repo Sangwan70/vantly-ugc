@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * agent-media CLI entry point.
+ * vantly-ugc CLI entry point.
  *
  * Unified command-line interface for AI-powered video and image generation.
  */
@@ -55,7 +55,7 @@ const pkg = require('../package.json') as { version: string; description: string
 const program = new Command();
 
 program
-  .name('agent-media')
+  .name('vantly-ugc')
   .description(pkg.description)
   .version(pkg.version, '-V, --version', 'Show CLI version')
   .option('--json', 'Output as JSON (for scripting/piping)')
@@ -105,7 +105,7 @@ registerTextToVideoCommand(program);
 // in src/v2/commands/ + add it to src/v2/commands/index.ts.
 registerV2Commands(program);
 
-// ── Skill management (update / status of ~/.claude/skills/agent-media-v2/)
+// ── Skill management (update / status of ~/.claude/skills/vantly-ugc-v2/)
 registerSkillCommand(program);
 
 // Best-effort skill auto-update check. Throttled to once / 24h, silent

@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Integration tests: verify the live API matches the OpenAPI spec.
@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-const BASE = 'https://api.agent-media.ai';
+const BASE = 'https://api.vantly-ugc.com';
 // FIX 4 (H5): no hardcoded prod key in source. Integration tests that call the
 // live API skip unless a real key is supplied via TEST_API_KEY.
 const KEY = process.env.TEST_API_KEY ?? '';

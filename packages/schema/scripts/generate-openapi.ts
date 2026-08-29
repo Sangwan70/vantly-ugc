@@ -1,5 +1,5 @@
 #!/usr/bin/env tsx
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Generates generated/openapi.json from the GENERATORS registry.
@@ -132,7 +132,7 @@ for (const [id, gen] of Object.entries(GENERATORS).filter(([, gen]) => !(gen as 
         {
           lang: 'curl',
           label: 'cURL',
-          source: `curl -X POST https://api.agent-media.ai/v1/generate/ugc_video \\
+          source: `curl -X POST https://api.vantly-ugc.com/v1/generate/ugc_video \\
   -H "Authorization: Bearer ma_YOUR_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -146,9 +146,9 @@ for (const [id, gen] of Object.entries(GENERATORS).filter(([, gen]) => !(gen as 
         {
           lang: 'python',
           label: 'Python',
-          source: `from agent_media import AgentMedia
+          source: `from vantly_ugc import VantlyUgc
 
-client = AgentMedia(api_key="ma_YOUR_KEY")
+client = VantlyUgc(api_key="ma_YOUR_KEY")
 video = client.create_video(
     script="Have you ever struggled with creating video content? This tool changed everything for me.",
     actor_slug="sofia",
@@ -161,9 +161,9 @@ print(video["video_url"])`,
         {
           lang: 'typescript',
           label: 'TypeScript',
-          source: `import { AgentMedia } from '@agent-media/sdk';
+          source: `import { VantlyUgc } from '@vantly-ugc/sdk';
 
-const client = new AgentMedia({ apiKey: 'ma_YOUR_KEY' });
+const client = new VantlyUgc({ apiKey: 'ma_YOUR_KEY' });
 const video = await client.createVideo({
   script: 'Have you ever struggled with creating video content? This tool changed everything for me.',
   actor_slug: 'sofia',
@@ -308,7 +308,7 @@ paths['/v1/videos/{jobId}'] = {
               job_id: '9ba7ff45-b161-4aba-b14c-fd87d7e19a77',
               status: 'completed',
               progress: {},
-              video_url: 'https://media.agent-media.ai/generation-outputs/.../ugc-final.mp4',
+              video_url: 'https://media.vantly-ugc.com/generation-outputs/.../ugc-final.mp4',
               error_message: null,
               created_at: '2026-04-11T10:00:00Z',
               updated_at: '2026-04-11T10:03:00Z',
@@ -329,7 +329,7 @@ paths['/v1/videos/{jobId}'] = {
 const spec = {
   openapi: '3.1.0',
   info: {
-    title: 'agent-media API',
+    title: 'vantly-ugc API',
     version: '1.0.0',
     description: `AI UGC video production API. Generate talking head videos with lip-synced AI actors, SaaS reviews, and styled subtitles.
 
@@ -344,12 +344,12 @@ Video generation is async. POST to /v1/generate/* returns a job_id immediately. 
 ## Rate limits
 - Generate endpoints: 10 requests/minute per user
 - Read endpoints: 60 requests/minute per user`,
-    contact: { name: 'agent-media', url: 'https://agent-media.ai' },
+    contact: { name: 'vantly-ugc', url: 'https://vantly-ugc.com' },
     license: { name: 'Apache-2.0', url: 'https://www.apache.org/licenses/LICENSE-2.0' },
-    termsOfService: 'https://agent-media.ai/terms',
+    termsOfService: 'https://vantly-ugc.com/terms',
   },
   servers: [
-    { url: 'https://api.agent-media.ai', description: 'Production' },
+    { url: 'https://api.vantly-ugc.com', description: 'Production' },
   ],
   paths,
   components: {

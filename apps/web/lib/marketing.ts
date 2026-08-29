@@ -1,10 +1,10 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Where "home" is, and how to leave cleanly.
  *
  * The marketing site and the product are two deployments on two hosts. Inside
- * this app, `/` is not the marketing site — on app.agent-media.ai middleware
+ * this app, `/` is not the marketing site — on app.vantly-ugc.com middleware
  * sends a signed-out visitor from `/` straight back to `/login`. So every
  * "Home" affordance that linked to `/` did nothing at all: it bounced the user
  * back to the page they were already on.
@@ -13,7 +13,7 @@
  * NEXT_PUBLIC_MARKETING_URL to their own, or leave it and get ours.
  */
 export const MARKETING_URL =
-  process.env.NEXT_PUBLIC_MARKETING_URL?.trim() || 'https://agent-media.ai';
+  process.env.NEXT_PUBLIC_MARKETING_URL?.trim() || 'https://vantly-ugc.com';
 
 /** Mirrors SESSION_HINT in middleware.ts. */
 const SESSION_HINT = 'am_session_hint';
@@ -24,8 +24,8 @@ const SESSION_HINT = 'am_session_hint';
  * Middleware clears this automatically, but only on a request that reaches
  * THIS app. Sign-out now sends people to the marketing site, which is a
  * different deployment — so without this the hint would still say "1" when
- * agent-media.ai reads it, and its middleware would bounce the freshly
- * signed-out user to app.agent-media.ai/dashboard, which would bounce them to
+ * vantly-ugc.com reads it, and its middleware would bounce the freshly
+ * signed-out user to app.vantly-ugc.com/dashboard, which would bounce them to
  * /login. They would never see the marketing page they asked for.
  *
  * The cookie is deliberately httpOnly:false (it carries no credential) so the
@@ -33,7 +33,7 @@ const SESSION_HINT = 'am_session_hint';
  *
  * The domain must match the one it was set with or the delete is a no-op, and
  * we cannot read that env var from the client, so derive it from the current
- * host: `app.agent-media.ai` → `.agent-media.ai`. On localhost there is no
+ * host: `app.vantly-ugc.com` → `.vantly-ugc.com`. On localhost there is no
  * parent domain and nothing to clear.
  */
 export function clearSessionHint(): void {

@@ -1,5 +1,5 @@
 /**
- * Provider abstraction types for the agent-media platform.
+ * Provider abstraction types for the vantly-ugc platform.
  *
  * Every AI provider implements the
  * {@link ProviderAdapter} interface. The platform routes generation
@@ -33,7 +33,7 @@ export interface GenerationRequest {
  * Response returned by a provider adapter after submitting a job.
  */
 export interface GenerationResponse {
-    /** Internal agent-media job ID. */
+    /** Internal vantly-ugc job ID. */
     jobId: string;
     /** Provider-assigned job identifier used for status polling and webhooks. */
     providerJobId: string;

@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media version` command.
+ * `vantly-ugc version` command.
  *
  * Displays the CLI version in human, JSON, or quiet mode.
  */
@@ -29,7 +29,7 @@ export function registerVersionCommand(program: Command): void {
           printQuiet(pkg.version);
           break;
         default:
-          console.log(`agent-media v${pkg.version}`);
+          console.log(`vantly-ugc v${pkg.version}`);
           break;
       }
     });

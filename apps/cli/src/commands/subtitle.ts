@@ -1,8 +1,8 @@
 import { printDeprecation } from '../lib/deprecation.js';
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media subtitle <video>` command.
+ * `vantly-ugc subtitle <video>` command.
  *
  * Adds Hormozi-style animated subtitles to a video. Flow:
  * 1. Load API key from the credential store.
@@ -24,7 +24,7 @@ import {
 } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
 import {
-  AgentMediaAPI,
+  VantlyUgcAPI,
   type GenerationJob,
 } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
@@ -68,7 +68,7 @@ function formatElapsed(seconds: number): string {
  * Poll a subtitle job until it reaches a terminal state.
  */
 async function waitForJob(
-  api: AgentMediaAPI,
+  api: VantlyUgcAPI,
   jobId: string,
   mode: OutputMode,
 ): Promise<GenerationJob | null> {
@@ -160,9 +160,9 @@ export function registerSubtitleCommand(program: Command): void {
     .description(
       'Add Hormozi-style animated subtitles to a video\n\n' +
       'Examples:\n' +
-      '  $ agent-media subtitle ./my-video.mp4 --sync\n' +
-      '  $ agent-media subtitle <job-id> --sync\n' +
-      '  $ agent-media subtitle ./clip.mp4 --style hormozi -s\n\n' +
+      '  $ vantly-ugc subtitle ./my-video.mp4 --sync\n' +
+      '  $ vantly-ugc subtitle <job-id> --sync\n' +
+      '  $ vantly-ugc subtitle ./clip.mp4 --style hormozi -s\n\n' +
       'The <video> argument can be a local file path or a job ID from a previous generation.',
     )
     .option('--style <name>', 'Subtitle style (default: hormozi). Options: hormozi, tiktok, minimal, clean, bold, impact, fire, pop, spotlight, aesthetic, pastel, glow, neon, electric, gradient, karaoke, boxed', 'hormozi')
@@ -181,12 +181,12 @@ export function registerSubtitleCommand(program: Command): void {
       if (!apiKey) {
         throw new CLIError('Not logged in.', {
           code: 'NOT_AUTHENTICATED',
-          suggestion: "Run 'agent-media login' to authenticate.",
+          suggestion: "Run 'vantly-ugc login' to authenticate.",
         });
       }
 
       try {
-        const api = new AgentMediaAPI(apiKey);
+        const api = new VantlyUgcAPI(apiKey);
         let storagePath: string | undefined;
         let jobIdRef: string | undefined;
 
@@ -296,7 +296,7 @@ export function registerSubtitleCommand(program: Command): void {
               console.log();
               console.log(
                 chalk.dim(
-                  `  Run 'agent-media status ${result.job_id}' to check progress`,
+                  `  Run 'vantly-ugc status ${result.job_id}' to check progress`,
                 ),
               );
               console.log(

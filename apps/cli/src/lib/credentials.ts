@@ -1,10 +1,10 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * Credential store for the agent-media CLI.
+ * Credential store for the vantly-ugc CLI.
  *
- * Manages API keys and profiles at ~/.agent-media/credentials.json
- * (or AGENT_MEDIA_CONFIG_DIR). Supports multiple named profiles for
+ * Manages API keys and profiles at ~/.vantly-ugc/credentials.json
+ * (or VANTLY_UGC_CONFIG_DIR). Supports multiple named profiles for
  * multi-account usage.
  *
  * File format:
@@ -96,12 +96,12 @@ export function saveCredentials(store: CredentialsStore): void {
 /**
  * Get the active profile name, respecting:
  * 1. Explicit --profile flag
- * 2. AGENT_MEDIA_PROFILE env var
+ * 2. VANTLY_UGC_PROFILE env var
  * 3. The currentProfile field in the store
  */
 export function resolveProfileName(flagProfile?: string): string {
   if (flagProfile) return flagProfile;
-  const envProfile = process.env['AGENT_MEDIA_PROFILE'];
+  const envProfile = process.env['VANTLY_UGC_PROFILE'];
   if (envProfile) return envProfile;
   const store = loadCredentials();
   return store.currentProfile || DEFAULT_PROFILE;
@@ -111,14 +111,14 @@ export function resolveProfileName(flagProfile?: string): string {
  * Get the API key for the resolved profile.
  *
  * Resolution order:
- * 1. AGENT_MEDIA_API_KEY env var (bypasses profile system entirely)
+ * 1. VANTLY_UGC_API_KEY env var (bypasses profile system entirely)
  * 2. Profile-based lookup from credentials.json
  *
  * Returns null if no credentials are found.
  */
 export function getApiKey(profileName?: string): string | null {
   // Env var always wins
-  const envKey = process.env['AGENT_MEDIA_API_KEY'];
+  const envKey = process.env['VANTLY_UGC_API_KEY'];
   if (envKey) return envKey;
 
   const store = loadCredentials();

@@ -1,7 +1,7 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media debug` command group.
+ * `vantly-ugc debug` command group.
  *
  * Provides deep-inspection subcommands for troubleshooting generation
  * jobs and credit balances. Intended for power users and support
@@ -22,7 +22,7 @@ import type { Command } from 'commander';
 import chalk from 'chalk';
 import { detectOutputMode, printJson, printQuiet } from '../lib/output.js';
 import { getApiKey, resolveProfileName } from '../lib/credentials.js';
-import { AgentMediaAPI } from '../lib/api.js';
+import { VantlyUgcAPI } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -30,15 +30,15 @@ import { CLIError, handleError } from '../lib/errors.js';
 /**
  * Resolve the authenticated API client or throw.
  */
-function resolveApi(profileName: string): AgentMediaAPI {
+function resolveApi(profileName: string): VantlyUgcAPI {
   const apiKey = getApiKey(profileName);
   if (!apiKey) {
     throw new CLIError('Not authenticated', {
       code: 'AUTH_REQUIRED',
-      suggestion: 'Run `agent-media login` to authenticate.',
+      suggestion: 'Run `vantly-ugc login` to authenticate.',
     });
   }
-  return new AgentMediaAPI(apiKey);
+  return new VantlyUgcAPI(apiKey);
 }
 
 /**

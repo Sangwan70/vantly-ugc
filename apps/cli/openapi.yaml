@@ -1,8 +1,8 @@
-# Copyright 2026 agent-media contributors. Apache-2.0 license.
+# Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 openapi: "3.1.0"
 info:
-  title: agent-media Edge Functions API
+  title: vantly-ugc Edge Functions API
   version: "0.1.0"
   description: >-
     RESTful API for AI-powered video and image generation. All endpoints are
@@ -12,8 +12,8 @@ info:
     name: Apache-2.0
     url: https://www.apache.org/licenses/LICENSE-2.0
   contact:
-    name: agent-media
-    url: https://agent-media.ai
+    name: vantly-ugc
+    url: https://vantly-ugc.com
 
 servers:
   - url: https://ppwvarkmpffljlqxkjux.supabase.co

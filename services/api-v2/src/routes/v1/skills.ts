@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 import type { Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
@@ -209,7 +209,7 @@ export async function quoteSkillRoute(req: Request, res: Response): Promise<void
  * `type`. MCP requires `inputSchema.type === "object"`, and strict clients
  * reject the entire tools/list response when it is missing — which is how
  * make_ugc, make_podcast and make_subtitles disappeared from Claude Code
- * while still appearing in `agent-media skills list`.
+ * while still appearing in `vantly-ugc skills list`.
  *
  * `buildTools` in agent.ts already unwrapped this for Anthropic; this endpoint
  * did not. Unwrap here so the CLI, the stdio MCP server and any future client
@@ -422,7 +422,7 @@ export async function runSkillRoute(req: Request, res: Response): Promise<void> 
   }
 
   // make_product_in_hands: the product image may be base64 OR any https URL.
-  // Re-host it onto agent-media R2 so the primitive only sees an R2 URL.
+  // Re-host it onto vantly-ugc R2 so the primitive only sees an R2 URL.
   if (slug === 'make_product_in_hands') {
     const body = activityInputBody as {
       product_image_url?: string;

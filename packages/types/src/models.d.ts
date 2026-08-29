@@ -1,5 +1,5 @@
 /**
- * Model registry types for the agent-media platform.
+ * Model registry types for the vantly-ugc platform.
  *
  * Defines the model, job, and pricing types used across the CLI,
  * Edge Functions, and dashboard.

@@ -136,7 +136,7 @@ jobs:
       # stops matching the API it documents. That is how the pacing docs came to
       # advertise a word→duration table the pricing code disagreed with, which
       # mis-billed agents. Runs after Build because the generator imports
-      # @agentmedia/schema from dist.
+      # @vantly-ugc/schema from dist.
       - name: Generated artifacts are up to date
         run: pnpm --filter api-v2 gen:public-skill:check
 
@@ -226,9 +226,9 @@ jobs:
       - name: docker-compose.yml resolves against .env.example
         shell: bash
         run: |
-          cp .env.example .env
-          docker compose config > /tmp/resolved.yml
-          rm -f .env
+          cp .env.example .env.local
+          docker compose --env-file .env.local config > /tmp/resolved.yml
+          rm -f .env.local
           # A value that still contains '#' means an inline comment leaked
           # through despite the check above (e.g. via a compose default).
           if grep -nE '^\s+[A-Z_0-9]+: .*#' /tmp/resolved.yml; then

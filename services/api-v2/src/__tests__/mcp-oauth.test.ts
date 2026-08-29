@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Proves the MCP connector handshake exists.
@@ -20,7 +20,7 @@ import type { AddressInfo } from 'node:net';
 // Env must be set before importing the module under test (it reads at import).
 process.env.SUPABASE_URL = process.env.SUPABASE_URL || 'https://example-project.supabase.co';
 process.env.SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'test-anon-key';
-process.env.PUBLIC_API_ORIGIN = 'https://api.agent-media.ai';
+process.env.PUBLIC_API_ORIGIN = 'https://api.vantly-ugc.com';
 
 const { createMcpOAuthRouter, isMcpOAuthConfigured, protectedResourceMetadataUrl } = await import(
   '../mcp-oauth.js'
@@ -84,7 +84,7 @@ describe('MCP connector OAuth', () => {
     const resp = await fetch(`${base}/.well-known/oauth-protected-resource/mcp`);
     expect(resp.status).toBe(200);
     const body = (await resp.json()) as { resource: string; authorization_servers: string[] };
-    expect(body.resource).toBe('https://api.agent-media.ai/mcp');
+    expect(body.resource).toBe('https://api.vantly-ugc.com/mcp');
     expect(body.authorization_servers.length).toBeGreaterThan(0);
   });
 
@@ -99,7 +99,7 @@ describe('MCP connector OAuth', () => {
       grant_types_supported: string[];
       code_challenge_methods_supported: string[];
     };
-    expect(body.issuer).toContain('api.agent-media.ai');
+    expect(body.issuer).toContain('api.vantly-ugc.com');
     expect(body.authorization_endpoint).toContain('/authorize');
     expect(body.token_endpoint).toContain('/token');
     // Dynamic client registration — without it, connector clients cannot
@@ -112,7 +112,7 @@ describe('MCP connector OAuth', () => {
 
   it('metadata URL helper matches what the challenge advertises', () => {
     expect(protectedResourceMetadataUrl()).toBe(
-      'https://api.agent-media.ai/.well-known/oauth-protected-resource/mcp',
+      'https://api.vantly-ugc.com/.well-known/oauth-protected-resource/mcp',
     );
   });
 

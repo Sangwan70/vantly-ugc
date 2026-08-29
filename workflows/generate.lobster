@@ -1,4 +1,4 @@
-name: agent-media-ugc
+name: vantly-ugc-ugc
 args:
   script:
     default: ""
@@ -10,10 +10,10 @@ args:
     default: ""
 steps:
   - id: check_credits
-    command: agent-media credits --json
+    command: vantly-ugc credits --json
 
   - id: list_actors
-    command: agent-media actor list --json
+    command: vantly-ugc actor list --json
 
   - id: confirm_generation
     command: |
@@ -26,9 +26,9 @@ steps:
     approval: required
 
   - id: generate
-    command: agent-media ugc "${script}" --actor ${actor} --style ${style} ${template:+--template ${template}} --sync --json
+    command: vantly-ugc ugc "${script}" --actor ${actor} --style ${style} ${template:+--template ${template}} --sync --json
     condition: $confirm_generation.approved
 
   - id: download
-    command: agent-media download $generate.json.job_id --json
+    command: vantly-ugc download $generate.json.job_id --json
     condition: $confirm_generation.approved

@@ -1,10 +1,10 @@
 {
-  "name": "@agentmedia/sdk",
+  "name": "@vantly-ugc/sdk",
   "version": "0.5.5",
-  "description": "TypeScript SDK for agent-media \u2014 generate AI UGC videos with talking heads, B-roll, and subtitles programmatically.",
+  "description": "TypeScript SDK for vantly-ugc \u2014 generate AI UGC videos with talking heads, B-roll, and subtitles programmatically.",
   "type": "module",
   "license": "Apache-2.0",
-  "homepage": "https://agent-media.ai/docs/api-reference",
+  "homepage": "https://vantly-ugc.com/docs/api-reference",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/gitroomhq/agent-media-app.git",
@@ -25,7 +25,7 @@
     "product-ugc",
     "developer-tools",
     "ai-video",
-    "agent-media"
+    "vantly-ugc"
   ],
   "publishConfig": {
     "access": "public"
@@ -54,7 +54,7 @@
     "build": "tsup src/index.ts src/v2/index.ts --format esm,cjs --dts --clean"
   },
   "dependencies": {
-    "@agentmedia/schema": "^0.5.5"
+    "@vantly-ugc/schema": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.5.1",

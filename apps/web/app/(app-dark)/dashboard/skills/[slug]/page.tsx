@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -302,20 +302,20 @@ function RunPanel({
 }
 
 function InstallPanel({ skill }: { skill: SkillEntry }) {
-  const restSnippet = `curl -X POST https://api.agent-media.ai/v1/skills/${skill.slug}/run \\
-  -H "Authorization: Bearer $AGENT_MEDIA_API_KEY" \\
+  const restSnippet = `curl -X POST https://api.vantly-ugc.com/v1/skills/${skill.slug}/run \\
+  -H "Authorization: Bearer $VANTLY_UGC_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{ /* see input schema */ }'`;
 
-  const cliSnippet = `agent-media skills run ${skill.slug} \\
+  const cliSnippet = `vantly-ugc skills run ${skill.slug} \\
   --input '{ /* see input schema */ }' --wait`;
 
   const mcpSnippet = JSON.stringify({
     mcpServers: {
-      'agent-media': {
+      'vantly-ugc': {
         command: 'npx',
-        args: ['-y', '-p', '@agentmedia/mcp-server@latest', 'agent-media-mcp'],
-        env: { AGENT_MEDIA_API_KEY: '${AGENT_MEDIA_API_KEY}' },
+        args: ['-y', '-p', '@vantly-ugc/mcp-server@latest', 'vantly-ugc-mcp'],
+        env: { VANTLY_UGC_API_KEY: '${VANTLY_UGC_API_KEY}' },
       },
     },
   }, null, 2);

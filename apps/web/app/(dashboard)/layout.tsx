@@ -1,15 +1,14 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Images, CreditCard, Settings, BookOpen, Users, PlusCircle, ShieldCheck, Sparkles, Activity, MessageCircle } from 'lucide-react';
+import { Images, CreditCard, Settings, BookOpen, Users, PlusCircle, ShieldCheck, Sparkles, Activity, MessageCircle, Share2 } from 'lucide-react';
 
 import { UserMenu } from '@/components/user-menu';
 import { CreditPill } from '@/components/credit-pill';
-import { PostizLogo } from '@/components/postiz-logo';
 import { createClient } from '@/lib/supabase/client';
 import { useVariables } from '@/components/variable-context';
 
@@ -29,7 +28,7 @@ const primaryNavItems = [
   { href: '/create', label: 'Create with Template', icon: PlusCircle },
   { href: '/content-machine', label: 'Content Machine', icon: Sparkles },
   { href: '/jobs', label: 'Auto posting', icon: Activity },
-  { href: '/integrations/postiz', label: 'Postiz auto content', icon: PostizLogo, isLogo: true },
+  { href: '/integrations/vantly', label: 'Vantly auto content', icon: Share2 },
   { href: '/gallery', label: 'Gallery', icon: Images },
   { href: '/actors', label: 'Actors', icon: Users },
 ];
@@ -70,7 +69,7 @@ export default function DashboardLayout({
       <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col overflow-hidden border-r border-border bg-white lg:flex">
         <div className="flex h-16 shrink-0 items-center border-b border-border px-6">
           <Link href="/" className="text-lg font-bold tracking-tight text-[#121212]">
-            agent-media
+            vantly-ugc
           </Link>
         </div>
 
@@ -161,7 +160,7 @@ export default function DashboardLayout({
         {/* Top bar */}
         <header className="flex h-16 items-center justify-between border-b border-border bg-background px-6">
           <Link href="/" className="text-lg font-bold tracking-tight text-[#121212] lg:hidden">
-            agent-media
+            vantly-ugc
           </Link>
           <div className="flex items-center gap-4">
             {/* Mobile nav */}

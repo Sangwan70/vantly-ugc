@@ -1,8 +1,8 @@
-// Copyright 2026 agent-media contributors
+// Copyright 2026 Vantly UGC contributors
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * Credit and billing types for the agent-media platform.
+ * Credit and billing types for the vantly-ugc platform.
  *
  * Credits are the platform currency (1 credit = $0.01). Users receive
  * monthly credits from their subscription plan and can purchase

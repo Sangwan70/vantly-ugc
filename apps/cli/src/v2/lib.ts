@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * v2 CLI helpers — shared upload + dispatch + poll logic so each v2
@@ -7,7 +7,7 @@
 
 import { readFileSync, statSync } from 'node:fs';
 import { extname, basename } from 'node:path';
-import { AgentMediaAPI } from '../lib/api.js';
+import { VantlyUgcAPI } from '../lib/api.js';
 import { CLIError, type ApiIssue } from '../lib/errors.js';
 import { createSpinner } from '../lib/output.js';
 import type { OutputMode } from '../types.js';
@@ -35,7 +35,7 @@ const SUPABASE_PUBLIC_BASE =
  * Same upload path the legacy commands use (see laptop-ugc.ts line 109+).
  */
 export async function resolvePhotoOrUrl(
-  api: AgentMediaAPI,
+  api: VantlyUgcAPI,
   pathOrUrl: string,
 ): Promise<string> {
   if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
@@ -70,12 +70,12 @@ export async function resolvePhotoOrUrl(
 
 /**
  * Make an authenticated POST to api-v2 at an arbitrary path. The
- * existing AgentMediaAPI.request() is private; this hits the same
+ * existing VantlyUgcAPI.request() is private; this hits the same
  * baseUrl + auth chain via a fresh fetch using fields the class
  * already exposes.
  */
 export async function postJSON(
-  api: AgentMediaAPI,
+  api: VantlyUgcAPI,
   path: string,
   body: unknown,
 ): Promise<{ status: number; data: unknown }> {
@@ -99,8 +99,8 @@ export async function postJSON(
   return { status: resp.status, data };
 }
 
-function authHeaders(api: AgentMediaAPI, includeJsonContentType: boolean): Record<string, string> {
-  // baseUrl is public on AgentMediaAPI; apiKey/anonKey are not, so we
+function authHeaders(api: VantlyUgcAPI, includeJsonContentType: boolean): Record<string, string> {
+  // baseUrl is public on VantlyUgcAPI; apiKey/anonKey are not, so we
   // read them off the instance with a narrow cast (private fields, not
   // type holes — the data lives on the same object).
   const reader = api as unknown as { apiKey: string; anonKey?: string };
@@ -122,7 +122,7 @@ function isTerminalJob(job: StreamJob): boolean {
 }
 
 async function waitForV2Stream(
-  api: AgentMediaAPI,
+  api: VantlyUgcAPI,
   jobId: string,
   opts: { timeoutMs: number; onTick?: (s: unknown) => void },
 ): Promise<unknown> {
@@ -224,7 +224,7 @@ function isSseUnavailableError(err: unknown): boolean {
  * shape the legacy CLI commands consume).
  */
 export async function pollV2(
-  api: AgentMediaAPI,
+  api: VantlyUgcAPI,
   jobId: string,
   opts: { intervalMs?: number; timeoutMs?: number; onTick?: (s: unknown) => void } = {},
 ): Promise<unknown> {
@@ -279,12 +279,12 @@ function fmtElapsed(ms: number): string {
  *  - human mode: a spinner whose text shows the elapsed time (updates every 1s
  *    even when the server sends no status change).
  *  - json/quiet/non-TTY: a heartbeat line to STDERR every 20s (stdout stays clean).
- *  - Ctrl-C: prints the job id + `agent-media status <id>` so the paid job is
+ *  - Ctrl-C: prints the job id + `vantly-ugc status <id>` so the paid job is
  *    resumable instead of orphaned blind.
  * Returns the final job row. The caller prints the terminal result/failure.
  */
 export async function pollWithFeedback(
-  api: AgentMediaAPI,
+  api: VantlyUgcAPI,
   jobId: string,
   opts: { mode: OutputMode; label: string },
 ): Promise<unknown> {
@@ -308,7 +308,7 @@ export async function pollWithFeedback(
     clearInterval(ticker);
     spin?.stop();
     process.stderr.write(
-      `\nStill running as ${jobId}. Check it later with: agent-media status ${jobId}\n`,
+      `\nStill running as ${jobId}. Check it later with: vantly-ugc status ${jobId}\n`,
     );
     process.exit(130);
   };

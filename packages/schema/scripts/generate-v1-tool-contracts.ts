@@ -1,5 +1,5 @@
 #!/usr/bin/env tsx
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
@@ -42,7 +42,7 @@ function renderDocs(): string {
     '<!-- AUTO-GENERATED — do not hand-edit. -->',
     '# V1 tool contracts',
     '',
-    'Tooling-First V1 mandatory tool contracts, generated from `@agentmedia/schema`.',
+    'Tooling-First V1 mandatory tool contracts, generated from `@vantly-ugc/schema`.',
     '',
     ...sections,
   ].join('\n');

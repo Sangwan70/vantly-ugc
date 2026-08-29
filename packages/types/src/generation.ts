@@ -1,8 +1,8 @@
-// Copyright 2026 agent-media contributors
+// Copyright 2026 Vantly UGC contributors
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * Generation pipeline types for the agent-media CLI and Edge Functions.
+ * Generation pipeline types for the vantly-ugc CLI and Edge Functions.
  *
  * {@link GenerateParams} represents the CLI user's input before it is
  * validated and mapped to a {@link GenerationRequest} for the provider

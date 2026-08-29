@@ -1,17 +1,17 @@
 #!/usr/bin/env node
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Fail the build if a package we publish to npm cannot be installed from npm.
  *
- * WHY. @agentmedia/mcp-server@0.7.6 and @agentmedia/sdk@0.5.4 were published
- * carrying `"@agentmedia/schema": "workspace:*"`. `workspace:` is a pnpm
+ * WHY. @vantly-ugc/mcp-server@0.7.6 and @vantly-ugc/sdk@0.5.4 were published
+ * carrying `"@vantly-ugc/schema": "workspace:*"`. `workspace:` is a pnpm
  * protocol; npm has no idea what it means, so every consumer got:
  *
  *     npm error code EUNSUPPORTEDPROTOCOL
  *     npm error Unsupported URL Type "workspace:": workspace:*
  *
- * That broke the exact `npx -y -p @agentmedia/mcp-server@latest agent-media-mcp`
+ * That broke the exact `npx -y -p @vantly-ugc/mcp-server@latest vantly-ugc-mcp`
  * command printed on /mcp, in every `claude mcp add` snippet, and in the docs —
  * for everyone, silently, until someone tried a clean install. `pnpm publish`
  * rewrites `workspace:` specs on pack; `npm publish` does not, and that is how

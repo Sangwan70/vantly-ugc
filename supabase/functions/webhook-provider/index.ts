@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors
+// Copyright 2026 Vantly UGC contributors
 // SPDX-License-Identifier: Apache-2.0
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -421,7 +421,7 @@ async function deadLetter(
 //
 // The body is HMAC-signed with the user's profiles.webhook_secret so the
 // receiver can verify authenticity. Header format mirrors Stripe:
-//   X-AgentMedia-Signature: t=<unix_ts>,v1=<hex_hmac_sha256(t.body, secret)>
+//   X-VantlyUgc-Signature: t=<unix_ts>,v1=<hex_hmac_sha256(t.body, secret)>
 //
 // First attempt is fired inline. Failures are recorded in
 // webhook_deliveries with a next_retry_at; a separate pg_cron job
@@ -508,11 +508,11 @@ async function fireUserWebhook(ctx: UserWebhookContext): Promise<void> {
   const attemptN = 1;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "User-Agent": "agent-media-webhook/1.0",
-    "X-AgentMedia-Event": event,
-    "X-AgentMedia-Signature": `t=${ts},v1=${signature}`,
-    "X-AgentMedia-Job-Id": job.id,
-    "X-AgentMedia-Attempt": String(attemptN),
+    "User-Agent": "vantly-ugc-webhook/1.0",
+    "X-VantlyUgc-Event": event,
+    "X-VantlyUgc-Signature": `t=${ts},v1=${signature}`,
+    "X-VantlyUgc-Job-Id": job.id,
+    "X-VantlyUgc-Attempt": String(attemptN),
   };
 
   const ac = new AbortController();
@@ -579,24 +579,24 @@ async function fireUserWebhook(ctx: UserWebhookContext): Promise<void> {
   }
 }
 
-// ── Postiz auto-publish ────────────────────────────────────────────────────
+// ── Vantly auto-publish ────────────────────────────────────────────────────
 //
-// When a job.completed lands and the user has a postiz_api_key plus at
-// least one entry in postiz_default_integrations, we fan out a Postiz
+// When a job.completed lands and the user has a vantly_api_key plus at
+// least one entry in vantly_default_integrations, we fan out a Vantly
 // publish per integration:
-//   1. POST /upload-from-url  → uploads the R2 video to Postiz CDN
+//   1. POST /upload-from-url  → uploads the R2 video to Vantly's CDN
 //   2. POST /posts            → schedules the post (date=now → publishes)
 //
-// Per-integration outcome is recorded in postiz_publications. Best-effort:
+// Per-integration outcome is recorded in vantly_publications. Best-effort:
 // errors never block the 200 response back to the worker.
 
 import {
-  listIntegrations as postizListIntegrations,
-  uploadFromUrl as postizUploadFromUrl,
-  createPost as postizCreatePost,
-  PostizError,
-  type PostizIntegration,
-} from "../_shared/postiz-client.ts";
+  listIntegrations as vantlyListIntegrations,
+  uploadFromUrl as vantlyUploadFromUrl,
+  createPost as vantlyCreatePost,
+  VantlyError,
+  type VantlyIntegration,
+} from "../_shared/vantly-client.ts";
 
 /**
  * Pick an explicit caption from input_params. ONLY checks fields that are
@@ -694,7 +694,7 @@ async function resolveCaption(job: JobRecord): Promise<string> {
   return captionFromJob(job);
 }
 
-async function publishToPostiz(
+async function publishToVantly(
   // deno-lint-ignore no-explicit-any
   db: any,
   job: JobRecord,
@@ -702,11 +702,11 @@ async function publishToPostiz(
 ): Promise<void> {
   const { data: profile } = await db
     .from("profiles")
-    .select("postiz_api_key, postiz_default_integrations")
+    .select("vantly_api_key, vantly_default_integrations")
     .eq("id", job.user_id)
     .maybeSingle();
 
-  const apiKey = profile?.postiz_api_key as string | null;
+  const apiKey = profile?.vantly_api_key as string | null;
   if (!apiKey) {
     return; // user hasn't opted in
   }
@@ -718,7 +718,7 @@ async function publishToPostiz(
     : null;
   const defaults = perJob && perJob.length > 0
     ? perJob
-    : (profile?.postiz_default_integrations as string[] | null);
+    : (profile?.vantly_default_integrations as string[] | null);
 
   if (!defaults || defaults.length === 0) {
     return; // user hasn't opted in
@@ -726,18 +726,18 @@ async function publishToPostiz(
 
   // We need the integration's identifier (platform string) to put in
   // settings.__type. listIntegrations gives us all of them in one call.
-  let integrations: PostizIntegration[];
+  let integrations: VantlyIntegration[];
   try {
-    integrations = await postizListIntegrations(apiKey);
+    integrations = await vantlyListIntegrations(apiKey);
   } catch (err) {
     console.error(
-      `webhook-provider: postiz listIntegrations failed for user ${job.user_id}:`,
+      `webhook-provider: vantly listIntegrations failed for user ${job.user_id}:`,
       err instanceof Error ? err.message : String(err),
     );
     return; // can't proceed without platform-type lookup
   }
 
-  const byId = new Map<string, PostizIntegration>();
+  const byId = new Map<string, VantlyIntegration>();
   for (const i of integrations) byId.set(i.id, i);
 
   // Resolve caption. If AI caption generation fails (e.g. ANTHROPIC_API_KEY
@@ -752,7 +752,7 @@ async function publishToPostiz(
     const msg = captionErr instanceof Error ? captionErr.message : String(captionErr);
     console.error(`webhook-provider: caption resolution failed for job ${job.id}: ${msg}`);
     for (const integrationId of defaults) {
-      const { error: insertErr } = await db.from("postiz_publications").insert({
+      const { error: insertErr } = await db.from("vantly_publications").insert({
         user_id: job.user_id,
         job_id: job.id,
         integration_id: integrationId,
@@ -770,22 +770,22 @@ async function publishToPostiz(
     const integration = byId.get(integrationId);
     if (!integration) {
       // User configured an integration that no longer exists; record + skip
-      const { error: insErr } = await db.from("postiz_publications").insert({
+      const { error: insErr } = await db.from("vantly_publications").insert({
         user_id: job.user_id,
         job_id: job.id,
         integration_id: integrationId,
         status: "failed",
-        error_message: "integration not found in user's Postiz account (deleted or revoked)",
+        error_message: "integration not found in user's Vantly account (deleted or revoked)",
       });
       if (insErr) {
         console.error(`webhook-provider: failed to insert missing-integration publication row for job ${job.id} → ${integrationId}: ${insErr.message}`);
       }
       continue;
     }
-    // Postiz's `disabled` flag is sometimes stale or platform-state
-    // dependent; attempt the publish anyway and let Postiz's API
+    // Vantly's `disabled` flag is sometimes stale or platform-state
+    // dependent; attempt the publish anyway and let Vantly's API
     // return a concrete error if it really can't accept the post.
-    // The error_message + http_status get recorded in postiz_publications.
+    // The error_message + http_status get recorded in vantly_publications.
 
     const pubRow = {
       user_id: job.user_id,
@@ -794,24 +794,24 @@ async function publishToPostiz(
       status: "pending" as const,
     };
     const { data: insertedPub } = await db
-      .from("postiz_publications")
+      .from("vantly_publications")
       .insert(pubRow)
       .select("id")
       .maybeSingle();
     const pubId = insertedPub?.id as string | undefined;
 
-    // Step 1: upload-from-url (Postiz fetches the R2 video to its CDN)
+    // Step 1: upload-from-url (Vantly fetches the R2 video to its CDN)
     let uploadId: string;
     let uploadPath: string;
     try {
-      const upload = await postizUploadFromUrl(apiKey, videoUrl);
+      const upload = await vantlyUploadFromUrl(apiKey, videoUrl);
       uploadId = upload.id;
       uploadPath = upload.path;
     } catch (err) {
-      const httpStatus = err instanceof PostizError ? err.status : null;
+      const httpStatus = err instanceof VantlyError ? err.status : null;
       const msg = err instanceof Error ? err.message : String(err);
       if (pubId) {
-        const { error: updErr } = await db.from("postiz_publications").update({
+        const { error: updErr } = await db.from("vantly_publications").update({
           status: "failed",
           error_message: `upload-from-url failed: ${msg}`,
           http_status: httpStatus,
@@ -821,17 +821,17 @@ async function publishToPostiz(
         }
       }
       console.error(
-        `webhook-provider: postiz upload-from-url failed for job ${job.id} → ${integrationId}:`,
+        `webhook-provider: vantly upload-from-url failed for job ${job.id} → ${integrationId}:`,
         msg,
       );
       continue;
     }
 
     if (pubId) {
-      const { error: updErr } = await db.from("postiz_publications").update({
+      const { error: updErr } = await db.from("vantly_publications").update({
         status: "uploaded",
-        postiz_upload_id: uploadId,
-        postiz_upload_path: uploadPath,
+        vantly_upload_id: uploadId,
+        vantly_upload_path: uploadPath,
         uploaded_at: new Date().toISOString(),
       }).eq("id", pubId);
       if (updErr) {
@@ -841,7 +841,7 @@ async function publishToPostiz(
 
     // Step 2: create post
     try {
-      const created = await postizCreatePost(apiKey, {
+      const created = await vantlyCreatePost(apiKey, {
         integrationId,
         mediaPath: uploadPath,
         content: caption,
@@ -849,9 +849,9 @@ async function publishToPostiz(
       });
       const postId = created[0]?.postId ?? null;
       if (pubId) {
-        const { error: updErr } = await db.from("postiz_publications").update({
+        const { error: updErr } = await db.from("vantly_publications").update({
           status: "published",
-          postiz_post_id: postId,
+          vantly_post_id: postId,
           published_at: new Date().toISOString(),
         }).eq("id", pubId);
         if (updErr) {
@@ -859,13 +859,13 @@ async function publishToPostiz(
         }
       }
       console.log(
-        `webhook-provider: postiz published job ${job.id} → ${integration.identifier} (${integrationId}) post=${postId}`,
+        `webhook-provider: vantly published job ${job.id} → ${integration.identifier} (${integrationId}) post=${postId}`,
       );
     } catch (err) {
-      const httpStatus = err instanceof PostizError ? err.status : null;
+      const httpStatus = err instanceof VantlyError ? err.status : null;
       const msg = err instanceof Error ? err.message : String(err);
       if (pubId) {
-        const { error: updErr } = await db.from("postiz_publications").update({
+        const { error: updErr } = await db.from("vantly_publications").update({
           status: "failed",
           error_message: `create-post failed: ${msg}`,
           http_status: httpStatus,
@@ -875,7 +875,7 @@ async function publishToPostiz(
         }
       }
       console.error(
-        `webhook-provider: postiz create-post failed for job ${job.id} → ${integrationId}:`,
+        `webhook-provider: vantly create-post failed for job ${job.id} → ${integrationId}:`,
         msg,
       );
     }
@@ -1063,13 +1063,13 @@ async function processWebhook(
       );
     });
 
-    // Postiz auto-publish — fan out to the user's configured integrations.
+    // Vantly auto-publish — fan out to the user's configured integrations.
     // Best-effort, never blocks the 200 response. Per-integration outcomes
-    // recorded in postiz_publications. Only fires for media outputs (mp4/png/jpg).
+    // recorded in vantly_publications. Only fires for media outputs (mp4/png/jpg).
     if (storageUrl) {
-      await publishToPostiz(db, jobRecord, storageUrl).catch((err: unknown) => {
+      await publishToVantly(db, jobRecord, storageUrl).catch((err: unknown) => {
         console.error(
-          `webhook-provider: publishToPostiz crashed for job ${jobId}:`,
+          `webhook-provider: publishToVantly crashed for job ${jobId}:`,
           err instanceof Error ? err.message : String(err),
         );
       });

@@ -1,5 +1,5 @@
 /**
- * MVP types for Sprint 8 of the agent-media platform.
+ * MVP types for Sprint 8 of the vantly-ugc platform.
  *
  * Covers auto-top-up configuration, unit economics reporting,
  * job retry/inspection tooling, and text overlay parameters.

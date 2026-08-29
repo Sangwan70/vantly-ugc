@@ -1,5 +1,5 @@
 /**
- * Observability and monitoring types for the agent-media platform.
+ * Observability and monitoring types for the vantly-ugc platform.
  *
  * Covers circuit breaker health tracking, alert management, credit
  * reconciliation, and system health summaries. These types are consumed

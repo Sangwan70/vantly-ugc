@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
@@ -69,7 +69,7 @@ export function PublishToSocial({ videoUrl }: { videoUrl: string }) {
       const j = await r.json();
       if (!r.ok) throw new Error(j?.detail || j?.error || `publish ${r.status}`);
       const n = Array.isArray(j?.post_ids) ? j.post_ids.length : 0;
-      if (n === 0) throw new Error('Postiz accepted the request but created no post.');
+      if (n === 0) throw new Error('Vantly accepted the request but created no post.');
       setMsg('Published! 🎉');
     } catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }

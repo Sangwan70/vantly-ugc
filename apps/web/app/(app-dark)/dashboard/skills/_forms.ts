@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Hand-coded per-skill form definitions for the Skill Center detail
@@ -71,7 +71,7 @@ export const FORMS: Record<string, SkillForm> = {
     composed: false,
     fields: [
       { kind: 'text', name: 'character_sheet_url', label: 'Character sheet URL (R2-hosted)', placeholder: 'https://pub-...r2.dev/vnext/...', required: true },
-      { kind: 'text', name: 'product_image_url', label: 'Product image URL (any https URL)', placeholder: 'https://...jpg — or use the upload below', help: 'A photo of the product the actor will hold. Provide a URL OR upload a file below (not both). It is re-hosted to agent-media R2 automatically.' },
+      { kind: 'text', name: 'product_image_url', label: 'Product image URL (any https URL)', placeholder: 'https://...jpg — or use the upload below', help: 'A photo of the product the actor will hold. Provide a URL OR upload a file below (not both). It is re-hosted to vantly-ugc R2 automatically.' },
       { kind: 'image', name: 'product_image_base64', label: '…or upload a product image', help: 'PNG/JPEG, ≤10 MB. Use this OR the URL above.' },
       { kind: 'text', name: 'subject', label: 'Subject (locks gender/appearance)', placeholder: 'a young woman', help: 'Recommended. e.g. "a young woman", "a man in his 40s" — stops a gendered product (e.g. a football kit) from drifting the person.' },
       { kind: 'select', name: 'framing', label: 'Framing', options: ['close_up', 'full_body'], defaultValue: 'close_up', help: 'close_up = chest-up holding the product. full_body = head-to-toe, for turn-arounds / showing the whole outfit.' },

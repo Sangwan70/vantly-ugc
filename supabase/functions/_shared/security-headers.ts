@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors
+// Copyright 2026 Vantly UGC contributors
 // SPDX-License-Identifier: Apache-2.0
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,7 +31,7 @@
 
 /** Default allowed origins when ALLOWED_ORIGINS env var is not set. */
 const DEFAULT_ALLOWED_ORIGINS: string[] = [
-  "https://agent-media.ai",
+  "https://vantly-ugc.com",
   "http://localhost:3000",
   "https://*.vercel.app",
 ];

@@ -4,10 +4,10 @@ Last verified: 2026-05-24.
 
 This document describes the production Selfie path as shipped in:
 
-- product repo `yuvalsuede/agent-media`, `main` at `aba8d703ff927772f432e0a4584a16b2d6f3c623`
-- public skill repo `gitroomhq/agent-media-app`, `main` at `939c29f65bc0d9884fd80c7ef9adf237149f0118`
-- npm `agent-media-cli@1.15.1`
-- npm `@agentmedia/schema@0.5.1`
+- product repo `yuvalsuede/vantly-ugc`, `main` at `aba8d703ff927772f432e0a4584a16b2d6f3c623`
+- public skill repo `gitroomhq/vantly-ugc-app`, `main` at `939c29f65bc0d9884fd80c7ef9adf237149f0118`
+- npm `vantly-ugc-cli@1.15.1`
+- npm `@vantly-ugc/schema@0.5.1`
 
 The active Selfie implementation is the adapter path:
 
@@ -20,7 +20,7 @@ The active Selfie implementation is the adapter path:
 ```mermaid
 sequenceDiagram
   participant Skill as Claude Skill / Agent
-  participant CLI as agent-media CLI
+  participant CLI as vantly-ugc CLI
   participant API as api-v2 Railway
   participant DB as Supabase DB
   participant Worker as media-worker-v2 Railway
@@ -30,7 +30,7 @@ sequenceDiagram
   participant R2 as Cloudflare R2
   participant Webhook as Supabase webhook-provider
 
-  Skill->>CLI: agent-media selfie --description/--character --script/--scene-action
+  Skill->>CLI: vantly-ugc selfie --description/--character --script/--scene-action
   CLI->>API: POST /v2/selfie
   API->>DB: insert generation_jobs row
   API->>DB: deduct_credits(job_id)
@@ -107,7 +107,7 @@ Registered through:
 Command:
 
 ```bash
-agent-media selfie
+vantly-ugc selfie
 ```
 
 Options:
@@ -133,7 +133,7 @@ Local photos are uploaded through `apps/cli/src/v2/lib.ts`:
 
 - accepts `http(s)` URLs unchanged
 - accepts local `.png`, `.jpg`, `.jpeg`, `.webp`, `.heic`
-- uses `AgentMediaAPI.getUploadUrl()`
+- uses `VantlyUgcAPI.getUploadUrl()`
 - uploads file bytes to the presigned URL
 - returns public Supabase generation-inputs URL:
   `https://ppwvarkmpffljlqxkjux.supabase.co/storage/v1/object/public/generation-inputs/<storage_path>`
@@ -147,7 +147,7 @@ Submission:
 - polls with `pollV2()` until `completed`, `failed`, or `canceled`
 - outputs `video_url` or `result_url`
 
-`AgentMediaAPI` defaults to `https://api.agent-media.ai` and can be overridden with `AGENT_MEDIA_API_URL`.
+`VantlyUgcAPI` defaults to `https://api.vantly-ugc.com` and can be overridden with `VANTLY_UGC_API_URL`.
 
 ## API V2
 
@@ -158,7 +158,7 @@ Runtime:
 - Express on `PORT || 3001`
 - Railway service `api-v2`
 - Node >= 20
-- Dockerfile builds `@agentmedia/schema`, then `api-v2`
+- Dockerfile builds `@vantly-ugc/schema`, then `api-v2`
 
 Important middleware:
 
@@ -730,7 +730,7 @@ Requires:
 
 Defaults:
 
-- physical bucket: `R2_BUCKET || agent-media-outputs`
+- physical bucket: `R2_BUCKET || vantly-ugc`
 - public base: `R2_PUBLIC_URL || https://pub-16e2ed8f6be84691845e91436920ce0a.r2.dev`
 
 `r2Upload(bucket, path, buffer, contentType)` writes object key:
@@ -822,7 +822,7 @@ On terminal state, webhook provider:
 - advances the DB state machine
 - refunds credits on failure
 - fires optional user webhooks
-- can publish to Postiz when configured
+- can publish to Vantly when configured
 
 ## MCP Surface
 
@@ -855,20 +855,20 @@ There are two skill copies:
 
 1. In-repo development skill tree:
    - root `SKILL.md`
-   - `skills/agent-media-v2/SKILL.md`
-   - `skills/agent-media-v2/reference/*`
+   - `skills/vantly-ugc-v2/SKILL.md`
+   - `skills/vantly-ugc-v2/reference/*`
 2. Public install/update source:
-   - GitHub repo `gitroomhq/agent-media-app`
-   - raw base `https://raw.githubusercontent.com/gitroomhq/agent-media-app/main`
+   - GitHub repo `gitroomhq/vantly-ugc-app`
+   - raw base `https://raw.githubusercontent.com/gitroomhq/vantly-ugc-app/main`
    - current `SKILL.md` frontmatter has `version: 3.4.0`
 
 CLI updater:
 
 - source: `apps/cli/src/lib/skill-update.ts`
-- local install path: `~/.claude/skills/agent-media-v2`
+- local install path: `~/.claude/skills/vantly-ugc-v2`
 - checks at most once per 24h
-- stamp file: `~/.agent-media/.skill-update-check`
-- remote base hardcoded to `https://raw.githubusercontent.com/gitroomhq/agent-media-app/main`
+- stamp file: `~/.vantly-ugc/.skill-update-check`
+- remote base hardcoded to `https://raw.githubusercontent.com/gitroomhq/vantly-ugc-app/main`
 
 Skill tree manifest:
 
@@ -883,15 +883,15 @@ Skill tree manifest:
 
 Commands:
 
-- `agent-media skill status`
-- `agent-media skill update`
+- `vantly-ugc skill status`
+- `vantly-ugc skill update`
 
 Skill rules for Selfie:
 
 - before any command, read `reference/conversation-flow.md`
 - run the four gates in order
 - confirm exact script or scene action
-- run `agent-media character list --json` itself
+- run `vantly-ugc character list --json` itself
 - never expose `char_xxx` ids to the user
 - never auto-pick a character
 - propose director brief before running
@@ -939,14 +939,14 @@ The public skill deliberately does not discuss pricing. The API bills internally
 
 NPM:
 
-- `agent-media-cli@latest = 1.15.1`
-- binary: `agent-media -> dist/index.js`
-- depends on `@agentmedia/schema ^0.5.1`
-- `@agentmedia/schema@latest = 0.5.1`
+- `vantly-ugc-cli@latest = 1.15.1`
+- binary: `vantly-ugc -> dist/index.js`
+- depends on `@vantly-ugc/schema ^0.5.1`
+- `@vantly-ugc/schema@latest = 0.5.1`
 
 Product repo:
 
-- remote `origin`: `https://github.com/yuvalsuede/agent-media.git`
+- remote `origin`: `https://github.com/yuvalsuede/vantly-ugc.git`
 - production `main`: `aba8d703ff927772f432e0a4584a16b2d6f3c623`
 
 Skill repo:
@@ -956,7 +956,7 @@ Skill repo:
 
 Production health checks verified:
 
-- `https://api.agent-media.ai/health`
+- `https://api.vantly-ugc.com/health`
 - worker health route returned `service: media-worker-v2`
 
 ## Environment Variables
@@ -996,11 +996,11 @@ Worker:
 
 CLI:
 
-- `AGENT_MEDIA_API_URL`
-- `AGENT_MEDIA_ANON_KEY`
-- `AGENT_MEDIA_CONFIG_DIR`
-- `AGENT_MEDIA_SKIP_SKILL_CHECK`
-- `AGENT_MEDIA_AUTO_UPDATE_SKILL`
+- `VANTLY_UGC_API_URL`
+- `VANTLY_UGC_ANON_KEY`
+- `VANTLY_UGC_CONFIG_DIR`
+- `VANTLY_UGC_SKIP_SKILL_CHECK`
+- `VANTLY_UGC_AUTO_UPDATE_SKILL`
 
 ## Adding Future Scenarios
 
@@ -1026,9 +1026,9 @@ The intended multi-skill/product architecture is registry-first:
 8. Add CLI command under `apps/cli/src/v2/commands/<scenario>.ts`.
 9. Register it in `apps/cli/src/v2/commands/index.ts`.
 10. Generate/update docs from schema.
-11. Add `skills/agent-media-v2/reference/generators/<scenario>.md`.
+11. Add `skills/vantly-ugc-v2/reference/generators/<scenario>.md`.
 12. Add the new skill reference to `SKILL_TREE` in `apps/cli/src/lib/skill-update.ts`.
-13. Update the public skill repo `gitroomhq/agent-media-app`.
+13. Update the public skill repo `gitroomhq/vantly-ugc-app`.
 14. Publish schema and CLI to npm.
 15. Deploy `api-v2` and `media-worker-v2`.
 16. Run a live production job and verify intermediate artifacts plus final output.

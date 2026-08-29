@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * POST /api/support
@@ -63,7 +63,7 @@ export async function POST(req: Request) {
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const fromEmail = user.email ?? 'unknown@agent-media.ai';
+  const fromEmail = user.email ?? 'unknown@vantly-ugc.com';
   const fromId = user.id;
 
   const resend = new Resend(apiKey);

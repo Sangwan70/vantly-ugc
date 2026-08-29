@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Browser-side Supabase client for Next.js client components.
@@ -14,6 +14,7 @@
 
 import { createBrowserClient } from '@supabase/ssr';
 import { getVar } from '@/components/variable-context';
+import { SUPABASE_COOKIE_NAME } from './cookie-options';
 
 /**
  * Reads config at CALL time from the runtime context, not from build-time env.
@@ -37,5 +38,7 @@ export function createClient() {
       'Supabase browser config missing: set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY (injected at runtime by the root layout).',
     );
   }
-  return createBrowserClient(url.trim(), anonKey.trim());
+  return createBrowserClient(url.trim(), anonKey.trim(), {
+    cookieOptions: { name: SUPABASE_COOKIE_NAME },
+  });
 }

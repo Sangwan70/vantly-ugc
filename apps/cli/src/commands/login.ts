@@ -1,13 +1,13 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * `agent-media login` command.
+ * `vantly-ugc login` command.
  *
  * Authenticates via the OAuth device-code flow:
  * 1. CLI calls POST /functions/v1/device-token to get a device code.
  * 2. Opens the verification URL in the user's default browser.
  * 3. Polls GET /functions/v1/device-token?code=XXXX every N seconds.
- * 4. On approval, stores the API key in ~/.agent-media/credentials.json.
+ * 4. On approval, stores the API key in ~/.vantly-ugc/credentials.json.
  *
  * Supports --profile for multi-account, --no-browser to skip auto-open,
  * and --timeout to override the default 5-minute polling window.
@@ -15,7 +15,7 @@
 
 import type { Command } from 'commander';
 import chalk from 'chalk';
-import { AgentMediaAPI } from '../lib/api.js';
+import { VantlyUgcAPI } from '../lib/api.js';
 import type { DevicePollResponse } from '../lib/api.js';
 import { createSpinner, detectOutputMode, printJson, printQuiet } from '../lib/output.js';
 import { saveProfile, resolveProfileName } from '../lib/credentials.js';
@@ -48,7 +48,7 @@ export function registerLoginCommand(program: Command): void {
         const spinner = createSpinner('Initiating device login...');
         if (mode === 'human') spinner.start();
 
-        const device = await AgentMediaAPI.initiateDeviceFlow();
+        const device = await VantlyUgcAPI.initiateDeviceFlow();
 
         if (mode === 'human') {
           spinner.stop();
@@ -103,7 +103,7 @@ export function registerLoginCommand(program: Command): void {
         while (Date.now() < deadline) {
           await sleep(pollInterval);
 
-          const poll = await AgentMediaAPI.pollDeviceToken(device.device_code);
+          const poll = await VantlyUgcAPI.pollDeviceToken(device.device_code);
 
           if (poll.status === 'approved' && poll.api_key) {
             result = poll;
@@ -114,7 +114,7 @@ export function registerLoginCommand(program: Command): void {
             if (mode === 'human') spinner.fail('Device code expired.');
             throw new CLIError('Device code expired before approval.', {
               code: 'DEVICE_CODE_EXPIRED',
-              suggestion: 'Run `agent-media login` to try again.',
+              suggestion: 'Run `vantly-ugc login` to try again.',
             });
           }
 
@@ -125,7 +125,7 @@ export function registerLoginCommand(program: Command): void {
           if (mode === 'human') spinner.fail('Login timed out.');
           throw new CLIError('Login timed out waiting for browser approval.', {
             code: 'LOGIN_TIMEOUT',
-            suggestion: 'Run `agent-media login` to try again.',
+            suggestion: 'Run `vantly-ugc login` to try again.',
           });
         }
 

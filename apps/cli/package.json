@@ -1,11 +1,11 @@
 {
-  "name": "agent-media-cli",
+  "name": "vantly-ugc-cli",
   "version": "1.18.5",
   "type": "module",
   "private": false,
   "license": "Apache-2.0",
   "description": "CLI tool for AI-powered UGC video generation.",
-  "homepage": "https://agent-media.ai",
+  "homepage": "https://vantly-ugc.com",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/gitroomhq/agent-media-app.git"
@@ -32,7 +32,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "agent-media": "./dist/index.js"
+    "vantly-ugc": "./dist/index.js"
   },
   "files": [
     "dist",
@@ -48,7 +48,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@agentmedia/schema": "^0.5.4",
+    "@vantly-ugc/schema": "workspace:*",
     "chalk": "^5.4.1",
     "commander": "^13.1.0",
     "open": "^10.1.0",

@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * POST /v2/crazy-look
@@ -6,7 +6,7 @@
  * Public REST entry for the v2 Crazy Look generator — silent extreme
  * close-up reaction clip with a static caption overlay.
  *   1. Auth (bearer token via authMiddleware on the parent router)
- *   2. Validate input with @agentmedia/schema/v2 → CrazyLookSchema
+ *   2. Validate input with @vantly-ugc/schema/v2 → CrazyLookSchema
  *   3. Create generation_jobs row (operation='crazy_look', status='submitted')
  *   4. Deduct credits via deduct_credits RPC
  *   5. Dispatch to media-worker-v2 POST /v2/crazy-look (HTTP)
@@ -26,7 +26,7 @@ import {
   CrazyLookSchema,
   V2_GENERATORS,
   quoteV2Credits,
-} from '@agentmedia/schema/v2';
+} from '@vantly-ugc/schema/v2';
 import { supabase } from '../../server.js';
 
 const WORKER_V2_URL = process.env.WORKER_V2_URL;

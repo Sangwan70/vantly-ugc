@@ -1,7 +1,7 @@
 <!-- AUTO-GENERATED — do not hand-edit. -->
 # V1 tool contracts
 
-Tooling-First V1 mandatory tool contracts, generated from `@agentmedia/schema`.
+Tooling-First V1 mandatory tool contracts, generated from `@vantly-ugc/schema`.
 
 ## actor_refs
 

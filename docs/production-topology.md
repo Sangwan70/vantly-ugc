@@ -13,10 +13,10 @@ deploys automatically on push.
 Ask production what it is running:
 
 ```
-$ curl -s https://api.agent-media.ai/health
+$ curl -s https://api.vantly-ugc.com/health
 { "status": "ok",
   "release": "f036ee8db04038b0e78812ca2175672a96e64a1e",
-  "source": "gitroomhq/agent-media-app",
+  "source": "gitroomhq/vantly-ugc-app",
   "environment": "production" }
 ```
 
@@ -31,18 +31,18 @@ nothing to show for it from the outside.
 
 | Surface | Host | Source | Last deploy |
 |---|---|---|---|
-| Dashboard (`apps/web`) | Vercel `app.agent-media.ai` | **`gitroomhq/agent-media-app`** | current |
-| Marketing site | Vercel `agent-media.ai` | `gitroomhq/agent-media-website` (private) | current |
-| `api-v2` | Railway | **`gitroomhq/agent-media-app`** | 2026-08-02 18:09, auto |
-| `primitive-worker-vnext` | Railway | **`gitroomhq/agent-media-app`** | 2026-08-02 18:04 |
-| Brand extractor | Railway | **`gitroomhq/agent-media-app`** | 2026-08-02 18:04 |
-| `media-worker-v2` | Railway | **`gitroomhq/agent-media-app`** | 2026-08-02 22:22 |
+| Dashboard (`apps/web`) | Vercel `app.vantly-ugc.com` | **`gitroomhq/vantly-ugc-app`** | current |
+| Marketing site | Vercel `vantly-ugc.com` | `gitroomhq/vantly-ugc-website` (private) | current |
+| `api-v2` | Railway | **`gitroomhq/vantly-ugc-app`** | 2026-08-02 18:09, auto |
+| `primitive-worker-vnext` | Railway | **`gitroomhq/vantly-ugc-app`** | 2026-08-02 18:04 |
+| Brand extractor | Railway | **`gitroomhq/vantly-ugc-app`** | 2026-08-02 18:04 |
+| `media-worker-v2` | Railway | **`gitroomhq/vantly-ugc-app`** | 2026-08-02 22:22 |
 | `temporal-worker` | Railway | *not our code* | 2026-07-25 03:48 |
 | 29 Supabase edge functions | Supabase | manual / CI-on-change | 2026-06-12, +2 on 2026-08-02 |
 
 ### Watch patterns
 
-`api-v2` and `primitive-worker-vnext` both compile `@agentmedia/schema` into
+`api-v2` and `primitive-worker-vnext` both compile `@vantly-ugc/schema` into
 their image, and the take planner lives there — quote/run parity depends on the
 two moving together. So both watch `packages/schema/**` and the lockfile as well
 as their own directory. Watching only a service's own path would mean a planner
@@ -110,7 +110,7 @@ running the whole 27-function loop, which would have redeployed `checkout` and
 **2. ~~Wire Railway to deploy at all.~~** Done — git integration per service
 with watch paths, so a docs-only commit does not rebuild containers.
 
-**3. ~~Repoint the Railway services to `gitroomhq/agent-media-app`.~~** Done for
+**3. ~~Repoint the Railway services to `gitroomhq/vantly-ugc-app`.~~** Done for
 `api-v2`, `primitive-worker-vnext` and the brand extractor.
 
 **4. ~~Resolve the divergence before repointing `media-worker-v2`.~~** Done.
@@ -146,7 +146,7 @@ stops recognising signed-in visitors), `NEXT_PUBLIC_MARKETING_URL`.
 
 ## What "fully open source in production" would not cover
 
-The marketing site is a separate private repo (`gitroomhq/agent-media-website`)
+The marketing site is a separate private repo (`gitroomhq/vantly-ugc-website`)
 and is not part of this one — deliberately, since this repo's `robots.ts` serves
 `Disallow: /` and it has no `(landing)` route group. Deploying this repo to the
 apex would deindex the domain.
@@ -175,7 +175,7 @@ see that something broke but not which build broke it. It is now populated;
 ### One Sentry project for three services
 
 Confirmed by the alert the `/_debug/sentry` probe produced: it filed as
-**`AGENT-MEDIA-WEB-6`, project `agent-media-web`**. But the error came from
+**`AGENT-MEDIA-WEB-6`, project `vantly-ugc-web`**. But the error came from
 `api-v2`. Both backend services point at the same DSN project id
 (`4511496330543104`) as the dashboard, so API errors, worker errors and
 front-end errors land in one bucket.
@@ -185,8 +185,8 @@ answered by which project alerted, not by reading a stack trace. Ownership,
 alert rules and issue counts are all mixed, and a noisy front-end release
 buries a real backend regression.
 
-Fix: create a Sentry project per service (`agent-media-api`,
-`agent-media-worker`) and set each service's `SENTRY_DSN` to its own. No code
+Fix: create a Sentry project per service (`vantly-ugc-api`,
+`vantly-ugc-worker`) and set each service's `SENTRY_DSN` to its own. No code
 change — `instrument.ts` already reads the DSN from the environment.
 
 Release tagging, by contrast, now works: that same alert reads *"regression in
@@ -194,7 +194,7 @@ Release tagging, by contrast, now works: that same alert reads *"regression in
 was connected there was no sha to report.
 
 The marketing site has no Sentry at all — no `sentry.*.config.*` in
-`gitroomhq/agent-media-website`. It is the one surface where a white screen
+`gitroomhq/vantly-ugc-website`. It is the one surface where a white screen
 would go unreported.
 
 ---
@@ -202,10 +202,10 @@ would go unreported.
 ## Still open
 
 - **Sentry projects.** `api-v2`, `primitive-worker-vnext` and the dashboard all
-  share one DSN project (`agent-media-web`), so backend and front-end errors
+  share one DSN project (`vantly-ugc-web`), so backend and front-end errors
   land in one bucket. Needs two new Sentry projects and a DSN swap per service.
   No code change — `instrument.ts` reads the DSN from the environment.
-- **Sentry on the marketing site.** `gitroomhq/agent-media-website` has no
+- **Sentry on the marketing site.** `gitroomhq/vantly-ugc-website` has no
   `sentry.*.config.*` at all. A white screen there goes unreported.
 - **Analytics.** Neither property has PostHog or Plausible. The old site had
   them; nothing replaced them after the migration.
@@ -213,6 +213,6 @@ would go unreported.
   which is now true and honest, but the prop still exists on the schema. Worth
   deciding whether to drop it.
 - **Cleanup, after a settling period.** Delete the `(landing)` route group from
-  the private `apps/web` and drop `agent-media.ai` from that Vercel project, so
+  the private `apps/web` and drop `vantly-ugc.com` from that Vercel project, so
   it cannot reclaim the domain. Keep it until you are sure you will not need the
   rollback.

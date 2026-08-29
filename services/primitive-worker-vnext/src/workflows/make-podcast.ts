@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Composed skill workflow: make_podcast.
@@ -32,7 +32,7 @@
  */
 
 import { proxyActivities, ApplicationFailure } from '@temporalio/workflow';
-import { countWords, fitDuration } from '@agentmedia/schema';
+import { countWords, fitDuration } from '@vantly-ugc/schema';
 import type { PrimitiveActivities } from '../activities/index.js';
 import type { SimpleSelfieActivityInput, SimpleSelfieActivityResult } from '../activities/simple-selfie.js';
 import type { ExtractAudioActivityResult } from '../activities/extract-audio.js';
@@ -357,7 +357,7 @@ function makeChildRunId(skillRunId: string, step: string): string {
  * Pick the take length whose word band [d, d*2.2] holds the chunk (5s:5-11,
  * 10s:10-22, 15s:15-33), matching simple_selfie's pacing validation.
  *
- * Re-exported from @agentmedia/schema rather than reimplemented. This module
+ * Re-exported from @vantly-ugc/schema rather than reimplemented. This module
  * used to hold a third private copy of fitDuration/countWords alongside the one
  * in the schema package and the one in api-v2's make-ugc-router. All three
  * agreed, but only by hand, and the credit quote reads one while the worker

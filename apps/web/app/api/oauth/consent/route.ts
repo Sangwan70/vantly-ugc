@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Server relay for the OAuth consent screen.
@@ -18,7 +18,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-const SUPABASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/+$/, '');
+const SUPABASE_URL = ((process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL) ?? '').replace(/\/+$/, '');
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
 /** An authorization id is an opaque Supabase identifier — keep it to a safe

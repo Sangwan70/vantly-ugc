@@ -1,4 +1,4 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * Edge Function: stripe-portal
@@ -10,7 +10,7 @@
  *   POST /functions/v1/stripe-portal
  *
  * Body:
- *   { "returnUrl": "https://agent-media.ai/billing" }
+ *   { "returnUrl": "https://vantly-ugc.com/billing" }
  *
  * Response (200):
  *   { "portal_url": "https://billing.stripe.com/session/..." }

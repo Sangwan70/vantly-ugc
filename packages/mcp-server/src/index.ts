@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * agent-media MCP Server
+ * vantly-ugc MCP Server
  *
- * Exposes agent-media video generation to Claude Code, Cursor, Windsurf,
+ * Exposes vantly-ugc video generation to Claude Code, Cursor, Windsurf,
  * and any MCP-compatible client.
  *
  * Tools:
@@ -12,8 +12,8 @@
  *   - list_actors: Browse available AI actors
  *   - get_video_status: Check generation job status
  *
- * Auth: Set AGENT_MEDIA_API_KEY env var (ma_xxx format).
- * API URL: Defaults to api-v2. Override with AGENT_MEDIA_API_URL.
+ * Auth: Set VANTLY_UGC_API_KEY env var (ma_xxx format).
+ * API URL: Defaults to api-v2. Override with VANTLY_UGC_API_URL.
  */
 
 import { createRequire } from 'node:module';
@@ -35,18 +35,18 @@ import {
   StoryboardSuggestSchema,
   CharacterVideoSchema,
   TextToVideoSchema,
-} from '@agentmedia/schema';
+} from '@vantly-ugc/schema';
 // v2 registry — drives the generic v2 tool loop below. The legacy tools
 // (10 of them) stay hand-registered; v2 tools self-register from the
 // V2_GENERATORS record, so adding the next v2 product (Product-in-hands)
 // is zero MCP edits.
-import { V2_GENERATORS, type V2GeneratorRecord } from '@agentmedia/schema/v2';
+import { V2_GENERATORS, type V2GeneratorRecord } from '@vantly-ugc/schema/v2';
 
-const API_URL = process.env.AGENT_MEDIA_API_URL || 'https://api.agent-media.ai';
-const API_KEY = process.env.AGENT_MEDIA_API_KEY || '';
+const API_URL = process.env.VANTLY_UGC_API_URL || 'https://api.vantly-ugc.com';
+const API_KEY = process.env.VANTLY_UGC_API_KEY || '';
 
 if (!API_KEY) {
-  console.error('AGENT_MEDIA_API_KEY is required. Set it to your ma_xxx API key.');
+  console.error('VANTLY_UGC_API_KEY is required. Set it to your ma_xxx API key.');
   process.exit(1);
 }
 
@@ -175,7 +175,7 @@ const tools = [
   },
   {
     name: 'text_to_video',
-    description: 'Pure-prompt text-to-video via Seedance 2.0 at 720p. No character sheet, no storyboard, no actor — the prompt IS the whole creative direction (style, subject, mood, composition, lighting, motion all baked in). Best for stylistic / scene-driven content. Submits the job and polls until complete; returns the video URL. Cost: 350 cr ($3.50) for 5s, 700 cr ($7.00) for 10s, 1050 cr ($10.50) for 15s. **Auto-publish:** pass `postiz_integration_ids: ["id1", "id2"]` and either `caption: "..."` (static) or `caption_mode: "ai"` + optional `caption_guidance: "..."` to fan the rendered video out to X / LinkedIn / etc. on completion. The IDs come from listing Postiz integrations.',
+    description: 'Pure-prompt text-to-video via Seedance 2.0 at 720p. No character sheet, no storyboard, no actor — the prompt IS the whole creative direction (style, subject, mood, composition, lighting, motion all baked in). Best for stylistic / scene-driven content. Submits the job and polls until complete; returns the video URL. Cost: 350 cr ($3.50) for 5s, 700 cr ($7.00) for 10s, 1050 cr ($10.50) for 15s. **Auto-publish:** pass `postiz_integration_ids: ["id1", "id2"]` and either `caption: "..."` (static) or `caption_mode: "ai"` + optional `caption_guidance: "..."` to fan the rendered video out to X / LinkedIn / etc. on completion. The IDs come from listing Vantly integrations.',
     inputSchema: textToVideoInputSchema,
   },
   {
@@ -229,7 +229,7 @@ const tools = [
   },
   {
     name: 'social_publish',
-    description: 'Publish (or schedule) an agent-media R2-hosted video to one or more connected channels. video_url must be an agent-media output URL; channel_ids come from social_channels. Returns { success, post_ids }.',
+    description: 'Publish (or schedule) an vantly-ugc R2-hosted video to one or more connected channels. video_url must be an vantly-ugc output URL; channel_ids come from social_channels. Returns { success, post_ids }.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -249,7 +249,7 @@ const tools = [
 // Each v2 generator declares `mcp.toolName` and `rest.{method,path}` in the
 // registry. The generic dispatcher below uses those to call api-v2; nothing
 // per-tool is hand-written. Adding the next v2 product = add a row to
-// V2_GENERATORS in @agentmedia/schema/v2.
+// V2_GENERATORS in @vantly-ugc/schema/v2.
 
 const v2Tools = Object.values(V2_GENERATORS)
   .filter((def): def is V2GeneratorRecord => !!def.mcp)
@@ -340,7 +340,7 @@ async function loadVnextSkills(): Promise<void> {
   try {
     const { status, data } = await apiCall('GET', '/v1/skills');
     if (status !== 200 || !Array.isArray(data?.skills)) {
-      console.error(`[agent-media] vNext skills not loaded (status ${status})`);
+      console.error(`[vantly-ugc] vNext skills not loaded (status ${status})`);
       return;
     }
     for (const s of data.skills as VnextSkillListEntry[]) {
@@ -352,7 +352,7 @@ async function loadVnextSkills(): Promise<void> {
       });
     }
   } catch (err) {
-    console.error('[agent-media] vNext skills fetch failed:', (err as Error).message);
+    console.error('[vantly-ugc] vNext skills fetch failed:', (err as Error).message);
   }
 }
 
@@ -370,7 +370,7 @@ const SERVER_VERSION: string = (() => {
 })();
 
 const server = new Server(
-  { name: 'agent-media', version: SERVER_VERSION },
+  { name: 'vantly-ugc', version: SERVER_VERSION },
   { capabilities: { tools: {} } },
 );
 
@@ -838,7 +838,7 @@ async function main() {
   await loadVnextSkills();
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('agent-media MCP server running on stdio');
+  console.error('vantly-ugc MCP server running on stdio');
 }
 
 main().catch((err) => {

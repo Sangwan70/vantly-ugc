@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
  * One-shot test for the BytePlus ModelArk Seedance 2.0 fast integration.

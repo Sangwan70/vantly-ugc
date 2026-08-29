@@ -1,5 +1,5 @@
 /**
- * Stripe-specific types for the agent-media billing integration.
+ * Stripe-specific types for the vantly-ugc billing integration.
  *
  * These types mirror the Stripe API objects we interact with,
  * providing a thin, typed abstraction so the rest of the codebase
@@ -83,7 +83,7 @@ export interface StripeInvoice {
     paidAt: number | null;
 }
 /**
- * The subset of Stripe webhook event types that agent-media processes.
+ * The subset of Stripe webhook event types that vantly-ugc processes.
  */
 export type StripeWebhookEventType = 'invoice.paid' | 'invoice.payment_failed' | 'customer.subscription.created' | 'customer.subscription.updated' | 'customer.subscription.deleted' | 'payment_intent.succeeded' | 'payment_intent.payment_failed' | 'checkout.session.completed';
 /**

@@ -1,9 +1,9 @@
-// Copyright 2026 agent-media contributors. Apache-2.0 license.
+// Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 'use client';
 
 /**
- * Onboarding step 2 - "agent-media is your content machine".
+ * Onboarding step 2 - "vantly-ugc is your content machine".
  *
  * Six portrait video tiles in a 3x2 grid (1 column on mobile) under a
  * short two-row headline, with a single Continue button. The videos
@@ -18,7 +18,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { AgentMediaLogo } from '@/components/agent-media-logo';
+import { VantlyLogo } from '@/components/vantly-logo';
 import { Home2CTAButton } from '@/components/home2-cta-button';
 import { useOnboardingEvent, logOnboardingEvent } from '@/components/onboarding/use-onboarding-event';
 
@@ -55,9 +55,9 @@ export default function OnboardingShowcasePage() {
         >
           <ArrowLeft className="h-4 w-4" />
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-black text-white">
-            <AgentMediaLogo size={22} color="#FFFFFF" />
+            <VantlyLogo size={22} color="#FFFFFF" />
           </span>
-          <span style={{ letterSpacing: '-0.01em' }}>agent-media</span>
+          <span style={{ letterSpacing: '-0.01em' }}>vantly-ugc</span>
         </Link>
       </header>
 

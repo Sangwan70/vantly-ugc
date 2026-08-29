@@ -82,7 +82,7 @@ The schema powers auto-generated artifacts:
 | Package | Description |
 |---|---|
 | [`@vantly-ugc/sdk`](https://www.npmjs.com/package/@vantly-ugc/sdk) | TypeScript SDK — uses this schema for types |
-| [`@vantly-ugc/mcp-server`](https://www.npmjs.com/package/@vantly-ugc/mcp-server) | MCP server for Claude Code, Cursor, Windsurf |
+| [`vantly-ugc-mcp-server`](https://www.npmjs.com/package/vantly-ugc-mcp-server) | MCP server for Claude Code, Cursor, Windsurf |
 | [`vantly-ugc-cli`](https://www.npmjs.com/package/vantly-ugc-cli) | CLI tool — generate videos from your terminal |
 | [`vantly-ugc`](https://pypi.org/project/vantly-ugc/) | Python SDK |
 

@@ -143,7 +143,7 @@ Self-updates use npm by default. If you intentionally manage global packages wit
 |---|---|
 | [`@vantly-ugc/sdk`](https://www.npmjs.com/package/@vantly-ugc/sdk) | TypeScript SDK |
 | [`vantly-ugc`](https://pypi.org/project/vantly-ugc/) | Python SDK |
-| [`@vantly-ugc/mcp-server`](https://www.npmjs.com/package/@vantly-ugc/mcp-server) | MCP server for Claude Code, Cursor, Windsurf |
+| [`vantly-ugc-mcp-server`](https://www.npmjs.com/package/vantly-ugc-mcp-server) | MCP server for Claude Code, Cursor, Windsurf |
 
 ## Links
 

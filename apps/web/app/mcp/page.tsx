@@ -23,7 +23,7 @@ export default function McpPage() {
   return (
     <MarketingShell>
       <PageHero
-        eyebrow="@vantly-ugc/mcp-server"
+        eyebrow="vantly-ugc-mcp-server"
         title="UGC video generation for AI agents"
         lede="Script in, video URL out — directly from Claude Code, Cursor, Windsurf, or any MCP-compatible client."
       />
@@ -63,7 +63,7 @@ export default function McpPage() {
   "mcpServers": {
     "vantly-ugc": {
       "command": "npx",
-      "args": ["-y", "@vantly-ugc/mcp-server"],
+      "args": ["-y", "vantly-ugc-mcp-server"],
       "env": {
         "VANTLY_UGC_API_KEY": "ma_your_key_here"
       }
@@ -84,7 +84,7 @@ export default function McpPage() {
             <CodeBlock label="cursor mcp config">{`{
   "vantly-ugc": {
     "command": "npx",
-    "args": ["-y", "@vantly-ugc/mcp-server"],
+    "args": ["-y", "vantly-ugc-mcp-server"],
     "env": {
       "VANTLY_UGC_API_KEY": "ma_your_key_here"
     }

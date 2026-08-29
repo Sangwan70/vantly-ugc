@@ -1,11 +1,11 @@
-# @vantly-ugc/mcp-server
+# vantly-ugc-mcp-server
 
 MCP server for [vantly-ugc](https://vantly-ugc.com) — generate AI UGC videos from Claude Code, Cursor, Windsurf, or any MCP-compatible client.
 
 UGC for developers. Script in, video URL out — directly from your IDE.
 
-[![npm version](https://img.shields.io/npm/v/@vantly-ugc/mcp-server)](https://www.npmjs.com/package/@vantly-ugc/mcp-server)
-[![license](https://img.shields.io/npm/l/@vantly-ugc/mcp-server)](https://github.com/gitroomhq/agent-media-app/blob/main/LICENSE)
+[![npm version](https://img.shields.io/npm/v/vantly-ugc-mcp-server)](https://www.npmjs.com/package/vantly-ugc-mcp-server)
+[![license](https://img.shields.io/npm/l/vantly-ugc-mcp-server)](https://github.com/gitroomhq/agent-media-app/blob/main/LICENSE)
 
 ## What It Does
 
@@ -36,7 +36,7 @@ Add to `~/.claude/settings.json`:
   "mcpServers": {
     "vantly-ugc": {
       "command": "npx",
-      "args": ["-y", "@vantly-ugc/mcp-server"],
+      "args": ["-y", "vantly-ugc-mcp-server"],
       "env": {
         "VANTLY_UGC_API_KEY": "ma_your_key_here"
       }
@@ -53,7 +53,7 @@ Open Settings > MCP Servers > Add Server:
 {
   "vantly-ugc": {
     "command": "npx",
-    "args": ["-y", "@vantly-ugc/mcp-server"],
+    "args": ["-y", "vantly-ugc-mcp-server"],
     "env": {
       "VANTLY_UGC_API_KEY": "ma_your_key_here"
     }
@@ -69,7 +69,7 @@ Open Settings > MCP > Add:
 {
   "vantly-ugc": {
     "command": "npx",
-    "args": ["-y", "@vantly-ugc/mcp-server"],
+    "args": ["-y", "vantly-ugc-mcp-server"],
     "env": {
       "VANTLY_UGC_API_KEY": "ma_your_key_here"
     }
@@ -80,7 +80,7 @@ Open Settings > MCP > Add:
 #### Global Install (Alternative)
 
 ```bash
-npm install -g @vantly-ugc/mcp-server
+npm install -g vantly-ugc-mcp-server
 export VANTLY_UGC_API_KEY=ma_your_key_here
 vantly-ugc-mcp
 ```

@@ -83,7 +83,7 @@ run the stdio server locally:
   "mcpServers": {
     "vantly-ugc": {
       "command": "npx",
-      "args": ["-y", "@vantly-ugc/mcp-server"],
+      "args": ["-y", "vantly-ugc-mcp-server"],
       "env": { "VANTLY_UGC_API_KEY": "ma_..." }
     }
   }
@@ -119,7 +119,7 @@ Every CLI invocation also runs a once-per-day background check and prints a one-
 | Package | Version | Notes |
 |---|---|---|
 | [`vantly-ugc-cli`](https://www.npmjs.com/package/vantly-ugc-cli) | `1.18.0+` | the CLI |
-| [`@vantly-ugc/mcp-server`](https://www.npmjs.com/package/@vantly-ugc/mcp-server) | `0.7.0+` | local stdio MCP — reads `/v1/skills` live (make_ugc) |
+| [`vantly-ugc-mcp-server`](https://www.npmjs.com/package/vantly-ugc-mcp-server) | `0.7.0+` | local stdio MCP — reads `/v1/skills` live (make_ugc) |
 | [`@vantly-ugc/sdk`](https://www.npmjs.com/package/@vantly-ugc/sdk) | `0.5.0+` | TypeScript SDK |
 | [`@vantly-ugc/schema`](https://www.npmjs.com/package/@vantly-ugc/schema) | `0.5.0+` | shared zod schemas + registry |
 
@@ -144,7 +144,7 @@ packages/
   schema/                    @vantly-ugc/schema — zod schemas + V2_GENERATORS registry (source of truth)
   sdk-ts/                    @vantly-ugc/sdk
   sdk-python/                vantly-ugc (PyPI)
-  mcp-server/                @vantly-ugc/mcp-server
+  mcp-server/                vantly-ugc-mcp-server
 services/
   api-v2/                    REST API (api.vantly-ugc.com) — routes, auth, dispatch
   media-worker-v2/           pipeline runner — gpt-image-2 + Seedance + ffmpeg

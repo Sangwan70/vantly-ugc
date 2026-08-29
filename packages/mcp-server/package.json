@@ -1,5 +1,5 @@
 {
-  "name": "@vantly-ugc/mcp-server",
+  "name": "vantly-ugc-mcp-server",
   "version": "0.7.9",
   "mcpName": "io.github.gitroomhq/vantly-ugc-app",
   "description": "MCP server for vantly-ugc — generate AI UGC videos from Claude Code, Cursor, Windsurf, or any MCP-compatible client.",
@@ -8,7 +8,7 @@
   "homepage": "https://vantly-ugc.com/integrations",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/gitroomhq/agent-media-app.git",
+    "url": "git+https://github.com/Sangwan70/vantly-ugc.git",
     "directory": "packages/mcp-server"
   },
   "keywords": [
@@ -38,23 +38,24 @@
     "server.json"
   ],
   "bin": {
-    "mcp-server": "./dist/index.js",
-    "vantly-ugc-mcp": "./dist/index.js"
+    "mcp-server": "dist/index.js",
+    "vantly-ugc-mcp": "dist/index.js"
   },
   "main": "./dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/index.js --external:@modelcontextprotocol/sdk --external:zod --external:zod-to-json-schema --banner:js=\"import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);\" && chmod +x dist/index.js",
     "start": "node dist/index.js"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
-    "@vantly-ugc/schema": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.23.0",
     "zod-to-json-schema": "^3.25.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "esbuild": "^0.24.2"
   }
 }

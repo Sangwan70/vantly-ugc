@@ -30,7 +30,7 @@ const MCP_JSON = `{
   "mcpServers": {
     "vantly-ugc": {
       "command": "npx",
-      "args": ["-y", "-p", "@vantly-ugc/mcp-server@latest", "vantly-ugc-mcp"],
+      "args": ["-y", "-p", "vantly-ugc-mcp-server@latest", "vantly-ugc-mcp"],
       "env": { "VANTLY_UGC_API_KEY": "ma_..." }
     }
   }
@@ -39,7 +39,7 @@ const MCP_JSON = `{
 // Codex reads MCP servers from ~/.codex/config.toml (TOML, not JSON).
 const CODEX_TOML = `[mcp_servers.vantly-ugc]
 command = "npx"
-args = ["-y", "-p", "@vantly-ugc/mcp-server@latest", "vantly-ugc-mcp"]
+args = ["-y", "-p", "vantly-ugc-mcp-server@latest", "vantly-ugc-mcp"]
 env = { VANTLY_UGC_API_KEY = "ma_..." }`;
 
 // Single-pass, non-overlapping highlighter for our (static, author-controlled)
@@ -202,7 +202,7 @@ export function ConnectGuide({ initialTab = 'mcp', initialClient = 'claude-code'
           <>
             <Step n={1} title="Get your API key">Grab a <code className="text-white/85">ma_…</code> key from the dashboard (API Keys) or run <code className="text-white/85">vantly-ugc login</code>.</Step>
             {client === 'claude-code' ? (
-              <Step n={2} title="Add the MCP server">One command registers vantly-ugc in Claude Code:<Code text={`claude mcp add vantly-ugc \\\n  -e VANTLY_UGC_API_KEY=ma_... \\\n  -- npx -y -p @vantly-ugc/mcp-server@latest vantly-ugc-mcp`} /></Step>
+              <Step n={2} title="Add the MCP server">One command registers vantly-ugc in Claude Code:<Code text={`claude mcp add vantly-ugc \\\n  -e VANTLY_UGC_API_KEY=ma_... \\\n  -- npx -y -p vantly-ugc-mcp-server@latest vantly-ugc-mcp`} /></Step>
             ) : client === 'codex' ? (
               <Step n={2} title="Edit ~/.codex/config.toml">Add the vantly-ugc server (paste your <code className="text-white/85">ma_…</code> key):<Code text={CODEX_TOML} /></Step>
             ) : (

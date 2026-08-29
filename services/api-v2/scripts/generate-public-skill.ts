@@ -390,7 +390,7 @@ function marketplaceJson(): string {
  * The hosted server speaks OAuth 2.1 with dynamic client registration, so the
  * client registers itself and opens a browser sign-in — the user never copies an
  * API key and no secret lands in a config file. Emitting the old
- * `npx @vantly-ugc/mcp-server` + `${VANTLY_UGC_API_KEY}` form made a
+ * `npx vantly-ugc-mcp-server` + `${VANTLY_UGC_API_KEY}` form made a
  * zero-config product look like it needed a key.
  *
  * API keys still work (send `Authorization: Bearer ma_...` to the same URL) and
@@ -416,7 +416,7 @@ function readme(): string {
   return [
     '# vantly-ugc — Claude Skill plugin',
     '',
-    '[![npm — mcp-server](https://img.shields.io/npm/v/%40vantly-ugc%2Fmcp-server?label=%40vantly-ugc%2Fmcp-server)](https://www.npmjs.com/package/@vantly-ugc/mcp-server)',
+    '[![npm — mcp-server](https://img.shields.io/npm/v/%40vantly-ugc%2Fmcp-server?label=%40vantly-ugc%2Fmcp-server)](https://www.npmjs.com/package/vantly-ugc-mcp-server)',
     '[![npm — CLI](https://img.shields.io/npm/v/vantly-ugc-cli?label=vantly-ugc-cli)](https://www.npmjs.com/package/vantly-ugc-cli)',
     '[![Claude plugin](https://img.shields.io/badge/claude-%2Fplugin%20install-A78BFA)](https://github.com/gitroomhq/agent-media-app)',
     '[![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)',

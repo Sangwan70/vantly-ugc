@@ -272,7 +272,7 @@ videos.forEach(v => console.log(v.video_url));
 | Package | Description |
 |---|---|
 | [`vantly-ugc-cli`](https://www.npmjs.com/package/vantly-ugc-cli) | CLI tool — generate videos from your terminal |
-| [`@vantly-ugc/mcp-server`](https://www.npmjs.com/package/@vantly-ugc/mcp-server) | MCP server for Claude Code, Cursor, Windsurf |
+| [`vantly-ugc-mcp-server`](https://www.npmjs.com/package/vantly-ugc-mcp-server) | MCP server for Claude Code, Cursor, Windsurf |
 | [`@vantly-ugc/schema`](https://www.npmjs.com/package/@vantly-ugc/schema) | Shared schema — enums, types, Zod validation |
 | [`vantly-ugc`](https://pypi.org/project/vantly-ugc/) | Python SDK |
 

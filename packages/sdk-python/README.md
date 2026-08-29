@@ -261,7 +261,7 @@ for v in videos:
 | Package | Registry | Description |
 |---|---|---|
 | [`@vantly-ugc/sdk`](https://www.npmjs.com/package/@vantly-ugc/sdk) | npm | TypeScript SDK |
-| [`@vantly-ugc/mcp-server`](https://www.npmjs.com/package/@vantly-ugc/mcp-server) | npm | MCP server for Claude Code, Cursor, Windsurf |
+| [`vantly-ugc-mcp-server`](https://www.npmjs.com/package/vantly-ugc-mcp-server) | npm | MCP server for Claude Code, Cursor, Windsurf |
 | [`vantly-ugc-cli`](https://www.npmjs.com/package/vantly-ugc-cli) | npm | CLI tool |
 | [`@vantly-ugc/schema`](https://www.npmjs.com/package/@vantly-ugc/schema) | npm | Shared schema, types, Zod validation |
 

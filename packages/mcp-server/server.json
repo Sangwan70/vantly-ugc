@@ -1,18 +1,18 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.gitroomhq/vantly-ugc-app",
+  "name": "io.github.Sangwan70/vantly-ugc-app",
   "description": "Generate AI UGC videos with talking heads, B-roll, and subtitles.",
   "repository": {
-    "url": "https://github.com/gitroomhq/agent-media-app",
+    "url": "https://github.com/Sangwan70/vantly-ugc",
     "source": "github",
     "subfolder": "packages/mcp-server"
   },
-  "version": "0.7.6",
+  "version": "0.7.9",
   "packages": [
     {
       "registryType": "npm",
-      "identifier": "@vantly-ugc/mcp-server",
-      "version": "0.7.6",
+      "identifier": "vantly-ugc-mcp-server",
+      "version": "0.7.9",
       "transport": {
         "type": "stdio"
       },

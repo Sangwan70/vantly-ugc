@@ -314,7 +314,7 @@ function InstallPanel({ skill }: { skill: SkillEntry }) {
     mcpServers: {
       'vantly-ugc': {
         command: 'npx',
-        args: ['-y', '-p', '@vantly-ugc/mcp-server@latest', 'vantly-ugc-mcp'],
+        args: ['-y', '-p', 'vantly-ugc-mcp-server@latest', 'vantly-ugc-mcp'],
         env: { VANTLY_UGC_API_KEY: '${VANTLY_UGC_API_KEY}' },
       },
     },

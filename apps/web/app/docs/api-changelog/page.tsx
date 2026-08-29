@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 const PACKAGES: Array<{ name: string; version: string }> = [
   { name: 'vantly-ugc-cli', version: '1.18.5' },
-  { name: '@vantly-ugc/mcp-server', version: '0.7.9' },
+  { name: 'vantly-ugc-mcp-server', version: '0.7.9' },
   { name: '@vantly-ugc/sdk (TypeScript)', version: '0.5.5' },
   { name: 'vantly-ugc (Python)', version: '0.4.1' },
 ];

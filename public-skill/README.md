@@ -1,6 +1,6 @@
 # vantly-ugc — Claude Skill plugin
 
-[![npm — mcp-server](https://img.shields.io/npm/v/%40vantly-ugc%2Fmcp-server?label=%40vantly-ugc%2Fmcp-server)](https://www.npmjs.com/package/@vantly-ugc/mcp-server)
+[![npm — mcp-server](https://img.shields.io/npm/v/%40vantly-ugc%2Fmcp-server?label=%40vantly-ugc%2Fmcp-server)](https://www.npmjs.com/package/vantly-ugc-mcp-server)
 [![npm — CLI](https://img.shields.io/npm/v/vantly-ugc-cli?label=vantly-ugc-cli)](https://www.npmjs.com/package/vantly-ugc-cli)
 [![Claude plugin](https://img.shields.io/badge/claude-%2Fplugin%20install-A78BFA)](https://github.com/gitroomhq/agent-media-app)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)

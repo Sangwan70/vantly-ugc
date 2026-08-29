@@ -31,15 +31,15 @@ x-supabase-jwt: &supabase-jwt
   # Local-only demo keys. They are signed with JWT_SECRET below and are safe to
   # publish BECAUSE they only ever authenticate against your own local stack.
   # Generate your own for anything internet-facing: https://supabase.com/docs/guides/self-hosting
-  JWT_SECRET: ${JWT_SECRET:-***REMOVED-DEMO-JWT-SECRET***}
+  JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in your .env.local or .env.prod (see .env.example)}
 
 # The anon / service_role JWTs matching the demo JWT_SECRET above. api-v2 and
 # the workers REQUIRE these at boot, so without defaults here `docker compose up`
 # died instantly on a fresh clone and the self-host path was unusable. Override
 # both (and JWT_SECRET) for anything reachable from the internet.
 x-supabase-keys: &supabase-keys
-  SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-***REMOVED-DEMO-SUPABASE-ANON-JWT***}
-  SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-***REMOVED-DEMO-SUPABASE-SERVICE-ROLE-JWT***}
+  SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:?Set SUPABASE_ANON_KEY in your .env.local or .env.prod (see .env.example)}
+  SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?Set SUPABASE_SERVICE_ROLE_KEY in your .env.local or .env.prod (see .env.example)}
 
 # Shared secrets the services use to authenticate to EACH OTHER. They are
 # required at boot and must be IDENTICAL across services, so they get local
@@ -47,12 +47,12 @@ x-supabase-keys: &supabase-keys
 # required". Nothing here is reachable from outside the compose network; set
 # real values via .env.prod for any deployment that is.
 x-internal-secrets: &internal-secrets
-  WORKER_SECRET: ${WORKER_SECRET:-***REMOVED-DEMO-SECRET***}
-  INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-***REMOVED-DEMO-SECRET***}
-  CRON_SECRET: ${CRON_SECRET:-***REMOVED-DEMO-SECRET***}
-  SUBTITLE_WORKER_SECRET: ${SUBTITLE_WORKER_SECRET:-***REMOVED-DEMO-SECRET***}
-  VNEXT_PRIMITIVE_WORKER_SECRET: ${VNEXT_PRIMITIVE_WORKER_SECRET:-***REMOVED-DEMO-SECRET***}
-  BRAND_EXTRACTOR_SECRET: ${BRAND_EXTRACTOR_SECRET:-***REMOVED-DEMO-SECRET***}
+  WORKER_SECRET: ${WORKER_SECRET:?Set WORKER_SECRET in your .env.local or .env.prod (see .env.example)}
+  INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?Set INTERNAL_API_SECRET in your .env.local or .env.prod (see .env.example)}
+  CRON_SECRET: ${CRON_SECRET:?Set CRON_SECRET in your .env.local or .env.prod (see .env.example)}
+  SUBTITLE_WORKER_SECRET: ${SUBTITLE_WORKER_SECRET:?Set SUBTITLE_WORKER_SECRET in your .env.local or .env.prod (see .env.example)}
+  VNEXT_PRIMITIVE_WORKER_SECRET: ${VNEXT_PRIMITIVE_WORKER_SECRET:?Set VNEXT_PRIMITIVE_WORKER_SECRET in your .env.local or .env.prod (see .env.example)}
+  BRAND_EXTRACTOR_SECRET: ${BRAND_EXTRACTOR_SECRET:?Set BRAND_EXTRACTOR_SECRET in your .env.local or .env.prod (see .env.example)}
 
 services:
   # ── Data plane ──────────────────────────────────────────────────────────
@@ -63,7 +63,7 @@ services:
       # supabase_admin and creates the anon/authenticated/service_role roles;
       # overriding the superuser makes its own migrate.sh fail with
       # 'role "supabase_admin" does not exist' and no roles ever get created.
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env.local or .env.prod (see .env.example)}
       POSTGRES_DB: ${POSTGRES_DB:-postgres}
     # Host port overridable via POSTGRES_PORT (default 5433 - 5432 is the
     # single most commonly already-taken port on a dev machine, e.g. by
@@ -95,8 +95,8 @@ services:
       # supabase_admin, not postgres: `authenticator` is a reserved role in this
       # image and only a superuser may alter it ("is a reserved role, only
       # superusers can modify it").
-      PGURI: postgres://supabase_admin:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-postgres}
-      PGPASS: ${POSTGRES_PASSWORD:-postgres}
+      PGURI: postgres://supabase_admin:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env.local or .env.prod (see .env.example)}@postgres:5432/${POSTGRES_DB:-postgres}
+      PGPASS: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env.local or .env.prod (see .env.example)}
     entrypoint:
       - /bin/bash
       - -c
@@ -119,12 +119,12 @@ services:
       <<: *supabase-jwt
       # GoTrue reads its own GOTRUE_-prefixed name, not JWT_SECRET. Without this
       # it exits immediately: "required key GOTRUE_JWT_SECRET missing value".
-      GOTRUE_JWT_SECRET: ${JWT_SECRET:-***REMOVED-DEMO-JWT-SECRET***}
+      GOTRUE_JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in your .env.local or .env.prod (see .env.example)}
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: "9999"
       API_EXTERNAL_URL: ${SUPABASE_URL:-http://localhost:8000}
       GOTRUE_DB_DRIVER: postgres
-      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-postgres}
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env.local or .env.prod (see .env.example)}@postgres:5432/${POSTGRES_DB:-postgres}
       GOTRUE_SITE_URL: ${APP_PUBLIC_URL:-http://localhost:3005}
       GOTRUE_JWT_EXP: "3600"
       GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
@@ -159,7 +159,7 @@ services:
     volumes:
       - ./supabase/migrations:/migrations:ro
     environment:
-      PGURI: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-postgres}
+      PGURI: postgres://postgres:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env.local or .env.prod (see .env.example)}@postgres:5432/${POSTGRES_DB:-postgres}
     entrypoint:
       - /bin/bash
       - -c
@@ -210,10 +210,10 @@ services:
       db-init: { condition: service_completed_successfully }
     environment:
       <<: *supabase-jwt
-      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-postgres}
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env.local or .env.prod (see .env.example)}@postgres:5432/${POSTGRES_DB:-postgres}
       PGRST_DB_SCHEMAS: public,storage
       PGRST_DB_ANON_ROLE: anon
-      PGRST_JWT_SECRET: ${JWT_SECRET:-***REMOVED-DEMO-JWT-SECRET***}
+      PGRST_JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in your .env.local or .env.prod (see .env.example)}
       PGRST_DB_USE_LEGACY_GUCS: "false"
     # No ports: published here any more — nothing outside the compose network
     # talks to bare PostgREST directly. The `gateway` service below is what's
@@ -248,10 +248,10 @@ services:
       minio: { condition: service_healthy }
     environment:
       <<: [*supabase-keys, *internal-secrets]
-      ANON_KEY: ${SUPABASE_ANON_KEY:-***REMOVED-DEMO-SUPABASE-ANON-JWT***}
-      SERVICE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-***REMOVED-DEMO-SUPABASE-SERVICE-ROLE-JWT***}
-      PGRST_JWT_SECRET: ${JWT_SECRET:-***REMOVED-DEMO-JWT-SECRET***}
-      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-postgres}
+      ANON_KEY: ${SUPABASE_ANON_KEY:?Set SUPABASE_ANON_KEY in your .env.local or .env.prod (see .env.example)}
+      SERVICE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?Set SUPABASE_SERVICE_ROLE_KEY in your .env.local or .env.prod (see .env.example)}
+      PGRST_JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in your .env.local or .env.prod (see .env.example)}
+      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env.local or .env.prod (see .env.example)}@postgres:5432/${POSTGRES_DB:-postgres}
       POSTGREST_URL: http://rest:3000
       TENANT_ID: selfhost
       REGION: us-east-1
@@ -303,7 +303,7 @@ services:
       DB: postgres12
       DB_PORT: 5432
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PWD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env.local or .env.prod (see .env.example)}
       POSTGRES_SEEDS: postgres
     # Host port overridable via TEMPORAL_PORT (default 7234, since 7233 is
     # Temporal's own hardcoded default and easily taken by another local
@@ -370,7 +370,7 @@ services:
       # the browser-side names specifically. Without the anon key here, every
       # route 500s with "Your project's URL and Key are required".
       NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_PUBLIC_URL:-http://localhost:8000}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-***REMOVED-DEMO-SUPABASE-ANON-JWT***}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:?Set SUPABASE_ANON_KEY in your .env.local or .env.prod (see .env.example)}
       # Bugfix: these two used to be hardcoded literals here, which silently
       # discarded whatever NEXT_PUBLIC_BACKEND_URL/NEXT_PUBLIC_MCP_URL the
       # active env file (.env.local vs .env.prod, selected by ENV_FILE) set —
@@ -421,7 +421,7 @@ services:
       # brand-extractor's own server.js checks the generic WORKER_SECRET
       # name; map it to the same value web sends as BRAND_EXTRACTOR_SECRET
       # so the two sides actually agree.
-      WORKER_SECRET: ${BRAND_EXTRACTOR_SECRET:-***REMOVED-DEMO-SECRET***}
+      WORKER_SECRET: ${BRAND_EXTRACTOR_SECRET:?Set BRAND_EXTRACTOR_SECRET in your .env.local or .env.prod (see .env.example)}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # MODEL_PROVIDER=openrouter switches ai-vision.js to OpenRouter's
       # Anthropic-compatible endpoint using OPENROUTER_API_KEY instead.

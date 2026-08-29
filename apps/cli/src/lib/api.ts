@@ -48,11 +48,11 @@ function writeCache<T>(key: string, data: T): void {
   }
 }
 
-// Public anon key — safe to embed. All access is gated by RLS policies.
-// This is equivalent to NEXT_PUBLIC_SUPABASE_ANON_KEY on the frontend.
-// Override for local dev via VANTLY_UGC_ANON_KEY env var.
-const DEFAULT_ANON_KEY =
-  '***REMOVED-UPSTREAM-ANON-JWT***';
+// Public anon key — safe to embed once set. All access is gated by RLS
+// policies. This fork is self-hosted only, so there is no shared default
+// project to fall back to: point it at YOUR OWN Supabase instance via
+// VANTLY_UGC_ANON_KEY (or SUPABASE_ANON_KEY / NEXT_PUBLIC_SUPABASE_ANON_KEY,
+// whichever your deployment already sets).
 
 /** Response shape for the device-token initiation endpoint (snake_case from server). */
 export interface DeviceAuthResponse {
@@ -518,7 +518,7 @@ export class VantlyUgcAPI {
     this.supabaseUrl =
       process.env['VANTLY_UGC_SUPABASE_URL']?.replace(/\/+$/, '') ?? DEFAULT_SUPABASE_URL;
     this.anonKey =
-      process.env['VANTLY_UGC_ANON_KEY'] ?? DEFAULT_ANON_KEY;
+      process.env['VANTLY_UGC_ANON_KEY'] ?? process.env['SUPABASE_ANON_KEY'] ?? process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'];
   }
 
   /**
@@ -531,7 +531,7 @@ export class VantlyUgcAPI {
         /\/+$/,
         '',
       );
-    const anonKey = process.env['VANTLY_UGC_ANON_KEY'] ?? DEFAULT_ANON_KEY;
+    const anonKey = process.env['VANTLY_UGC_ANON_KEY'] ?? process.env['SUPABASE_ANON_KEY'] ?? process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'];
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (anonKey) {
@@ -566,7 +566,7 @@ export class VantlyUgcAPI {
         /\/+$/,
         '',
       );
-    const anonKey = process.env['VANTLY_UGC_ANON_KEY'] ?? DEFAULT_ANON_KEY;
+    const anonKey = process.env['VANTLY_UGC_ANON_KEY'] ?? process.env['SUPABASE_ANON_KEY'] ?? process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'];
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (anonKey) {

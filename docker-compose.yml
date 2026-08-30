@@ -143,6 +143,17 @@ services:
       # Must be a Postmark-verified Sender Signature or verified sending
       # domain - Postmark rejects mail from any other From address.
       GOTRUE_SMTP_ADMIN_EMAIL: ${GOTRUE_SMTP_ADMIN_EMAIL:-no-reply@vantly-ugc.com}
+      # "Continue with Google" on the login modal (apps/web/components/login-modal.tsx
+      # already calls supabase.auth.signInWithOAuth({ provider: 'google' })) — this is
+      # the only piece that was missing. Create the OAuth client in Google Cloud
+      # Console and set GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID/_SECRET below; add
+      # {SUPABASE_URL}/auth/v1/callback (the PUBLIC url your gateway service is
+      # reachable at, not the internal http://gateway:3000) as an Authorized
+      # redirect URI on that OAuth client.
+      GOTRUE_EXTERNAL_GOOGLE_ENABLED: ${GOTRUE_EXTERNAL_GOOGLE_ENABLED:-false}
+      GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID:-}
+      GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOTRUE_EXTERNAL_GOOGLE_SECRET:-}
+      GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: ${GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI:-}
     ports: ["9999:9999"]
 
   # One-shot schema bootstrap. Waits for GoTrue to create auth.users (many

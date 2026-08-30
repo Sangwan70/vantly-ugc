@@ -32,6 +32,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createClient as createServerClient } from '@/lib/supabase/server';
+import { getPublicOrigin } from '@/lib/request-origin';
 import { createHmac, timingSafeEqual } from 'crypto';
 
 function base64UrlDecode(str: string): Buffer {
@@ -76,7 +77,7 @@ export async function GET(
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
-  const { origin } = new URL(request.url);
+  const origin = getPublicOrigin(request);
 
   const ssoKey = process.env.VANTLY_SSO_KEY;
   if (!ssoKey) {

@@ -14,9 +14,11 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
+import { getPublicOrigin } from '@/lib/request-origin';
 
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
+  const { searchParams } = new URL(request.url);
+  const origin = getPublicOrigin(request);
   const code = searchParams.get('code');
   const rawRedirect = searchParams.get('redirect') || '/dashboard';
   // Sanitise redirect: must be a known local path prefix to prevent open redirects

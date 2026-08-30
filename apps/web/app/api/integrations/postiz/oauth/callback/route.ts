@@ -39,6 +39,7 @@
 import { NextResponse } from 'next/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
+import { getPublicOrigin } from '@/lib/request-origin';
 
 const VANTLY_APP_URL = (process.env.VANTLY_APP_URL || 'https://vantly.social').replace(/\/+$/, '');
 const VANTLY_TOKEN_URL = `${VANTLY_APP_URL}/api/oauth/token`;
@@ -58,7 +59,8 @@ function loginFailRedirect(origin: string, errorCode: string) {
 }
 
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
+  const { searchParams } = new URL(request.url);
+  const origin = getPublicOrigin(request);
   const code = searchParams.get('code');
   const stateParam = searchParams.get('state');
   const oauthError = searchParams.get('error');

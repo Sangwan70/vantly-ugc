@@ -24,11 +24,13 @@
 
 import { NextResponse } from 'next/server';
 import { randomBytes } from 'crypto';
+import { getPublicOrigin } from '@/lib/request-origin';
 
 const VANTLY_APP_URL = (process.env.VANTLY_APP_URL || 'https://vantly.social').replace(/\/+$/, '');
 
 export async function GET(request: Request) {
-  const { origin, searchParams } = new URL(request.url);
+  const { searchParams } = new URL(request.url);
+  const origin = getPublicOrigin(request);
   const redirect = searchParams.get('redirect') || '/dashboard';
 
   const clientId = process.env.VANTLY_CLIENT_ID;

@@ -122,7 +122,19 @@ services:
       GOTRUE_JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in your .env.local or .env.prod (see .env.example)}
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: "9999"
-      API_EXTERNAL_URL: ${SUPABASE_URL:-http://localhost:8000}
+      # GoTrue uses this as the literal base for the links it puts in OTP /
+      # magic-link emails ("{API_EXTERNAL_URL}/verify?token=..."), and treats
+      # that base as if it were GoTrue's own root. Externally, GoTrue is only
+      # reachable through the gateway's /auth/v1/ prefix
+      # (auth.vantly-ugc.com/auth/v1/verify, never .../verify) — so this must
+      # be the PUBLIC base plus that prefix, not the bare SUPABASE_URL (which
+      # is deliberately the internal http://gateway:3000 address used for
+      # server-to-server calls elsewhere, and even when it does resolve to a
+      # public host, it still lacks the /auth/v1 suffix the gateway expects).
+      # Missing this produced emailed links like
+      # https://auth.vantly-ugc.com/verify?... which 404 at the gateway
+      # ("This gateway only serves /auth/v1, /rest/v1, and /storage/v1").
+      API_EXTERNAL_URL: ${SUPABASE_PUBLIC_URL:-http://localhost:8000}/auth/v1
       GOTRUE_DB_DRIVER: postgres
       GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env.local or .env.prod (see .env.example)}@postgres:5432/${POSTGRES_DB:-postgres}
       GOTRUE_SITE_URL: ${APP_PUBLIC_URL:-http://localhost:3005}

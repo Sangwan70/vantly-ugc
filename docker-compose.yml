@@ -122,19 +122,27 @@ services:
       GOTRUE_JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in your .env.local or .env.prod (see .env.example)}
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: "9999"
-      # GoTrue uses this as the literal base for the links it puts in OTP /
-      # magic-link emails ("{API_EXTERNAL_URL}/verify?token=..."), and treats
-      # that base as if it were GoTrue's own root. Externally, GoTrue is only
-      # reachable through the gateway's /auth/v1/ prefix
-      # (auth.vantly-ugc.com/auth/v1/verify, never .../verify) — so this must
-      # be the PUBLIC base plus that prefix, not the bare SUPABASE_URL (which
-      # is deliberately the internal http://gateway:3000 address used for
-      # server-to-server calls elsewhere, and even when it does resolve to a
-      # public host, it still lacks the /auth/v1 suffix the gateway expects).
-      # Missing this produced emailed links like
-      # https://auth.vantly-ugc.com/verify?... which 404 at the gateway
-      # ("This gateway only serves /auth/v1, /rest/v1, and /storage/v1").
-      API_EXTERNAL_URL: ${SUPABASE_PUBLIC_URL:-http://localhost:8000}/auth/v1
+      # Public base URL (scheme+host only). GoTrue's mailer does NOT append
+      # any path segments already present here — it parses this down to
+      # scheme+host and rebuilds the path itself from the
+      # GOTRUE_MAILER_URLPATHS_* vars below (confirmed: setting this to
+      # ".../auth/v1" had zero effect on the emailed link, which still came
+      # out as https://auth.vantly-ugc.com/verify with no /auth/v1). Keep
+      # this as a clean base — SUPABASE_PUBLIC_URL, not the internal
+      # http://gateway:3000 address used for server-to-server calls
+      # elsewhere.
+      API_EXTERNAL_URL: ${SUPABASE_PUBLIC_URL:-http://localhost:8000}
+      # GoTrue is only reachable externally through the gateway's /auth/v1/
+      # prefix, but GoTrue's own OTP/magic-link/invite/recovery emails
+      # default to "{API_EXTERNAL_URL}/verify" (no prefix) — a 404 at the
+      # gateway ("This gateway only serves /auth/v1, /rest/v1, and
+      # /storage/v1"). These four MAILER_URLPATHS vars override the path
+      # GoTrue builds into each email type so it lands on the gateway route
+      # that actually exists.
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: "/auth/v1/verify"
+      GOTRUE_MAILER_URLPATHS_INVITE: "/auth/v1/verify"
+      GOTRUE_MAILER_URLPATHS_RECOVERY: "/auth/v1/verify"
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: "/auth/v1/verify"
       GOTRUE_DB_DRIVER: postgres
       GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env.local or .env.prod (see .env.example)}@postgres:5432/${POSTGRES_DB:-postgres}
       GOTRUE_SITE_URL: ${APP_PUBLIC_URL:-http://localhost:3005}

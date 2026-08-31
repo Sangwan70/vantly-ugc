@@ -112,7 +112,7 @@ services:
   # Supabase Auth. The app verifies user JWTs and runs the MCP OAuth flow
   # against this.
   auth:
-    image: supabase/gotrue:v2.177.0
+    image: supabase/gotrue:v2.196.0
     depends_on:
       db-init: { condition: service_completed_successfully }
     environment:
@@ -154,6 +154,20 @@ services:
       GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID:-}
       GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOTRUE_EXTERNAL_GOOGLE_SECRET:-}
       GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: ${GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI:-}
+      # OAuth 2.1 authorization server (api-v2/src/mcp-oauth.ts) — lets
+      # connector clients (Claude Desktop, Claude.ai, Cursor, ...) register
+      # themselves against api.vantly-ugc.com/mcp and sign in via browser
+      # instead of a pasted API key. Requires GoTrue >= v2.180.0 (bumped
+      # above from v2.177.0, which predates this feature entirely and made
+      # every /register call fail with no error surfaced to the user).
+      # ALLOW_DYNAMIC_REGISTRATION is what lets a connector self-register
+      # without an admin pre-creating the client; AUTHORIZATION_PATH is a
+      # path (not a full URL) combined with GOTRUE_SITE_URL above, and must
+      # match the consent screen already built at
+      # apps/web/app/(auth)/oauth/consent/page.tsx.
+      GOTRUE_OAUTH_SERVER_ENABLED: "true"
+      GOTRUE_OAUTH_SERVER_ALLOW_DYNAMIC_REGISTRATION: "true"
+      GOTRUE_OAUTH_SERVER_AUTHORIZATION_PATH: "/oauth/consent"
     ports: ["9999:9999"]
 
   # One-shot schema bootstrap. Waits for GoTrue to create auth.users (many

@@ -28,6 +28,14 @@ import type { OAuthClientInformationFull } from '@modelcontextprotocol/sdk/share
 import { verifyToken } from './auth.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL ?? '';
+// The /authorize leg is a real browser redirect (unlike /token and
+// /register, which we fetch server-to-server) — it must be a publicly
+// resolvable URL. SUPABASE_URL is deliberately the internal
+// http://gateway:3000 address for the server-to-server calls, so it
+// cannot also serve this; a browser sent there gets a DNS failure on
+// the internal Docker hostname 'gateway'. Falls back to SUPABASE_URL
+// only so this doesn't hard-crash on an incomplete .env.
+const SUPABASE_PUBLIC_URL = (process.env.SUPABASE_PUBLIC_URL ?? process.env.SUPABASE_URL ?? '').replace(/\/+$/, '');
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY ?? '';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 
@@ -136,7 +144,7 @@ async function getClient(clientId: string): Promise<OAuthClientInformationFull |
 export function createMcpOAuthRouter(): RequestHandler {
   const provider = new ProxyOAuthServerProvider({
     endpoints: {
-      authorizationUrl: `${SUPABASE_URL}/auth/v1/oauth/authorize`,
+      authorizationUrl: `${SUPABASE_PUBLIC_URL}/auth/v1/oauth/authorize`,
       tokenUrl: `${SUPABASE_URL}/auth/v1/oauth/token`,
       registrationUrl: `${SUPABASE_URL}/auth/v1/oauth/clients/register`,
     },

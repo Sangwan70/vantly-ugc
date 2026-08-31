@@ -1,8 +1,8 @@
-# Vantly UGC
+# vantly-ugc
 
-AI UGC video generation — from your terminal, your editor, your AI agent, or the dashboard.
+AI UGC video generation from your terminal, your editor, or your AI agent.
 
-[`vantly-ugc.com`](https://vantly-ugc.com) · [Dashboard](https://app.vantly-ugc.com) · [Skill Center](https://vantly-ugc.com/skill-center) · [API reference](https://vantly-ugc.com/docs/api-reference) · [Pricing](https://vantly-ugc.com/pricing)
+[`vantly-ugc.com`](https://vantly-ugc.com) · [Install the skill](https://vantly-ugc.com/skill) · [API reference](https://vantly-ugc.com/docs/api-reference) · [Pricing](https://vantly-ugc.com/pricing)
 
 **Docs:** [Architecture](ARCHITECTURE.md) · [Self-hosting](#self-hosting) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
 
@@ -33,10 +33,9 @@ Pricing lives at <https://vantly-ugc.com/pricing>. The API debits internally —
 https://api.vantly-ugc.com/mcp
 ```
 
-The connector speaks **OAuth 2.1 with dynamic client registration**, so your
-agent registers itself and opens a sign-in page against `auth.vantly-ugc.com`
-(Supabase Auth) — you never copy a key, and no secret is stored in a config
-file.
+The hosted connector speaks **OAuth 2.1 with dynamic client registration**, so your
+agent registers itself and opens a sign-in page — you never copy a key, and no
+secret is stored in a config file.
 
 ### The fastest way: paste this to your agent
 
@@ -47,7 +46,7 @@ agent sets *itself* up:
 Set up vantly-ugc for me so I can generate UGC videos from here.
 1. Add the vantly-ugc MCP server: https://api.vantly-ugc.com/mcp (Streamable HTTP).
 2. Authenticate: complete the sign-in in the browser it opens.
-3. Install the companion skills: run `npx skills add Sangwan70/vantly-ugc`.
+3. Install the companion skills: run `npx skills add gitroomhq/vantly-ugc-app`.
 Once that's done, let me know when it's ready.
 ```
 
@@ -75,9 +74,9 @@ Point the client at the same hosted URL and it will run the OAuth flow:
 <summary>Prefer an API key, or need a local stdio server? (optional)</summary>
 
 Keys still work everywhere OAuth does — useful for CI and headless scripts.
-Grab one from the dashboard (`app.vantly-ugc.com` → Settings → API Keys), then
-either send `Authorization: Bearer vg_...` to the hosted URL, or run the stdio
-server locally with the published `vantly-ugc-mcp-server` package:
+Get one with `npm i -g vantly-ugc-cli && vantly-ugc login`, or from the
+dashboard, then either send `Authorization: Bearer ma_...` to the hosted URL, or
+run the stdio server locally:
 
 ```jsonc
 {
@@ -85,7 +84,7 @@ server locally with the published `vantly-ugc-mcp-server` package:
     "vantly-ugc": {
       "command": "npx",
       "args": ["-y", "vantly-ugc-mcp-server"],
-      "env": { "VANTLY_UGC_API_KEY": "vg_..." }
+      "env": { "VANTLY_UGC_API_KEY": "ma_..." }
     }
   }
 }
@@ -94,15 +93,8 @@ server locally with the published `vantly-ugc-mcp-server` package:
 
 ### Standalone CLI / scripts / CI
 
-The CLI (`apps/cli`) isn't published to npm yet — build and link it from this
-repo:
-
 ```bash
-git clone https://github.com/Sangwan70/vantly-ugc.git
-cd vantly-ugc && pnpm install
-pnpm --filter vantly-ugc-cli build
-pnpm --filter vantly-ugc-cli exec npm link   # exposes the `vantly-ugc` command
-
+npm install -g vantly-ugc-cli@latest
 vantly-ugc login
 vantly-ugc selfie \
   --description "25yo asian woman, long wavy dark hair, soft smile" \
@@ -111,48 +103,51 @@ vantly-ugc selfie \
   --duration 10
 ```
 
+## Keeping the skill up-to-date
+
+The CLI ships an updater:
+
+```bash
+vantly-ugc skill update       # pulls the latest skill tree
+vantly-ugc skill status       # local vs remote version
+```
+
+Every CLI invocation also runs a once-per-day background check and prints a one-line nudge when a newer skill version is available.
+
 ## Published packages
 
-Only the MCP server is published so far — everything else in `packages/` and
-`apps/cli` is built from source (see above) until we cut a release.
-
-| Package | Status | Notes |
+| Package | Version | Notes |
 |---|---|---|
-| [`vantly-ugc-mcp-server`](https://www.npmjs.com/package/vantly-ugc-mcp-server) | **published, `0.7.9`** | local stdio MCP — reads `/v1/skills` live (make_ugc) |
-| `vantly-ugc-cli` | not yet published (`1.18.5` in-repo) | the CLI — build from source, see above |
-| `@vantly-ugc/sdk` | not yet published (`0.5.5` in-repo) | TypeScript SDK — build from source |
-| `@vantly-ugc/schema` | not yet published (`0.5.5` in-repo) | shared zod schemas + registry — build from source |
+| [`vantly-ugc-cli`](https://www.npmjs.com/package/vantly-ugc-cli) | `1.18.0+` | the CLI |
+| [`vantly-ugc-mcp-server`](https://www.npmjs.com/package/vantly-ugc-mcp-server) | `0.7.0+` | local stdio MCP — reads `/v1/skills` live (make_ugc) |
+| [`@vantly-ugc/sdk`](https://www.npmjs.com/package/@vantly-ugc/sdk) | `0.5.0+` | TypeScript SDK |
+| [`@vantly-ugc/schema`](https://www.npmjs.com/package/@vantly-ugc/schema) | `0.5.0+` | shared zod schemas + registry |
 
 ## The skill pack
 
 [`public-skill/`](public-skill/) is the agent-facing pack: the `make-ugc` skill (the one
-generation tool) plus companion skills, a plugin/marketplace manifest, and
-`reference/` docs. It is generated from the skill registry by
-`services/api-v2/scripts/generate-public-skill.ts` — edit the registry, not
+generation tool) plus `vantly-ugc-ugc`, `make-podcast`, `publish-to-social`, a
+plugin/marketplace manifest, and `reference/` docs. It is generated from the skill
+registry by `services/api-v2/scripts/generate-public-skill.ts` — edit the registry, not
 the emitted files.
 
-Install it into an agent with `npx skills add Sangwan70/vantly-ugc`, or as
-Claude Code plugin (see [`public-skill/README.md`](public-skill/README.md)).
+Install it into an agent with `npx skills add gitroomhq/vantly-ugc-app`, or as a Claude
+Code plugin (see [`public-skill/README.md`](public-skill/README.md)).
 
 ## Repository layout (this monorepo)
 
 ```
 apps/
   cli/                       vantly-ugc CLI source
-  web/                       vantly-ugc.com — marketing site + dashboard (app.vantly-ugc.com)
+  web/                       vantly-ugc.com (marketing + dashboard)
 packages/
   schema/                    @vantly-ugc/schema — zod schemas + V2_GENERATORS registry (source of truth)
   sdk-ts/                    @vantly-ugc/sdk
-  sdk-python/                Python SDK
-  mcp-server/                vantly-ugc-mcp-server (published to npm)
-  types/                     @vantly-ugc/types
-  ui/                        @vantly-ugc/ui — shared dashboard components
+  sdk-python/                vantly-ugc (PyPI)
+  mcp-server/                vantly-ugc-mcp-server
 services/
-  api-v2/                    REST + MCP API (api.vantly-ugc.com) — routes, auth, OAuth 2.1 DCR, dispatch
+  api-v2/                    REST API (api.vantly-ugc.com) — routes, auth, dispatch
   media-worker-v2/           pipeline runner — gpt-image-2 + Seedance + ffmpeg
-  brand-extractor/           brand/style extraction service
-  subtitle-worker/           caption/subtitle burn-in service
-  primitive-worker-vnext/    low-level generation primitives
 public-skill/                generated agent skill pack (one agent tool: make_ugc)
 supabase/migrations/         schema, RLS, edge functions
 docs/v2/api-reference.md     auto-generated REST reference
@@ -160,12 +155,14 @@ docs/v2/api-reference.md     auto-generated REST reference
 
 Add a new v2 product: drop a row in `packages/schema/src/v2/generators.ts`, run `pnpm --filter @vantly-ugc/schema gen:v2-docs`, and the CLI command, MCP tool, REST route, SDK method, docs, and skill reference file all materialize from the registry.
 
+## License
+
+Apache-2.0
+
 ## Self-hosting
 
-This repo *is* what runs at vantly-ugc.com — there's no separate hosted-only
-codebase. Run the whole stack on your own infrastructure the same way we do.
-Billing is **off** by default for self-hosters — bring your own provider keys
-and generate freely.
+Run the whole stack locally or on your own infrastructure. Billing is **off** by
+default for self-hosters — bring your own provider keys and generate freely.
 
 ```bash
 cp .env.example .env.local              # local dev — add your Evolink / OpenAI / Anthropic keys
@@ -177,12 +174,11 @@ docker compose --env-file .env.prod up -d
 ```
 
 That brings up everything: Postgres, Supabase Auth (GoTrue), PostgREST, Supabase
-Storage, Temporal, MinIO (S3-compatible storage), the backend services and
+Storage, Temporal, MinIO (S3-compatible storage), the four backend services and
 the dashboard. Migrations are applied automatically on first boot.
 
-- **Dashboard** → `http://localhost:3005` (set `WEB_PORT` to change it) — publicly, this is `app.vantly-ugc.com`
-- **API / MCP** → `http://localhost:3001` — publicly, `api.vantly-ugc.com`
-- **Auth gateway** (GoTrue + PostgREST + Storage, unified) → `http://localhost:8000` — publicly, `auth.vantly-ugc.com`
+- **Dashboard** → `http://localhost:3005` (set `WEB_PORT` to change it)
+- **API** → `http://localhost:3001`
 
 Also overridable if they collide with another local stack: `POSTGRES_PORT`
 (default 5433), `TEMPORAL_PORT` (default 7234), `MEDIA_WORKER_PORT` (default
@@ -192,11 +188,11 @@ A bare Postgres is *not* enough — the app depends on Supabase's Auth and
 PostgREST APIs, so the compose file runs those as real services rather than
 pretending Postgres alone will do.
 
-Behind a reverse proxy (Apache `.htaccess`, nginx, Caddy, …), point each public
-hostname at its container port and forward `X-Forwarded-Proto` /
-`X-Forwarded-For`; the app reads `APP_PUBLIC_URL` / `SUPABASE_PUBLIC_URL` rather
-than trusting the inbound `Host` header, since most reverse-proxy setups don't
-preserve it.
+**Dashboard only — there is no marketing site here.** `/` redirects straight to
+`/dashboard`, and `robots.txt` disallows everything, because a self-hosted
+instance has no business being indexed. The hosted site at vantly-ugc.com keeps
+its own landing pages, pricing and SEO surface; none of that is in this repo.
+Agents talk to the API directly and never see the UI at all.
 
 You are not tied to our vendors: Temporal Cloud → the Temporal container,
 Cloudflare R2 → MinIO (or any S3-compatible store via `S3_ENDPOINT`),

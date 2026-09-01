@@ -143,6 +143,15 @@ services:
       GOTRUE_MAILER_URLPATHS_INVITE: "/auth/v1/verify"
       GOTRUE_MAILER_URLPATHS_RECOVERY: "/auth/v1/verify"
       GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: "/auth/v1/verify"
+      # Custom magic-link/OTP email template (apps/web/app/api/mail-templates/
+      # magic-link/route.ts) — GoTrue's built-in default only shows a
+      # clickable link, but the login modal's OTP popup expects a typed
+      # 6-digit code with nothing in the stock email to type in. Our
+      # template shows both. Fetched over the internal docker network
+      # (http://web:3000/..., the "web" service's container-internal port -
+      # see the web service's `ports: ["${WEB_PORT:-3005}:3000"]` below) so
+      # it never depends on the public gateway/reverse-proxy chain.
+      GOTRUE_MAILER_TEMPLATES_MAGIC_LINK: http://web:3000/api/mail-templates/magic-link
       GOTRUE_DB_DRIVER: postgres
       GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env.local or .env.prod (see .env.example)}@postgres:5432/${POSTGRES_DB:-postgres}
       GOTRUE_SITE_URL: ${APP_PUBLIC_URL:-http://localhost:3005}

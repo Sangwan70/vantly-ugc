@@ -3,6 +3,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Agent, fetch as undiciFetch } from 'undici';
 import { lookup as dnsLookup } from 'node:dns/promises';
+import { Context } from '@temporalio/activity';
 
 // Same bug class already root-caused and fixed for OpenAI (see client/openai.ts):
 // Node's global fetch pools keep-alive sockets via undici's default Agent. On a
@@ -34,6 +35,24 @@ function anthropicFetch(
     ...(init as Parameters<typeof undiciFetch>[1]),
     dispatcher: _anthropicAgent,
   } as Parameters<typeof undiciFetch>[1]) as unknown as Promise<Response>;
+}
+
+/**
+ * Diagnostic-only: identifies which activity/workflow a createMessageRaw()
+ * log line came from. Necessary because two DIFFERENT callers (e.g. the
+ * portrait prompt and a video-clip prompt) can be mid-flight concurrently
+ * in the same worker process, and their attempt-N log lines were otherwise
+ * indistinguishable — which was actively confusing a live investigation
+ * (identical "attempt 1/4" lines showing both a fast success and a 45s
+ * timeout, with no way to tell which caller was which).
+ */
+function activityContextTag(): string {
+  try {
+    const info = Context.current().info;
+    return `workflowId=${info.workflowExecution.workflowId} runId=${info.workflowExecution.runId} activityType=${info.activityType} activityAttempt=${info.attempt}`;
+  } catch {
+    return 'no-activity-context';
+  }
 }
 
 let _client: Anthropic | null = null;
@@ -113,9 +132,11 @@ function resolveModelId(model: string): string {
 async function createMessageRaw(
   apiKey: string,
   body: { model: string; max_tokens: number; system: string; messages: Array<{ role: string; content: unknown }> },
+  label: string,
 ): Promise<{ content: Array<{ type: string; text?: string }> }> {
   const { url, headers } = anthropicEndpoint(apiKey);
   const hostname = new URL(url).hostname;
+  const ctx = activityContextTag();
   let lastErr: unknown;
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const attemptStart = Date.now();
@@ -127,7 +148,7 @@ async function createMessageRaw(
         resolvedIp = `dns-error:${dnsErr instanceof Error ? dnsErr.message : String(dnsErr)}`;
       }
       console.warn(
-        `[anthropic] attempt ${attempt + 1}/4 starting, hostname=${hostname} resolvedIp=${resolvedIp}`,
+        `[anthropic][${label}] attempt ${attempt + 1}/4 starting, hostname=${hostname} resolvedIp=${resolvedIp}, ${ctx}`,
       );
       const resp = await anthropicFetch(url, {
         method: 'POST',
@@ -143,20 +164,20 @@ async function createMessageRaw(
         const err = new Error(`anthropic ${resp.status}: ${t.slice(0, 300)}`) as Error & { status?: number };
         err.status = resp.status;
         console.warn(
-          `[anthropic] attempt ${attempt + 1}/4 HTTP ${resp.status} after ${Date.now() - attemptStart}ms, resolvedIp=${resolvedIp}, body=${t.slice(0, 200)}`,
+          `[anthropic][${label}] attempt ${attempt + 1}/4 HTTP ${resp.status} after ${Date.now() - attemptStart}ms, resolvedIp=${resolvedIp}, body=${t.slice(0, 200)}, ${ctx}`,
         );
         if (resp.status >= 400 && resp.status < 500) throw err; // real error — don't retry
         lastErr = err;
       } else {
         // Body read happens here — "Premature close" surfaces on this await.
-        console.warn(`[anthropic] attempt ${attempt + 1}/4 OK after ${Date.now() - attemptStart}ms, resolvedIp=${resolvedIp}`);
+        console.warn(`[anthropic][${label}] attempt ${attempt + 1}/4 OK after ${Date.now() - attemptStart}ms, resolvedIp=${resolvedIp}, ${ctx}`);
         return (await resp.json()) as { content: Array<{ type: string; text?: string }> };
       }
     } catch (e) {
       const err = e as { status?: number; name?: string; message?: string; code?: string; errno?: number; cause?: unknown };
       console.warn(
-        `[anthropic] attempt ${attempt + 1}/4 FAILED after ${Date.now() - attemptStart}ms, resolvedIp=${resolvedIp}, ` +
-          `name=${err?.name}, code=${err?.code}, errno=${err?.errno}, message=${err?.message}, cause=${String(err?.cause)}`,
+        `[anthropic][${label}] attempt ${attempt + 1}/4 FAILED after ${Date.now() - attemptStart}ms, resolvedIp=${resolvedIp}, ` +
+          `name=${err?.name}, code=${err?.code}, errno=${err?.errno}, message=${err?.message}, cause=${String(err?.cause)}, ${ctx}`,
       );
       if (err?.status && err.status < 500) throw e;
       lastErr = e;
@@ -238,7 +259,7 @@ export async function buildPortraitPrompt(
         content: userJson,
       },
     ],
-  });
+  }, 'buildPortraitPrompt');
   const block = resp.content.find((b): b is Anthropic.TextBlock => b.type === 'text');
   if (!block) {
     throw new Error('haiku: empty response — no text block');
@@ -319,7 +340,7 @@ export async function buildSimpleSelfiePrompt(
     max_tokens: 700,
     system: SIMPLE_SELFIE_PROMPT_SYSTEM,
     messages: [{ role: 'user', content: userJson }],
-  });
+  }, 'buildSimpleSelfiePrompt');
   const block = resp.content.find((b): b is Anthropic.TextBlock => b.type === 'text');
   if (!block) throw new Error('haiku: empty response — no text block');
   const text = block.text.trim().replace(/^["'`]+|["'`]+$/g, '').trim();
@@ -397,7 +418,7 @@ export async function buildProductInHandsPrompt(
     max_tokens: 700,
     system: PRODUCT_IN_HANDS_PROMPT_SYSTEM,
     messages: [{ role: 'user', content: userJson }],
-  });
+  }, 'buildProductInHandsPrompt');
   const block = resp.content.find((b): b is Anthropic.TextBlock => b.type === 'text');
   if (!block) throw new Error('haiku: empty response — no text block');
   const text = block.text.trim().replace(/^["'`]+|["'`]+$/g, '').trim();
@@ -438,7 +459,7 @@ export async function buildWireframePrompt(
     max_tokens: 400,
     system: WIREFRAME_PROMPT_SYSTEM,
     messages: [{ role: 'user', content: userJson }],
-  });
+  }, 'buildWireframePrompt');
   const block = resp.content.find((b): b is Anthropic.TextBlock => b.type === 'text');
   if (!block) throw new Error('haiku: empty response — no text block');
   const text = block.text.trim().replace(/^["'`]+|["'`]+$/g, '').trim();
@@ -469,7 +490,7 @@ export async function buildCharacterSheetPrompt(
     max_tokens: 700,
     system: CHARACTER_SHEET_PROMPT_SYSTEM,
     messages: [{ role: 'user', content: userJson }],
-  });
+  }, 'buildCharacterSheetPrompt');
   const block = resp.content.find((b): b is Anthropic.TextBlock => b.type === 'text');
   if (!block) throw new Error('haiku: empty response — no text block');
   const text = block.text.trim().replace(/^["'`]+|["'`]+$/g, '').trim();

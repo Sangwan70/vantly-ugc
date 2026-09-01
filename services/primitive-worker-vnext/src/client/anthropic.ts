@@ -2,6 +2,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { Agent, fetch as undiciFetch } from 'undici';
+import { lookup as dnsLookup } from 'node:dns/promises';
 
 // Same bug class already root-caused and fixed for OpenAI (see client/openai.ts):
 // Node's global fetch pools keep-alive sockets via undici's default Agent. On a
@@ -95,15 +96,39 @@ function resolveModelId(model: string): string {
  * fetch per attempt + an explicit retry (the drop happens during body read,
  * which the SDK does NOT retry) fixes it. Returns the SDK-compatible shape so
  * existing `resp.content.find(...)` call sites are unchanged.
+ *
+ * DIAGNOSTIC LOGGING (temporary — added while chasing a ~183.7s hang that
+ * only reproduces inside a real Temporal activity, never in an isolated
+ * one-off script against the same container/credentials): every attempt
+ * logs the DNS-resolved IP it's about to connect to, plus elapsed time and
+ * the exact error on failure. The isolated-vs-real gap is the whole mystery
+ * — a leading theory is that this long-running process's DNS resolution
+ * (dns.lookup, cached per-process by Node's c-ares layer for the process
+ * lifetime) has latched onto one specific backend IP for
+ * api.anthropic.com that is unreachable from this VPS's network path, while
+ * a brand-new `docker compose exec` process always does a fresh lookup and
+ * gets routed to a healthy one. If every failing attempt below logs the
+ * SAME ip, that confirms it. Remove this once the real cause is found.
  */
 async function createMessageRaw(
   apiKey: string,
   body: { model: string; max_tokens: number; system: string; messages: Array<{ role: string; content: unknown }> },
 ): Promise<{ content: Array<{ type: string; text?: string }> }> {
   const { url, headers } = anthropicEndpoint(apiKey);
+  const hostname = new URL(url).hostname;
   let lastErr: unknown;
   for (let attempt = 0; attempt < 4; attempt += 1) {
+    const attemptStart = Date.now();
+    let resolvedIp = 'unresolved';
     try {
+      try {
+        resolvedIp = (await dnsLookup(hostname)).address;
+      } catch (dnsErr) {
+        resolvedIp = `dns-error:${dnsErr instanceof Error ? dnsErr.message : String(dnsErr)}`;
+      }
+      console.warn(
+        `[anthropic] attempt ${attempt + 1}/4 starting, hostname=${hostname} resolvedIp=${resolvedIp}`,
+      );
       const resp = await anthropicFetch(url, {
         method: 'POST',
         headers,
@@ -117,14 +142,23 @@ async function createMessageRaw(
         const t = await resp.text().catch(() => '');
         const err = new Error(`anthropic ${resp.status}: ${t.slice(0, 300)}`) as Error & { status?: number };
         err.status = resp.status;
+        console.warn(
+          `[anthropic] attempt ${attempt + 1}/4 HTTP ${resp.status} after ${Date.now() - attemptStart}ms, resolvedIp=${resolvedIp}, body=${t.slice(0, 200)}`,
+        );
         if (resp.status >= 400 && resp.status < 500) throw err; // real error — don't retry
         lastErr = err;
       } else {
         // Body read happens here — "Premature close" surfaces on this await.
+        console.warn(`[anthropic] attempt ${attempt + 1}/4 OK after ${Date.now() - attemptStart}ms, resolvedIp=${resolvedIp}`);
         return (await resp.json()) as { content: Array<{ type: string; text?: string }> };
       }
     } catch (e) {
-      if ((e as { status?: number })?.status && (e as { status?: number }).status! < 500) throw e;
+      const err = e as { status?: number; name?: string; message?: string; code?: string; errno?: number; cause?: unknown };
+      console.warn(
+        `[anthropic] attempt ${attempt + 1}/4 FAILED after ${Date.now() - attemptStart}ms, resolvedIp=${resolvedIp}, ` +
+          `name=${err?.name}, code=${err?.code}, errno=${err?.errno}, message=${err?.message}, cause=${String(err?.cause)}`,
+      );
+      if (err?.status && err.status < 500) throw e;
       lastErr = e;
     }
     if (attempt < 3) await sleep(600 * (attempt + 1));

@@ -197,9 +197,20 @@ export function makePortraitGpt2Activity(cfg: WorkerConfig) {
     // Step 1: synthesize the image prompt via Claude Haiku.
     // We persist the generated prompt back into primitive_runs.input so the
     // exact text sent to OpenAI is auditable per run.
-    const prompt = sanitizeImagePrompt(
-      await buildPortraitPrompt(cfg.anthropic.apiKey, input, cfg.anthropic.model),
+    //
+    // Bugfix: this call used to run with NO heartbeat wrapper at all, unlike
+    // the OpenAI call below. createMessageRaw() internally retries up to 4x
+    // at 45s each (~183s worst case) — with zero heartbeats sent during that
+    // window, Temporal's 90s heartbeatTimeout fires mid-retry, the activity
+    // gets marked heartbeat-timed-out and a NEW attempt is scheduled while
+    // the orphaned old attempt keeps running to its own ~183s completion in
+    // the background — the doubled-up "Activity failed" log pairs seen in
+    // production. Wrapping in withHeartbeat (same as the OpenAI call below)
+    // keeps Temporal informed for as long as this is genuinely still working.
+    const rawPrompt = await withHeartbeat('prompt_building', () =>
+      buildPortraitPrompt(cfg.anthropic.apiKey, input, cfg.anthropic.model),
     );
+    const prompt = sanitizeImagePrompt(rawPrompt);
     Context.current().heartbeat({ stage: 'prompt_built' });
     {
       const { error: pErr } = await db

@@ -30,7 +30,8 @@ import { Home, Palette, Images, LogOut, Loader2, LifeBuoy, BookOpen, Sparkles, L
 import { VantlyLogo } from '@/components/vantly-logo';
 import { createClient } from '@/lib/supabase/client';
 import { goToMarketingSite } from '@/lib/marketing';
-import { isAdminEmail } from '@/lib/admin-allowlist';
+import { isAdminEmailIn } from '@/lib/admin-allowlist';
+import { useVariables } from '@/components/variable-context';
 import { invokeFn } from '@/lib/supabase/fn-proxy';
 import { SupportModal } from '@/components/support-modal';
 
@@ -103,7 +104,8 @@ export default function DashboardDarkLayout({
     goToMarketingSite();
   }
 
-  const navItems = isAdminEmail(email)
+  const { adminEmails } = useVariables();
+  const navItems = isAdminEmailIn(email, adminEmails)
     ? [...NAV, { href: '/dashboard/admin', label: 'Admin', icon: ShieldCheck }]
     : [...NAV];
   const isActive = (href: string) => pathname === href || (href !== '/dashboard' && pathname.startsWith(href + '/'));
@@ -224,7 +226,7 @@ export default function DashboardDarkLayout({
             Workspace
           </p>
           <ul className="flex flex-col gap-1">
-            {(isAdminEmail(email) ? [...NAV, { href: '/dashboard/admin', label: 'Admin', icon: ShieldCheck }] : NAV).map((item) => {
+            {navItems.map((item) => {
               const active =
                 pathname === item.href ||
                 (item.href !== '/dashboard' && pathname.startsWith(item.href + '/'));

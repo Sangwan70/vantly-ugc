@@ -61,6 +61,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           environment={process.env.NODE_ENV ?? 'production'}
           sentryDsn={process.env.NEXT_PUBLIC_SENTRY_DSN ?? ''}
           posthogKey={process.env.NEXT_PUBLIC_POSTHOG_KEY ?? ''}
+          adminEmails={process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? ''}
         >
           {children}
         </VariableContextComponent>

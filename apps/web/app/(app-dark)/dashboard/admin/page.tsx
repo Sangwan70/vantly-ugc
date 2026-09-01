@@ -13,7 +13,8 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Loader2, Search, Coins, ExternalLink, ChevronDown, ChevronRight, ShieldAlert } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import { isAdminEmail } from '@/lib/admin-allowlist';
+import { isAdminEmailIn } from '@/lib/admin-allowlist';
+import { useVariables } from '@/components/variable-context';
 
 interface Job {
   id: string;
@@ -58,6 +59,7 @@ const CARD = { backgroundColor: '#14151F', border: '1px solid rgba(255,255,255,0
 const PLANS = ['starter', 'creator', 'pro_plus'];
 
 export default function AdminPage() {
+  const { adminEmails } = useVariables();
   const [authChecked, setAuthChecked] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [users, setUsers] = useState<AdminUser[] | null>(null);
@@ -71,10 +73,10 @@ export default function AdminPage() {
   useEffect(() => {
     (async () => {
       const { data: { user } } = await createClient().auth.getUser();
-      setIsAdmin(isAdminEmail(user?.email));
+      setIsAdmin(isAdminEmailIn(user?.email, adminEmails));
       setAuthChecked(true);
     })();
-  }, []);
+  }, [adminEmails]);
 
   const load = useCallback(async () => {
     try {

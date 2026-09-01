@@ -44,6 +44,14 @@ export interface VariableContextInterface {
   /** Optional analytics/monitoring DSNs — empty string disables them. */
   sentryDsn: string;
   posthogKey: string;
+  /**
+   * Comma-separated admin allowlist (NEXT_PUBLIC_ADMIN_EMAILS), for
+   * CLIENT-SIDE gating only (e.g. hiding/showing the Admin nav item, the
+   * /dashboard/admin page's own auth check) via `isAdminEmailIn()` from
+   * lib/admin-allowlist. The real security boundary is server-side
+   * (ADMIN_EMAILS, checked in every /api/admin/* route) — this is UX only.
+   */
+  adminEmails: string;
 }
 
 const EMPTY: VariableContextInterface = {
@@ -57,6 +65,7 @@ const EMPTY: VariableContextInterface = {
   environment: 'production',
   sentryDsn: '',
   posthogKey: '',
+  adminEmails: '',
 };
 
 const VariableContext = createContext<VariableContextInterface>(EMPTY);

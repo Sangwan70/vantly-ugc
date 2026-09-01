@@ -401,6 +401,9 @@ function FieldRow({ field, value, onChange }: { field: Field; value: unknown; on
       </div>
     );
   }
+  if (field.kind === 'character-picker') {
+    return <CharacterPickerField field={field} value={value} onChange={onChange} />;
+  }
   if (field.kind === 'image') {
     const dataUrl = typeof value === 'string' ? value : '';
     const onFile = (file: File | null) => {
@@ -445,3 +448,150 @@ function FieldRow({ field, value, onChange }: { field: Field; value: unknown; on
     </label>
   );
 }
+
+
+interface SavedCharacter {
+  id: string;
+  name: string | null;
+  character_sheet_url: string | null;
+  thumbnail_url: string | null;
+}
+
+interface StockActor {
+  id: string;
+  slug: string;
+  name: string;
+  portrait_url: string | null;
+}
+
+function CharacterPickerField({ field, value, onChange }: { field: Extract<Field, { kind: 'character-picker' }>; value: unknown; onChange: (v: unknown) => void }) {
+  const inputStyle: React.CSSProperties = { backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 10px', fontSize: 13, width: '100%' };
+  const [tab, setTab] = useState<'mine' | 'stock'>('mine');
+  const [characters, setCharacters] = useState<SavedCharacter[] | null>(null);
+  const [actors, setActors] = useState<StockActor[] | null>(null);
+  const [open, setOpen] = useState(false);
+  const current = typeof value === 'string' ? value : '';
+
+  useEffect(() => {
+    if (!open) return;
+    if (tab === 'mine' && characters === null) {
+      fetch('/api/dashboard/characters', { credentials: 'include' })
+        .then((r) => (r.ok ? r.json() : { characters: [] }))
+        .then((j) => setCharacters(j.characters ?? []))
+        .catch(() => setCharacters([]));
+    }
+    if (tab === 'stock' && actors === null) {
+      fetch('/api/actors', { credentials: 'include' })
+        .then((r) => (r.ok ? r.json() : { actors: [] }))
+        .then((j) => setActors(j.actors ?? []))
+        .catch(() => setActors([]));
+    }
+  }, [open, tab, characters, actors]);
+
+  const selectedLabel = (() => {
+    if (!current) return null;
+    const c = characters?.find((c) => c.character_sheet_url === current);
+    if (c) return c.name ?? 'Saved character';
+    const a = actors?.find((a) => a.portrait_url === current);
+    if (a) return a.name;
+    return null;
+  })();
+
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>{field.label}</label>
+
+      {current && (
+        <div className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ backgroundColor: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.25)' }}>
+          {(current.startsWith('http') && (current.includes('r2.dev') || current.includes('supabase'))) && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={current} alt="" style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover' }} />
+          )}
+          <span className="flex-1 truncate text-[12px]" style={{ color: '#E9E9F0' }}>{selectedLabel ?? current}</span>
+          <button type="button" onClick={() => onChange('')} className="text-[11px] underline" style={{ color: 'rgba(255,255,255,0.5)' }}>clear</button>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="self-start text-[12px] underline"
+        style={{ color: '#A78BFA' }}
+      >
+        {open ? 'hide picker' : current ? 'change character' : 'choose a saved character or stock actor'}
+      </button>
+
+      {open && (
+        <div className="flex flex-col gap-2 rounded-xl p-3" style={{ border: '1px solid rgba(255,255,255,0.08)', backgroundColor: '#0F1015' }}>
+          <div className="flex gap-1">
+            <button type="button" onClick={() => setTab('mine')} className="rounded-full px-3 py-1 text-[11px]" style={{ backgroundColor: tab === 'mine' ? '#A78BFA' : 'rgba(255,255,255,0.06)', color: tab === 'mine' ? '#0F1015' : 'rgba(255,255,255,0.6)' }}>My characters</button>
+            <button type="button" onClick={() => setTab('stock')} className="rounded-full px-3 py-1 text-[11px]" style={{ backgroundColor: tab === 'stock' ? '#A78BFA' : 'rgba(255,255,255,0.06)', color: tab === 'stock' ? '#0F1015' : 'rgba(255,255,255,0.6)' }}>Stock actors</button>
+          </div>
+
+          {tab === 'mine' && (
+            characters === null ? (
+              <div className="py-3 text-center text-[12px]" style={{ color: 'rgba(255,255,255,0.4)' }}>loading…</div>
+            ) : characters.length === 0 ? (
+              <div className="py-3 text-center text-[12px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                No saved characters yet — generate one, or use the photo upload above.
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+                {characters.filter((c) => c.character_sheet_url).map((c) => (
+                  <button
+                    type="button"
+                    key={c.id}
+                    onClick={() => { onChange(c.character_sheet_url); setOpen(false); }}
+                    className="flex flex-col items-center gap-1 rounded-lg p-1.5 transition-colors hover:opacity-80"
+                    style={{ border: current === c.character_sheet_url ? '1px solid #A78BFA' : '1px solid rgba(255,255,255,0.06)' }}
+                    title={c.name ?? undefined}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={c.thumbnail_url ?? c.character_sheet_url ?? ''} alt={c.name ?? 'character'} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: 6 }} />
+                    <span className="w-full truncate text-center text-[10px]" style={{ color: 'rgba(255,255,255,0.6)' }}>{c.name ?? 'Unnamed'}</span>
+                  </button>
+                ))}
+              </div>
+            )
+          )}
+
+          {tab === 'stock' && (
+            actors === null ? (
+              <div className="py-3 text-center text-[12px]" style={{ color: 'rgba(255,255,255,0.4)' }}>loading…</div>
+            ) : actors.length === 0 ? (
+              <div className="py-3 text-center text-[12px]" style={{ color: 'rgba(255,255,255,0.4)' }}>No stock actors available.</div>
+            ) : (
+              <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+                {actors.filter((a) => a.portrait_url).map((a) => (
+                  <button
+                    type="button"
+                    key={a.id}
+                    onClick={() => { onChange(a.portrait_url); setOpen(false); }}
+                    className="flex flex-col items-center gap-1 rounded-lg p-1.5 transition-colors hover:opacity-80"
+                    style={{ border: current === a.portrait_url ? '1px solid #A78BFA' : '1px solid rgba(255,255,255,0.06)' }}
+                    title={a.name}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={a.portrait_url ?? ''} alt={a.name} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: 6 }} />
+                    <span className="w-full truncate text-center text-[10px]" style={{ color: 'rgba(255,255,255,0.6)' }}>{a.name}</span>
+                  </button>
+                ))}
+              </div>
+            )
+          )}
+
+          <input
+            type="text"
+            value={current}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={field.placeholder}
+            style={inputStyle}
+          />
+        </div>
+      )}
+
+      {field.help && <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{field.help}</span>}
+    </div>
+  );
+}
+

@@ -13,7 +13,13 @@ export type Field =
   | { kind: 'boolean'; name: string; label: string; defaultValue?: boolean }
   // File drop-zone / picker → base64 data URL. Submitted under `name`
   // (e.g. product_image_base64); the API re-hosts it to R2.
-  | { kind: 'image'; name: string; label: string; help?: string };
+  | { kind: 'image'; name: string; label: string; help?: string }
+  // Visual grid of the caller's saved characters + the stock actor
+  // catalog. Selecting a tile fills `name` with a bare character_sheet_url
+  // (saved character) or portrait_url (stock actor) — both accepted as-is
+  // by resolveCharacterSheetUrl() on the API side. A plain text fallback
+  // stays available for pasting a char_... id or URL by hand.
+  | { kind: 'character-picker'; name: string; label: string; placeholder?: string; help?: string };
 
 export interface SkillForm {
   fields: Field[];
@@ -27,7 +33,7 @@ export const FORMS: Record<string, SkillForm> = {
       { kind: 'text', name: 'script', label: 'Script — what they say', placeholder: 'Okay this completely changed how I work — I plan my whole week in ten minutes now.', textarea: true, help: 'Any length — a line makes one clip, a monologue makes a multi-take video. Never trimmed.' },
       { kind: 'text', name: 'person', label: 'Person (describe in words)', placeholder: 'a friendly young woman, soft daylight', help: 'OR upload a photo / reuse a saved character below — at most one.' },
       { kind: 'image', name: 'image', label: '…or upload a photo of the person', help: 'The face is locked to it.' },
-      { kind: 'text', name: 'character', label: '…or reuse a saved character', placeholder: 'char_… or a character_sheet_url', help: 'Skips generating a new face.' },
+      { kind: 'character-picker', name: 'character', label: '…or reuse a saved character', placeholder: 'char_… or a character_sheet_url', help: 'Pick a saved character or stock actor, or paste an id/URL.' },
       { kind: 'text', name: 'name', label: 'Name / vibe hint (optional)', placeholder: 'Sophia, 28' },
       { kind: 'text', name: 'broll_url', label: 'B-roll video URL (optional)', placeholder: 'https://…mp4 — narrated overlay / review', help: 'The person narrates over this footage.' },
       { kind: 'text', name: 'scene_action', label: 'Silent clip (instead of a script)', placeholder: 'dancing freestyle, smiling at camera', help: 'Use instead of a script for a non-speech clip. Needs a saved character.' },

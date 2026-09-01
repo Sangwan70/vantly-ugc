@@ -114,19 +114,92 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
       (s: number, c: any) => s + Number(c?.credits_deducted ?? 0),
       0,
     );
-    items.push({
-      id: row.id as string,
-      source: 'vnext_skill',
-      primitive: (row.skill_slug as string) ?? null,
-      status: (row.status as string) ?? 'unknown',
-      created_at: row.created_at as string,
-      finished_at: (row.finished_at as string | null) ?? null,
-      media_url: out.video_url ?? out.character_sheet_url ?? out.portrait_url ?? null,
-      thumbnail_url: out.character_sheet_url ?? out.portrait_url ?? null,
-      duration_seconds: (out.duration_seconds as number | null) ?? null,
-      prompt: null,
-      credits_deducted: totalCredits,
-    });
+    const status = (row.status as string) ?? 'unknown';
+    const createdAt = row.created_at as string;
+    const finishedAt = (row.finished_at as string | null) ?? null;
+    const durationSeconds = (out.duration_seconds as number | null) ?? null;
+
+    // Bugfix: this used to push ONE item per skill run, picking a single
+    // media_url via video_url ?? character_sheet_url ?? portrait_url — so a
+    // finished make_ugc_video run (which sets all three on final_output,
+    // see workflows/make-ugc-video.ts) only ever surfaced its video. The
+    // portrait (and character sheet) images were generated, uploaded to R2,
+    // and recorded correctly, but never appeared anywhere in the gallery
+    // feed at all — confirmed live: a succeeded run's dashboard "Images"
+    // tab stayed empty even though portrait.png was reachable directly at
+    // its R2 URL. Now emits one item per real artifact URL, same as the
+    // standalone primitive_runs branch below already does — the client's
+    // own HIDDEN_OPS list (apps/web .../gallery/page.tsx) is what decides
+    // character-sheet visibility, same as for a standalone character-sheet
+    // run, so this doesn't change what's shown for that one, only restores
+    // the portrait and lets the video keep its own row.
+    let emitted = false;
+    if (out.portrait_url) {
+      items.push({
+        id: `${row.id}-portrait`,
+        source: 'vnext_skill',
+        primitive: 'portrait_gpt2',
+        status,
+        created_at: createdAt,
+        finished_at: finishedAt,
+        media_url: out.portrait_url,
+        thumbnail_url: out.portrait_url,
+        duration_seconds: null,
+        prompt: null,
+        credits_deducted: 0,
+      });
+      emitted = true;
+    }
+    if (out.character_sheet_url) {
+      items.push({
+        id: `${row.id}-character-sheet`,
+        source: 'vnext_skill',
+        primitive: 'character_sheet_gpt2',
+        status,
+        created_at: createdAt,
+        finished_at: finishedAt,
+        media_url: out.character_sheet_url,
+        thumbnail_url: out.character_sheet_url,
+        duration_seconds: null,
+        prompt: null,
+        credits_deducted: 0,
+      });
+      emitted = true;
+    }
+    if (out.video_url) {
+      items.push({
+        id: emitted ? `${row.id}-video` : (row.id as string),
+        source: 'vnext_skill',
+        primitive: (row.skill_slug as string) ?? null,
+        status,
+        created_at: createdAt,
+        finished_at: finishedAt,
+        media_url: out.video_url,
+        thumbnail_url: out.character_sheet_url ?? out.portrait_url ?? null,
+        duration_seconds: durationSeconds,
+        prompt: null,
+        credits_deducted: totalCredits,
+      });
+      emitted = true;
+    }
+    // A skill run with no artifact URLs yet (still running, or failed
+    // before producing anything) still gets one placeholder row so it
+    // shows up as in-progress/failed rather than silently vanishing.
+    if (!emitted) {
+      items.push({
+        id: row.id as string,
+        source: 'vnext_skill',
+        primitive: (row.skill_slug as string) ?? null,
+        status,
+        created_at: createdAt,
+        finished_at: finishedAt,
+        media_url: null,
+        thumbnail_url: null,
+        duration_seconds: durationSeconds,
+        prompt: null,
+        credits_deducted: totalCredits,
+      });
+    }
   }
 
   for (const row of primitiveRuns ?? []) {

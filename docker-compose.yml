@@ -411,13 +411,20 @@ services:
       # The worker treats this as required and exits without it.
       TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
       TEMPORAL_TLS: "false"
-      S3_ENDPOINT: http://minio:9000
-      S3_FORCE_PATH_STYLE: "true"
-      S3_REGION: us-east-1
+      # Bugfix: S3_ENDPOINT/R2_PUBLIC_URL used to be hardcoded to the local
+      # MinIO container here, which silently discarded whatever real
+      # R2_PUBLIC_URL .env.prod set — every portrait/video URL this service
+      # returns resolved to "http://localhost:9000/...", which only ever
+      # worked from inside the VPS itself (never from a user's browser: the
+      # image 404s, and even if it resolved, the page is HTTPS so the
+      # mixed-content/CSP policy blocks a plain-http image outright). Same
+      # bug class already fixed for brand-extractor below — mirrored here.
+      # Now falls through to the env file's real Cloudflare R2 endpoint/URL,
+      # same as brand-extractor already uses successfully.
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-minioadmin}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-minioadmin}
       R2_BUCKET: ${R2_BUCKET:-vantly-ugc}
-      R2_PUBLIC_URL: http://localhost:9000/${R2_BUCKET:-vantly-ugc}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL:-https://pub-16e2ed8f6be84691845e91436920ce0a.r2.dev}
     ports: ["3001:3001"]
 
   # The dashboard. There is no public marketing site in this distribution —
@@ -532,13 +539,12 @@ services:
       TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
       TEMPORAL_TLS: "false"
       API_V2_URL: http://api-v2:3001
-      S3_ENDPOINT: http://minio:9000
-      S3_FORCE_PATH_STYLE: "true"
-      S3_REGION: us-east-1
+      # Bugfix: see the matching comment on api-v2 above — same hardcoded
+      # MinIO S3_ENDPOINT/R2_PUBLIC_URL override, same fix.
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-minioadmin}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-minioadmin}
       R2_BUCKET: ${R2_BUCKET:-vantly-ugc}
-      R2_PUBLIC_URL: http://localhost:9000/${R2_BUCKET:-vantly-ugc}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL:-https://pub-16e2ed8f6be84691845e91436920ce0a.r2.dev}
 
   media-worker-v2:
     build:
@@ -552,13 +558,12 @@ services:
       BILLING_MODE: disabled
       SUPABASE_URL: http://gateway:3000
       API_V2_URL: http://api-v2:3001
-      S3_ENDPOINT: http://minio:9000
-      S3_FORCE_PATH_STYLE: "true"
-      S3_REGION: us-east-1
+      # Bugfix: see the matching comment on api-v2 above — same hardcoded
+      # MinIO S3_ENDPOINT/R2_PUBLIC_URL override, same fix.
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-minioadmin}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-minioadmin}
       R2_BUCKET: ${R2_BUCKET:-vantly-ugc}
-      R2_PUBLIC_URL: http://localhost:9000/${R2_BUCKET:-vantly-ugc}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL:-https://pub-16e2ed8f6be84691845e91436920ce0a.r2.dev}
     # Host port overridable via MEDIA_WORKER_PORT (default 3010).
     ports: ["${MEDIA_WORKER_PORT:-3010}:3000"]
 

@@ -1,6 +1,39 @@
 // Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 import Anthropic from '@anthropic-ai/sdk';
+import { Agent, fetch as undiciFetch } from 'undici';
+
+// Same bug class already root-caused and fixed for OpenAI (see client/openai.ts):
+// Node's global fetch pools keep-alive sockets via undici's default Agent. On a
+// long-running worker process, api.anthropic.com (or an intermediary) silently
+// closes idle pooled sockets; the next request reuses one, hangs, and only dies
+// when AbortSignal.timeout() fires. createMessageRaw()'s 4-attempt retry loop
+// then burns through 4 more stale/reused sockets from the SAME pool, failing
+// identically every time — 4 x 45s + backoff sleeps = ~183.6s, matching the
+// observed ~183.7s make_ugc failures exactly. A one-off isolated test (e.g. a
+// fresh `docker compose exec` process) never reproduces this because it starts
+// with an empty connection pool.
+//
+// Fix, mirrored from openai.ts: one shared Agent with keepAliveTimeout 1ms so a
+// socket is never idle long enough to be reused — forcing a fresh connection
+// per request without leaking sockets/handles over the worker's lifetime.
+const _anthropicAgent = new Agent({
+  keepAliveTimeout: 1,
+  keepAliveMaxTimeout: 1,
+  headersTimeout: 45_000,
+  bodyTimeout: 45_000,
+  connections: 64,
+});
+
+function anthropicFetch(
+  input: Parameters<typeof fetch>[0],
+  init?: Parameters<typeof fetch>[1],
+): Promise<Response> {
+  return undiciFetch(input as Parameters<typeof undiciFetch>[0], {
+    ...(init as Parameters<typeof undiciFetch>[1]),
+    dispatcher: _anthropicAgent,
+  } as Parameters<typeof undiciFetch>[1]) as unknown as Promise<Response>;
+}
 
 let _client: Anthropic | null = null;
 
@@ -71,7 +104,7 @@ async function createMessageRaw(
   let lastErr: unknown;
   for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
-      const resp = await fetch(url, {
+      const resp = await anthropicFetch(url, {
         method: 'POST',
         headers,
         // temperature:0 → deterministic prompt builds, so successive takes of the

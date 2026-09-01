@@ -388,6 +388,24 @@ services:
       PORT: 3001
       BILLING_MODE: disabled
       SUPABASE_URL: http://gateway:3000
+      # media-worker-v2 depends_on api-v2 (below), so api-v2 can't also
+      # depend_on media-worker-v2 without a circular dependency - this is
+      # a plain env var pointing at it, not a startup-order dependency.
+      # routes/generate.ts and routes/character-sheets.ts dispatch every
+      # generation job here over plain HTTP whenever USE_DURABLE_QUEUE is
+      # off (the default — see queue.ts). Without this set, that code falls
+      # back to its own default of http://localhost:3002, which inside
+      # THIS container means api-v2 itself, not the separate
+      # media-worker-v2 container — so every dispatch silently 
+      # connection-refuses. The failure is invisible from the outside: the
+      # dispatch fetch() is fire-and-forget (only .catch()'d into a log
+      # line), so the API had already returned 201 "submitted" with a job
+      # id before the broken dispatch even ran. Confirmed live: two
+      # make_ugc runs got job ids back but media-worker-v2 logged zero
+      # incoming requests for either. media-worker-v2 listens on container
+      # port 3000 (its `PORT: 3000` below), reachable by its compose
+      # service name on the shared network.
+      WORKER_V2_URL: http://media-worker-v2:3000
       TEMPORAL_ADDRESS: temporal:7233
       # The bundled Temporal auto-setup creates exactly one namespace, "default".
       # The worker treats this as required and exits without it.

@@ -47,6 +47,7 @@ interface CreditsResp {
 export default function DashboardHomePage() {
   const [email, setEmail] = useState<string | null>(null);
   const [jobs, setJobs] = useState<GenerationJob[] | null>(null);
+  const [runCount, setRunCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [planTier, setPlanTier] = useState<string | null>(null);
   const [playing, setPlaying] = useState<VideoModalSubject | null>(null);
@@ -92,8 +93,14 @@ export default function DashboardHomePage() {
               duration_seconds: number | null;
               prompt: string | null;
             }>;
+            total?: number;
           };
           if (cancelled) return;
+          // Every run the user has triggered (any status, any output type —
+          // matches what /dashboard/jobs counts). Falls back to the page's
+          // own item count if an older api-v2 hasn't been redeployed with
+          // `total` yet, so this never regresses to "No runs yet" outright.
+          setRunCount(json.total ?? json.items?.length ?? 0);
           // Show recent generations of ANY type — videos AND images
           // (portraits/character sheets). Filtering to videos-only made the
           // home read "No generations yet" for users whose recent work is all
@@ -121,6 +128,7 @@ export default function DashboardHomePage() {
         if (!cancelled) {
           setError((err as Error).message);
           setJobs([]);
+          setRunCount(0);
         }
       }
     })();
@@ -174,10 +182,10 @@ export default function DashboardHomePage() {
       <section className="relative mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
         <SkillsMcpCard />
         <StatCard
-          label="Automations"
-          value="No runs yet"
-          valueMuted
-          cta={{ label: 'Run your first automation', href: '/jobs' }}
+          label="Runs"
+          value={runCount === null ? '…' : runCount > 0 ? `${runCount.toLocaleString()} run${runCount === 1 ? '' : 's'}` : 'No runs yet'}
+          valueMuted={!runCount}
+          cta={{ label: runCount ? 'View all runs' : 'Run your first generation', href: '/dashboard/jobs' }}
         />
         <StatCard
           label="Your plan"

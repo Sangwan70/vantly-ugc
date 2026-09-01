@@ -254,5 +254,5 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
   filtered.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
   const total = filtered.length;
   const page = filtered.slice(offset, offset + limit);
-  res.status(200).json({ items: page, offset, limit, returned: page.length, has_more: total > offset + limit });
+  res.status(200).json({ items: page, offset, limit, returned: page.length, total, has_more: total > offset + limit });
 }

@@ -14,6 +14,14 @@ import { supabase } from '../../server.js';
 
 interface GalleryItem {
   id: string;
+  // Real skill_runs/primitive_runs/generation_jobs row id — always a plain
+  // UUID, safe to pass to /dashboard/skills/runs/:id or /v1/*/runs/:id. NOT
+  // the same as `id` above for a composed skill run's portrait/character
+  // sheet/video sub-items: those get a suffixed, non-UUID `id` (e.g.
+  // "<uuid>-portrait") so each artifact renders as its own gallery row, but
+  // they all still share ONE real run_id (the parent skill_runs.id) — that's
+  // what "Details" must link to, or the lookup 400s on the fake id.
+  run_id: string;
   source: 'legacy' | 'vnext_primitive' | 'vnext_skill';
   primitive: string | null;
   status: string;
@@ -95,6 +103,7 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
   for (const row of legacy ?? []) {
     items.push({
       id: row.id as string,
+      run_id: row.id as string,
       source: 'legacy',
       primitive: (row.operation as string | null) ?? null,
       status: (row.status as string) ?? 'unknown',
@@ -148,6 +157,7 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
     if (out.portrait_url) {
       items.push({
         id: `${row.id}-portrait`,
+        run_id: row.id as string,
         source: 'vnext_skill',
         primitive: 'portrait_gpt2',
         status,
@@ -164,6 +174,7 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
     if (out.character_sheet_url) {
       items.push({
         id: `${row.id}-character-sheet`,
+        run_id: row.id as string,
         source: 'vnext_skill',
         primitive: 'character_sheet_gpt2',
         status,
@@ -180,6 +191,7 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
     if (out.video_url) {
       items.push({
         id: emitted ? `${row.id}-video` : (row.id as string),
+        run_id: row.id as string,
         source: 'vnext_skill',
         primitive: (row.skill_slug as string) ?? null,
         status,
@@ -199,6 +211,7 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
     if (!emitted) {
       items.push({
         id: row.id as string,
+        run_id: row.id as string,
         source: 'vnext_skill',
         primitive: (row.skill_slug as string) ?? null,
         status,
@@ -218,6 +231,7 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
     const main = artifacts[0];
     items.push({
       id: row.id as string,
+      run_id: row.id as string,
       source: 'vnext_primitive',
       primitive: (row.primitive_id as string) ?? null,
       status: (row.status as string) ?? 'unknown',

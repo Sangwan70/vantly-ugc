@@ -18,6 +18,13 @@ import { Loader2, ExternalLink, ArrowRight } from 'lucide-react';
 
 interface JobItem {
   id: string;
+  // Real skill_runs/primitive_runs/generation_jobs id — what "Details" must
+  // link to. NOT the same as `id` for a composed skill run's portrait/
+  // character-sheet/video rows: those get a suffixed display-only `id`
+  // (e.g. "<uuid>-portrait") so each artifact gets its own row, but they
+  // all share one real run_id (see me-gallery.ts) — linking with `id`
+  // instead sends a non-UUID string to the run-timeline lookup, which 400s.
+  run_id: string;
   source: 'legacy' | 'vnext_primitive' | 'vnext_skill';
   primitive: string | null;
   status: string;
@@ -171,7 +178,7 @@ export default function JobsPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <Link href={`/dashboard/skills/runs/${encodeURIComponent(j.id)}`} className="inline-flex items-center gap-1 text-xs transition-colors hover:text-white" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                        <Link href={`/dashboard/skills/runs/${encodeURIComponent(j.run_id)}${j.source === 'vnext_skill' ? '?composed=1' : ''}`} className="inline-flex items-center gap-1 text-xs transition-colors hover:text-white" style={{ color: 'rgba(255,255,255,0.55)' }}>
                           Details <ArrowRight className="h-3.5 w-3.5" />
                         </Link>
                       </td>

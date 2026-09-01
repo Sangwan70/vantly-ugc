@@ -128,6 +128,10 @@ function Markdown({ text }: { text: string }) {
 }
 
 const TERMINAL = new Set(['succeeded', 'completed', 'success', 'failed', 'canceled', 'cancelled']);
+// Cap on the composer's auto-grow height (px) — generous enough that the
+// full-length sample prompts (lib/sample-prompts.ts) never need an internal
+// scrollbar, while still bounding a pathologically long paste.
+const COMPOSER_MAX_HEIGHT = 420;
 const FAILSTATES = new Set(['failed', 'canceled', 'cancelled']);
 const DONE = new Set(['succeeded', 'completed', 'success']);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -229,6 +233,17 @@ export default function AgentPage() {
     const el = e.currentTarget;
     setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 48);
   }
+
+  // Auto-grow the composer to fit whatever's typed/pasted — a long sample
+  // prompt (see lib/sample-prompts.ts) used to need an internal scrollbar
+  // inside a fixed ~2-row box before you could read the whole thing.
+  // Capped so a genuinely huge paste doesn't take over the screen.
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = `${Math.min(ta.scrollHeight, COMPOSER_MAX_HEIGHT)}px`;
+  }, [input]);
 
   // chatId is the source of truth for which conversation we're writing to; the
   // ref lets async loop steps read it without a stale closure.
@@ -865,8 +880,8 @@ export default function AgentPage() {
           rows={empty ? 2 : 1}
           placeholder={pendingAsk ? 'Or reply directly…' : 'Describe the video you want to create…'}
           disabled={busy && !pendingAsk}
-          className="max-h-40 w-full resize-none bg-transparent px-1 text-[15px] outline-none"
-          style={{ color: '#E9E9F0' }}
+          className="w-full resize-none overflow-y-auto bg-transparent px-1 text-[15px] outline-none"
+          style={{ color: '#E9E9F0', maxHeight: COMPOSER_MAX_HEIGHT }}
         />
         <div className="mt-2 flex items-center justify-between">
           <>
@@ -1126,8 +1141,8 @@ export default function AgentPage() {
           <Sparkles className="h-7 w-7" style={{ color: '#A78BFA' }} />
           <h1 className="text-3xl" style={{ color: '#E9E9F0', letterSpacing: '-0.02em' }}>What should we create?</h1>
         </div>
-        <div className="w-full max-w-2xl">{composer}</div>
-        <div className="mt-4 flex w-full max-w-2xl flex-wrap justify-center gap-2">
+        <div className="w-full max-w-3xl">{composer}</div>
+        <div className="mt-4 flex w-full max-w-3xl flex-wrap justify-center gap-2">
           {SUGGESTIONS.map((s) => (
             <button key={s.label} type="button" onClick={() => setInput(s.prompt)} className="rounded-full px-3.5 py-2 text-[13px]" style={{ background: '#14151F', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.75)' }}>
               {s.label}

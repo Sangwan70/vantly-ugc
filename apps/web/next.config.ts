@@ -52,6 +52,26 @@ const nextConfig: NextConfig = {
     remotePatterns: imageHosts(),
     formats: ['image/avif', 'image/webp'],
   },
+  // Legacy pre-redesign pages that read stale/legacy-only data sources
+  // (generation_jobs directly, via the Supabase client) rather than the
+  // merged /v1/me/gallery feed the current dashboard uses. Since every
+  // generation now goes through the vNext skill_runs/primitive_runs
+  // pipeline, these old pages render permanently empty for any account
+  // whose work all happened post-migration — confirmed live: a finished
+  // make_ugc_video run was completely invisible on /gallery even though
+  // it showed up correctly on /dashboard/gallery. Their (dashboard)
+  // route-group counterparts (/actors, /integrations/vantly, etc.) are
+  // still the live, un-migrated implementation for those features and are
+  // deliberately NOT redirected here — only gallery/jobs have an
+  // (app-dark) replacement so far. Not `permanent: true` (308) so this
+  // stays easy to adjust while the old→new migration is still in progress;
+  // switch to permanent once the legacy pages are actually deleted.
+  async redirects() {
+    return [
+      { source: '/gallery', destination: '/dashboard/gallery', permanent: false },
+      { source: '/jobs', destination: '/dashboard/jobs', permanent: false },
+    ];
+  },
 };
 
 // NOTE: the hosted site's marketing redirects (/ai-ugc-video-generator, /blog/*,

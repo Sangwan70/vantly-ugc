@@ -58,6 +58,33 @@ export function isMcpOAuthConfigured(): boolean {
 function supabaseFetch(input: string | URL, init?: RequestInit): Promise<Response> {
   const headers = new Headers(init?.headers);
   if (!headers.has('apikey')) headers.set('apikey', SUPABASE_ANON_KEY);
+
+  // Dynamic client registration (ProxyOAuthServerProvider.registerClient,
+  // in the SDK, forwards the connector's raw registration JSON verbatim to
+  // Supabase's /oauth/clients/register) — force token_endpoint_auth_method
+  // to "none" here. This surface exists ONLY for public connector clients
+  // (Claude Desktop, claude.ai, Cursor, ...) doing authorization-code+PKCE;
+  // none of them can hold a client secret securely, and none of them send
+  // one back at the /token step. When a client's registration request
+  // omits this field (common — many public/native OAuth clients assume it
+  // defaults to "none" per RFC 8252 for a PKCE-only public client),
+  // Supabase's own default is "client_secret_post" instead, which the
+  // client then never satisfies. Confirmed live: GoTrue registered a
+  // connector client as client_secret_post, then rejected its /token
+  // request with "invalid authentication method: client is registered for
+  // 'client_secret_post' but 'none' was used" — the whole reason Claude
+  // Desktop's connector setup failed with "Authorization ... failed".
+  const url = typeof input === 'string' ? input : input.toString();
+  if (init?.method === 'POST' && url.endsWith('/oauth/clients/register') && typeof init.body === 'string') {
+    try {
+      const client = JSON.parse(init.body) as Record<string, unknown>;
+      client.token_endpoint_auth_method = 'none';
+      init = { ...init, body: JSON.stringify(client) };
+    } catch (err) {
+      console.error('[mcp-oauth] failed to patch registration body:', err instanceof Error ? err.message : String(err));
+    }
+  }
+
   return fetch(input, { ...init, headers });
 }
 

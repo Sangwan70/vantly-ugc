@@ -65,7 +65,7 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
   const { data: skillRuns, error: skillErr } = await supabase
     .from('skill_runs')
     .select(
-      'id, skill_slug, skill_version, status, current_step, started_at, finished_at, created_at, final_output, credits_deducted_total:primitive_runs(credits_deducted)',
+      'id, skill_slug, skill_version, status, current_step, started_at, finished_at, created_at, final_output, input, credits_deducted_total:primitive_runs(credits_deducted)',
     )
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
@@ -110,6 +110,17 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
 
   for (const row of skillRuns ?? []) {
     const out = (row.final_output as any) || {};
+    const inp = (row.input as any) || {};
+    // What the caller actually asked for, in priority order: the spoken
+    // script (make_ugc / make_ugc_video), then a silent scene_action
+    // clip's description, then the freeform person description — this is
+    // what /dashboard/social auto-fills as a starting caption so publishing
+    // doesn't require retyping what the video already says.
+    const promptText: string | null =
+      (typeof inp.script === 'string' && inp.script.trim()) ? inp.script.trim() :
+      (typeof inp.scene_action === 'string' && inp.scene_action.trim()) ? inp.scene_action.trim() :
+      (typeof inp.person === 'string' && inp.person.trim()) ? inp.person.trim() :
+      null;
     const totalCredits = ((row.credits_deducted_total as any) || []).reduce(
       (s: number, c: any) => s + Number(c?.credits_deducted ?? 0),
       0,
@@ -177,7 +188,7 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
         media_url: out.video_url,
         thumbnail_url: out.character_sheet_url ?? out.portrait_url ?? null,
         duration_seconds: durationSeconds,
-        prompt: null,
+        prompt: promptText,
         credits_deducted: totalCredits,
       });
       emitted = true;

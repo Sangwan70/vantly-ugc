@@ -22,6 +22,8 @@ import Link from 'next/link';
 import { Loader2, Send, Square, Sparkles, Wrench, Check, AlertCircle, ArrowDown, Plus, Trash2, X, RotateCcw, PanelRight, ListChecks, Users, Images, CornerDownLeft, Pencil, MessageSquarePlus, History, Pin, PinOff, Archive, Search, MoreHorizontal, Folder, FolderPlus, ChevronRight, ChevronDown } from 'lucide-react';
 import { invokeFn } from '@/lib/supabase/fn-proxy';
 
+import { SAMPLE_PROMPTS } from '@/lib/sample-prompts';
+
 type Block =
   | { type: 'text'; text: string }
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
@@ -161,13 +163,12 @@ function rebuildToolRuns(msgs: Msg[]): Record<string, ToolRun> {
   return tr;
 }
 
-// Open INTENTS, not finished prompts. Tapping a chip only fills the composer.
-const SUGGESTIONS: { label: string; prompt: string }[] = [
-  { label: '🗣️ Talking-head UGC', prompt: "I want to make a talking-head UGC video — " },
-  { label: '🛍️ Product review', prompt: "I want to make a product review video — " },
-  { label: '🎉 Hype clip (5s)', prompt: "I want a 5-second hype clip — " },
-  { label: '✨ New character', prompt: "I want to create a new character — " },
-];
+// Full, ready-to-edit example prompts (shared with /dashboard/docs) — not
+// just an opening line. Tapping a chip fills the composer with a complete
+// request the user can send as-is or tweak before sending. Only the first
+// four are shown here (kept short so the empty-state doesn't get crowded);
+// the rest live in the docs page's full reference.
+const SUGGESTIONS = SAMPLE_PROMPTS.slice(0, 4);
 
 export default function AgentPage() {
   const [messages, setMessages] = useState<Msg[]>([]);

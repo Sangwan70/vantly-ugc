@@ -19,6 +19,16 @@ import { NetworkLogo, PoweredByVantly } from '@/components/brand-icons';
 
 interface Provider { name: string; identifier: string; toolTip?: string }
 interface Channel { id: string; name: string; provider: string; profile?: string | null }
+interface GalleryVideo {
+  id: string;
+  media_url: string;
+  thumbnail_url: string | null;
+  created_at: string;
+  primitive: string | null;
+  prompt: string | null;
+}
+
+const VIDEO_RE = /\.(mp4|webm|mov)(\?|$|#)/i;
 
 const PRETTY: Record<string, string> = {
   tiktok: 'TikTok',
@@ -36,8 +46,12 @@ export default function SocialPage() {
   const [refreshing, setRefreshing] = useState(false);
 
   // publish form
+  const [videos, setVideos] = useState<GalleryVideo[] | null>(null);
+  const [selectedVideoId, setSelectedVideoId] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
+  const [manualUrl, setManualUrl] = useState(false);
   const [caption, setCaption] = useState('');
+  const [captionTouched, setCaptionTouched] = useState(false);
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [publishMsg, setPublishMsg] = useState<string | null>(null);
 
@@ -68,7 +82,36 @@ export default function SocialPage() {
       } catch { /* ignore */ }
     })();
     void loadChannels();
+    (async () => {
+      try {
+        const r = await fetch('/api/v1/me/gallery?limit=100', { credentials: 'include' });
+        if (!r.ok) { setVideos([]); return; }
+        const j = (await r.json()) as { items?: Array<Record<string, unknown>> };
+        const vids = (j.items ?? [])
+          .filter((it) => it.status === 'succeeded' && typeof it.media_url === 'string' && VIDEO_RE.test(it.media_url as string))
+          .map((it) => ({
+            id: it.id as string,
+            media_url: it.media_url as string,
+            thumbnail_url: (it.thumbnail_url as string | null) ?? null,
+            created_at: it.created_at as string,
+            primitive: (it.primitive as string | null) ?? null,
+            prompt: (it.prompt as string | null) ?? null,
+          }));
+        setVideos(vids);
+      } catch { setVideos([]); }
+    })();
   }, [loadChannels]);
+
+  // Picking a video from the dropdown fills the URL and, unless the user has
+  // already typed their own caption, prefills one from the script/prompt it
+  // was generated with — so publishing rarely means retyping the caption.
+  const pickVideo = (id: string) => {
+    setSelectedVideoId(id);
+    const v = (videos ?? []).find((x) => x.id === id);
+    if (!v) return;
+    setVideoUrl(v.media_url);
+    if (!captionTouched && v.prompt) setCaption(v.prompt);
+  };
 
   async function connect(provider: string) {
     setBusy(provider); setError(null);
@@ -194,9 +237,50 @@ export default function SocialPage() {
       {/* Publish */}
       <h2 className="mt-8 text-sm font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.55)' }}>Publish a video</h2>
       <div className="mt-3 flex flex-col gap-3 rounded-2xl p-4" style={{ background: '#14151F', border: '1px solid rgba(255,255,255,0.06)' }}>
-        <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="Video URL (R2-hosted — from your Gallery)"
-          className="h-10 rounded-xl px-3 text-sm outline-none" style={{ background: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }} />
-        <textarea value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Caption" rows={2}
+        {!manualUrl ? (
+          <div className="flex flex-col gap-2">
+            <select
+              value={selectedVideoId}
+              onChange={(e) => pickVideo(e.target.value)}
+              disabled={videos === null}
+              className="h-10 rounded-xl px-3 text-sm outline-none disabled:opacity-60"
+              style={{ background: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }}
+            >
+              <option value="">
+                {videos === null ? 'Loading your videos…' : videos.length === 0 ? 'No generated videos yet' : 'Choose a generated video…'}
+              </option>
+              {(videos ?? []).map((v) => {
+                const date = new Date(v.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                const label = v.prompt ? (v.prompt.length > 60 ? v.prompt.slice(0, 60) + '…' : v.prompt) : (v.primitive ?? 'video');
+                return <option key={v.id} value={v.id}>{date} · {label}</option>;
+              })}
+            </select>
+            {selectedVideoId && videoUrl && (
+              <div className="flex items-center gap-2.5 rounded-lg px-2.5 py-2" style={{ background: '#0F1015', border: '1px solid rgba(255,255,255,0.06)' }}>
+                {(() => {
+                  const v = (videos ?? []).find((x) => x.id === selectedVideoId);
+                  return v?.thumbnail_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={v.thumbnail_url} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover' }} />
+                  ) : null;
+                })()}
+                <span className="min-w-0 flex-1 truncate text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>{videoUrl}</span>
+              </div>
+            )}
+            <button type="button" onClick={() => { setManualUrl(true); setSelectedVideoId(''); }} className="self-start text-[11px] underline" style={{ color: 'rgba(255,255,255,0.45)' }}>
+              or paste a video URL instead
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1">
+            <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="Video URL (R2-hosted — from your Gallery)"
+              className="h-10 rounded-xl px-3 text-sm outline-none" style={{ background: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }} />
+            <button type="button" onClick={() => { setManualUrl(false); setVideoUrl(''); }} className="self-start text-[11px] underline" style={{ color: 'rgba(255,255,255,0.45)' }}>
+              choose from my generated videos instead
+            </button>
+          </div>
+        )}
+        <textarea value={caption} onChange={(e) => { setCaption(e.target.value); setCaptionTouched(true); }} placeholder="Caption — auto-filled from the video's script when you pick one above" rows={2}
           className="resize-none rounded-xl px-3 py-2 text-sm outline-none" style={{ background: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }} />
         <div className="flex flex-wrap gap-3">
           {(channels ?? []).map((c) => (

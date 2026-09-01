@@ -43,7 +43,18 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 const PUBLIC_ORIGIN = (process.env.PUBLIC_API_ORIGIN ?? 'https://api.vantly-ugc.com').replace(/\/+$/, '');
 
 /** Scopes we ask Supabase for. Kept minimal — we only need identity. */
-const SCOPES = ['openid', 'email', 'profile'];
+// Deliberately NOT 'openid' — requesting it makes Supabase's OAuth server
+// try to also issue an OIDC ID token, and ID tokens must be verifiable by
+// the client via a public key, so Supabase refuses to sign one with our
+// shared-secret HS256 JWT config ("HS256 is not supported for ID token
+// signing", a hard 500 on /oauth/token — confirmed live, this is what
+// broke the Claude Desktop connector after the auth-method fix above).
+// We never decode an id_token anywhere in this codebase anyway — identity
+// comes from calling Supabase's /user endpoint with the bearer access
+// token (verifyAccessToken below) — so dropping 'openid' avoids ID token
+// issuance entirely rather than standing up asymmetric JWT signing keys
+// just to satisfy a token type nothing here reads.
+const SCOPES = ['email', 'profile'];
 
 /** True when the connector OAuth surface can be mounted at all. */
 export function isMcpOAuthConfigured(): boolean {

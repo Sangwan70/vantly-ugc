@@ -35,6 +35,16 @@ type Block =
 interface Msg { role: 'user' | 'assistant'; content: string | Block[]; cmid?: string; skillRunId?: string | null; runKind?: 'skill' | 'primitive' | null }
 interface ChatSummary { id: string; title: string | null; status: string; pinned: boolean; message_count: number; last_message_at: string; project_id?: string | null }
 interface Project { id: string; name: string; emoji?: string | null; instructions?: string | null }
+// Minimal shape of the brand kit snapshot (see /dashboard/brand-kit and
+// /api/onboarding/brand-extract) — just the fields the project-context
+// importer turns into pinned-context text.
+interface BrandSnapshot {
+  url: string;
+  title: string | null;
+  description: string | null;
+  brand_name?: string | null;
+  palette?: string[];
+}
 interface SavedCharacter { id: string; name: string; character_sheet_url?: string | null; thumbnail_url?: string | null }
 interface StepArtifact { url?: string; kind?: string; mime?: string }
 interface StepInfo { primitive_run_id: string; primitive: string; status: string; artifacts?: StepArtifact[]; error?: { message?: string } | null }
@@ -184,6 +194,8 @@ export default function AgentPage() {
   const [projectMenuFor, setProjectMenuFor] = useState<string | null>(null);
   const [renamingProjectId, setRenamingProjectId] = useState<string | null>(null);
   const [editingProject, setEditingProject] = useState<Project | null>(null); // context editor modal
+  const [brandImportBusy, setBrandImportBusy] = useState(false);
+  const [brandImportMsg, setBrandImportMsg] = useState<string | null>(null);
   const [moveMode, setMoveMode] = useState(false); // chat … menu showing the project picker
   const [chatQuery, setChatQuery] = useState('');
   const [menuFor, setMenuFor] = useState<string | null>(null);
@@ -715,6 +727,44 @@ export default function AgentPage() {
     } catch { /* ignore */ }
     void fetchChats();
   }
+
+  // Formats the extracted brand kit (logo/palette/messaging — see
+  // /dashboard/brand-kit) as pinned-context text and drops it into the
+  // project-context textarea. Appends rather than replaces, so importing
+  // doesn't clobber notes the user already typed in.
+  function formatBrandContext(b: BrandSnapshot): string {
+    const hostname = (() => { try { return new URL(b.url).hostname.replace(/^www\./, ''); } catch { return b.url; } })();
+    const name = b.brand_name || b.title || hostname;
+    const lines = [`Brand: ${name} (${b.url})`];
+    if (b.description) lines.push(`Description: ${b.description}`);
+    const palette = (b.palette ?? []).filter((c) => typeof c === 'string' && c.length > 0);
+    if (palette.length > 0) lines.push(`Brand colors: ${palette.join(', ')}`);
+    return lines.join('\n');
+  }
+
+  async function importBrandKit() {
+    if (brandImportBusy) return;
+    setBrandImportBusy(true);
+    setBrandImportMsg(null);
+    try {
+      const r = await fetch('/api/onboarding/state', { credentials: 'include' });
+      if (!r.ok) { setBrandImportMsg(`Couldn't load your brand kit (${r.status}).`); return; }
+      const j = (await r.json()) as { onboarding_data?: { brand?: BrandSnapshot } };
+      const brand = j.onboarding_data?.brand;
+      if (!brand) { setBrandImportMsg('No brand kit yet — extract one on the Brand Kit page first.'); return; }
+      const block = formatBrandContext(brand);
+      const ta = projectCtxRef.current;
+      if (ta) {
+        const existing = ta.value.trim();
+        ta.value = existing ? `${existing}\n\n${block}` : block;
+      }
+      setBrandImportMsg('Imported — click Save context to keep it.');
+    } catch (e) {
+      setBrandImportMsg(e instanceof Error ? e.message : 'Import failed');
+    } finally {
+      setBrandImportBusy(false);
+    }
+  }
   async function deleteProject(id: string) {
     setProjectMenuFor(null);
     setProjects((p) => p.filter((x) => x.id !== id));
@@ -942,7 +992,7 @@ export default function AgentPage() {
           {projectMenuFor === p.id && (
             <div onClick={(e) => e.stopPropagation()} className="absolute right-1 top-8 z-50 w-44 rounded-lg p-1" style={{ background: '#1B1C2A', border: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
               <button type="button" onClick={() => { setProjectMenuFor(null); setRenamingProjectId(p.id); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-white/[0.06]" style={{ color: '#E9E9F0' }}><Pencil className="h-3.5 w-3.5" /> Rename</button>
-              <button type="button" onClick={() => { setProjectMenuFor(null); setEditingProject(p); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-white/[0.06]" style={{ color: '#E9E9F0' }}><Sparkles className="h-3.5 w-3.5" /> Edit context</button>
+              <button type="button" onClick={() => { setProjectMenuFor(null); setBrandImportMsg(null); setEditingProject(p); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-white/[0.06]" style={{ color: '#E9E9F0' }}><Sparkles className="h-3.5 w-3.5" /> Edit context</button>
               <button type="button" onClick={() => { setProjectMenuFor(null); newChatInProject(p.id); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-white/[0.06]" style={{ color: '#E9E9F0' }}><MessageSquarePlus className="h-3.5 w-3.5" /> New chat here</button>
               <button type="button" onClick={() => void deleteProject(p.id)} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-white/[0.06]" style={{ color: '#F4A4A4' }}><Trash2 className="h-3.5 w-3.5" /> Delete project</button>
             </div>
@@ -1041,7 +1091,7 @@ export default function AgentPage() {
   // Project pinned-context editor (modal). Free-text instructions injected into
   // the brain SYSTEM for every chat in the project.
   const projectEditor = editingProject ? (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={() => setEditingProject(null)}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={() => { setBrandImportMsg(null); setEditingProject(null); }}>
       <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md rounded-2xl p-5" style={{ background: '#14151F', border: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
         <div className="mb-1 flex items-center gap-2">
           <span className="text-[16px] leading-none">{editingProject.emoji || '📁'}</span>
@@ -1051,9 +1101,16 @@ export default function AgentPage() {
         <textarea ref={projectCtxRef} key={editingProject.id} defaultValue={editingProject.instructions ?? ''} rows={7}
           placeholder={'e.g. Brand: Lumi skincare. Voice: warm, Gen-Z, never hard-sell. Always feature the founder “Mia”. Avoid medical claims.'}
           className="w-full resize-none rounded-xl p-3 text-[13.5px] leading-relaxed outline-none" style={{ background: '#0E0F16', border: '1px solid rgba(255,255,255,0.12)', color: '#E9E9F0' }} />
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <button type="button" onClick={() => void importBrandKit()} disabled={brandImportBusy} className="inline-flex items-center gap-1.5 text-[11.5px] underline disabled:opacity-60" style={{ color: '#A78BFA' }}>
+            {brandImportBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+            Import from Brand Kit
+          </button>
+          {brandImportMsg && <span className="text-[11.5px]" style={{ color: 'rgba(255,255,255,0.5)' }}>{brandImportMsg}</span>}
+        </div>
         <div className="mt-4 flex justify-end gap-2">
-          <button type="button" onClick={() => setEditingProject(null)} className="rounded-lg px-3 py-1.5 text-[13px]" style={{ color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.12)' }}>Cancel</button>
-          <button type="button" onClick={() => { const v = projectCtxRef.current?.value ?? ''; void patchProject(editingProject.id, { instructions: v }); setEditingProject(null); }} className="rounded-lg px-3 py-1.5 text-[13px] font-medium transition-opacity hover:opacity-90" style={{ background: '#A78BFA', color: '#0F1015' }}>Save context</button>
+          <button type="button" onClick={() => { setBrandImportMsg(null); setEditingProject(null); }} className="rounded-lg px-3 py-1.5 text-[13px]" style={{ color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.12)' }}>Cancel</button>
+          <button type="button" onClick={() => { const v = projectCtxRef.current?.value ?? ''; void patchProject(editingProject.id, { instructions: v }); setBrandImportMsg(null); setEditingProject(null); }} className="rounded-lg px-3 py-1.5 text-[13px] font-medium transition-opacity hover:opacity-90" style={{ background: '#A78BFA', color: '#0F1015' }}>Save context</button>
         </div>
       </div>
     </div>

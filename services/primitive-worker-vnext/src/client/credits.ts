@@ -12,6 +12,33 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { ApplicationFailure } from '@temporalio/activity';
 
 /**
+ * Admin allowlist — mirrors apps/web/lib/admin-allowlist.ts and
+ * services/api-v2/src/lib/admin-allowlist.ts exactly (same ADMIN_EMAILS env
+ * var, already present in this worker's container via the shared .env.local,
+ * same fail-closed empty default). Checked here so an admin's run never dies
+ * mid-workflow on INSUFFICIENT_CREDITS even though api-v2's preflight already
+ * let it start (services/api-v2/src/routes/v1/skills.ts's
+ * preflightCreditCheck bypasses the same way).
+ */
+const ADMIN_EMAILS = new Set<string>(
+  (process.env.ADMIN_EMAILS ?? '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean),
+);
+
+async function isAdminUser(db: SupabaseClient, userId: string): Promise<boolean> {
+  if (ADMIN_EMAILS.size === 0) return false;
+  try {
+    const { data } = await db.auth.admin.getUserById(userId);
+    const email = data?.user?.email;
+    return !!email && ADMIN_EMAILS.has(email.toLowerCase());
+  } catch {
+    return false; // best-effort — never block a real charge on a lookup failure
+  }
+}
+
+/**
  * Is billing explicitly disabled for this deployment?
  *
  * FAIL-CLOSED by design: anything other than an explicit opt-out means CHARGE.
@@ -103,6 +130,17 @@ export async function deductPrimitiveCredits(args: {
   // isBillingDisabled), and that single switch must be set identically on the API
   // and every worker.
   if (isBillingDisabled()) return 0;
+
+  // Admin bypass: stamp 0 and skip the ledger RPC entirely, same code path as
+  // a free primitive below — an admin's balance is never touched.
+  if (await isAdminUser(args.db, args.userId)) {
+    const { error: adminStampErr } = await args.db
+      .from('primitive_runs')
+      .update({ credits_deducted: 0 })
+      .eq('id', args.primitiveRunId);
+    if (adminStampErr) console.warn(`[credits] admin bypass: failed to stamp 0 credits_deducted: ${adminStampErr.message}`);
+    return 0;
+  }
 
   const credits = args.creditsOverride ?? quotePrimitiveCredits(args.primitive, args.duration);
   // Free primitive (portrait, or a sheet inside a video): stamp 0 and skip the

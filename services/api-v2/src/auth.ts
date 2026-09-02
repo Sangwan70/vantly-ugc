@@ -18,6 +18,10 @@ if (!SUPABASE_ANON_KEY) {
 
 export interface AuthResult {
   userId: string | null;
+  /** The authenticated user's email, when resolvable — used for the
+   *  server-side admin allowlist (see lib/admin-allowlist.ts). null when
+   *  auth failed or the email genuinely could not be resolved. */
+  email: string | null;
   error: string | null;
 }
 
@@ -43,7 +47,7 @@ async function verifyApiKey(rawKey: string): Promise<AuthResult> {
       .single();
 
     if (error || !keyRecord) {
-      return { userId: null, error: 'Invalid API key' };
+      return { userId: null, email: null, error: 'Invalid API key' };
     }
 
     // Update last_used_at (fire-and-forget)
@@ -52,10 +56,21 @@ async function verifyApiKey(rawKey: string): Promise<AuthResult> {
       .eq('key_hash', keyHash)
       .then(() => {});
 
-    return { userId: keyRecord.user_id, error: null };
+    // Resolve email for the admin allowlist check (lib/admin-allowlist.ts).
+    // Best-effort: an API-key caller not resolving to an email just never
+    // qualifies as admin via this path — never blocks the actual auth result.
+    let email: string | null = null;
+    try {
+      const { data: userData } = await db.auth.admin.getUserById(keyRecord.user_id);
+      email = userData?.user?.email ?? null;
+    } catch {
+      /* ignore — admin status simply won't apply for this request */
+    }
+
+    return { userId: keyRecord.user_id, email, error: null };
   } catch (err) {
     console.error('API key verification failed:', err);
-    return { userId: null, error: 'API key verification failed' };
+    return { userId: null, email: null, error: 'API key verification failed' };
   }
 }
 
@@ -64,7 +79,7 @@ async function verifyApiKey(rawKey: string): Promise<AuthResult> {
  */
 async function verifyJwt(token: string): Promise<AuthResult> {
   if (!SUPABASE_ANON_KEY) {
-    return { userId: null, error: 'JWT verification unavailable — SUPABASE_ANON_KEY not configured' };
+    return { userId: null, email: null, error: 'JWT verification unavailable — SUPABASE_ANON_KEY not configured' };
   }
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -80,13 +95,13 @@ async function verifyJwt(token: string): Promise<AuthResult> {
     const { data: { user }, error } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return { userId: null, error: error?.message ?? 'Invalid or expired token' };
+      return { userId: null, email: null, error: error?.message ?? 'Invalid or expired token' };
     }
 
-    return { userId: user.id, error: null };
+    return { userId: user.id, email: user.email ?? null, error: null };
   } catch (err) {
     console.error('JWT verification failed:', err);
-    return { userId: null, error: 'JWT verification failed' };
+    return { userId: null, email: null, error: 'JWT verification failed' };
   }
 }
 

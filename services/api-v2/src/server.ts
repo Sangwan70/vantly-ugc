@@ -359,6 +359,7 @@ async function authMiddleware(req: express.Request, res: express.Response, next:
   }
 
   (req as any).userId = result.userId;
+  (req as any).userEmail = result.email;
   (req as any).authToken = token;
   // userId is now set — enforce the tagged per-user ceiling (A3). This replaces
   // the old bare next(): the per-user limiter must run AFTER auth so rateLimitKey
@@ -409,6 +410,7 @@ async function mcpAuthMiddleware(
   }
 
   (req as any).userId = result.userId;
+  (req as any).userEmail = result.email;
   (req as any).authToken = token;
   // userId is now set — enforce the tagged per-user ceiling (A3), same as
   // authMiddleware. MCP routes tag the 'mcp' tier (240/min per user).

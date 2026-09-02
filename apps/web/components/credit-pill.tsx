@@ -14,12 +14,13 @@ import { Plus } from 'lucide-react';
 import { invokeFn } from '@/lib/supabase/fn-proxy';
 
 interface CreditsResponse {
-  credits?: { total?: number; monthly_remaining?: number; purchased?: number };
+  credits?: { total?: number; monthly_remaining?: number; purchased?: number; unlimited?: boolean };
 }
 
 export function CreditPill() {
   const [total, setTotal] = useState<number | null>(null);
   const [breakdown, setBreakdown] = useState<{ monthly: number; purchased: number } | null>(null);
+  const [unlimited, setUnlimited] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -35,6 +36,7 @@ export function CreditPill() {
           purchased: d?.credits?.purchased ?? 0,
         });
       }
+      setUnlimited(!!d?.credits?.unlimited);
     }
     load();
     // Refresh every 60s so balance reflects new runs / top-ups.
@@ -42,10 +44,12 @@ export function CreditPill() {
     return () => { cancelled = true; clearInterval(interval); };
   }, []);
 
-  const label = total === null ? '…' : total.toLocaleString();
-  const title = breakdown
-    ? `${breakdown.monthly.toLocaleString()} monthly · ${breakdown.purchased.toLocaleString()} purchased`
-    : 'Credit balance';
+  const label = unlimited ? 'Unlimited' : total === null ? '…' : total.toLocaleString();
+  const title = unlimited
+    ? 'Admin — unlimited credits'
+    : breakdown
+      ? `${breakdown.monthly.toLocaleString()} monthly · ${breakdown.purchased.toLocaleString()} purchased`
+      : 'Credit balance';
 
   return (
     <div className="flex items-center gap-3">
@@ -53,7 +57,7 @@ export function CreditPill() {
         className="text-sm font-medium text-[#121212]"
         title={title}
       >
-        <span className="font-mono">{label}</span> credits
+        <span className="font-mono">{label}</span>{unlimited ? null : ' credits'}
       </span>
       <Link
         href="/billing"

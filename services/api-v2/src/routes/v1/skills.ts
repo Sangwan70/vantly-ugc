@@ -12,6 +12,7 @@ import { uploadUserImageBase64, uploadUserImageFromUrl, uploadUserVideoFromUrl }
 import { ModerationError } from '../../lib/image-moderation.js';
 import { quoteSkillCredits, quoteInFlightPrimitiveRun } from '../../skills/credit-quotes.js';
 import { decideMakeUgcRoute, type MakeUgcProps } from '../../skills/make-ugc-router.js';
+import { isAdminEmail } from '../../lib/admin-allowlist.js';
 
 /**
  * Credits already COMMITTED to the user's in-flight (submitted/running) jobs.
@@ -124,9 +125,14 @@ async function preflightCreditCheck(
   userId: string,
   slug: string,
   input: Record<string, unknown>,
+  isAdmin: boolean,
 ): Promise<{ ok: true } | { ok: false; needed: number; available: number; committed: number }> {
   // Self-host: no billing configured, so nothing to reserve or charge.
   if (!isBillingEnabled()) return { ok: true };
+  // Admins (ADMIN_EMAILS) get unlimited credits — never blocked here, and
+  // deductPrimitiveCredits (primitive-worker-vnext/src/client/credits.ts)
+  // mirrors this so the run doesn't fail deeper in the workflow either.
+  if (isAdmin) return { ok: true };
   const needed = quoteSkillCredits(slug, input);
   if (needed <= 0) return { ok: true };
   const { data, error } = await supabase
@@ -179,6 +185,22 @@ export async function quoteSkillRoute(req: Request, res: Response): Promise<void
   const input = parsed.data as Record<string, unknown>;
   const credits = quoteSkillCredits(slug, input);
 
+  // Admins (ADMIN_EMAILS) never see a "not enough credits" block — the confirm
+  // dialog shows "Unlimited credits" instead of a balance. Mirrors the same
+  // bypass in preflightCreditCheck (the actual /run gate) so the number this
+  // route reports and what /run enforces never disagree for an admin.
+  if (isAdminEmail((req as any).userEmail)) {
+    res.status(200).json({
+      slug,
+      credits,
+      available: null,
+      committed: 0,
+      sufficient: true,
+      unlimited: true,
+    });
+    return;
+  }
+
   let available: number | null = null;
   const { data } = await supabase
     .from('user_credits')
@@ -198,6 +220,7 @@ export async function quoteSkillRoute(req: Request, res: Response): Promise<void
     committed,
     // null balance = couldn't read it (fail-open) → UI shouldn't hard-block.
     sufficient: free === null ? true : free >= credits,
+    unlimited: false,
   });
 }
 
@@ -495,7 +518,7 @@ export async function runSkillRoute(req: Request, res: Response): Promise<void> 
 
   // Pre-flight credit check — return 402 immediately so the caller
   // doesn't get a half-failed workflow on an insufficient balance.
-  const preflight = await preflightCreditCheck(userId, slug, activityInputBody);
+  const preflight = await preflightCreditCheck(userId, slug, activityInputBody, isAdminEmail((req as any).userEmail));
   if (!preflight.ok) {
     const free = Math.max(0, preflight.available - preflight.committed);
     res.status(402).json({

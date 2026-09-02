@@ -216,7 +216,7 @@ export default function AgentPage() {
   const [askHighlight, setAskHighlight] = useState(0);
   const askResolverRef = useRef<((answer: string) => void) | null>(null);
   // Confirm-before-spend (Phase 0): a quoted cost gate shown before any paid tool_use.
-  const [pendingSpend, setPendingSpend] = useState<{ toolUseId: string; skill: string; credits: number; available: number | null; sufficient: boolean } | null>(null);
+  const [pendingSpend, setPendingSpend] = useState<{ toolUseId: string; skill: string; credits: number; available: number | null; sufficient: boolean; unlimited: boolean } | null>(null);
   const spendResolverRef = useRef<((approved: boolean) => void) | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const projectCtxRef = useRef<HTMLTextAreaElement | null>(null);
@@ -493,7 +493,7 @@ export default function AgentPage() {
    *  Generate/Cancel. Fail-open (proceed) if the quote errors or the skill is free. */
   const FREE_TOOLS = new Set(['ask_user', 'list_my_characters']);
   async function confirmSpend(tu: Extract<Block, { type: 'tool_use' }>): Promise<boolean> {
-    let quote: { credits?: number; available?: number | null; sufficient?: boolean } = {};
+    let quote: { credits?: number; available?: number | null; sufficient?: boolean; unlimited?: boolean } = {};
     try {
       const r = await fetch(`/api/v1/skills/${encodeURIComponent(tu.name)}/quote`, {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
@@ -504,7 +504,7 @@ export default function AgentPage() {
     const credits = Number(quote.credits ?? 0);
     if (!credits) return true; // free / unknown cost → no gate
     setRailOpen(true);
-    setPendingSpend({ toolUseId: tu.id, skill: tu.name, credits, available: quote.available ?? null, sufficient: quote.sufficient !== false });
+    setPendingSpend({ toolUseId: tu.id, skill: tu.name, credits, available: quote.available ?? null, sufficient: quote.unlimited ? true : quote.sufficient !== false, unlimited: !!quote.unlimited });
     return new Promise<boolean>((resolve) => { spendResolverRef.current = resolve; });
   }
   function resolveSpend(approved: boolean) {
@@ -1321,8 +1321,10 @@ export default function AgentPage() {
                         Generate <span style={{ color: '#E9E9F0', fontWeight: 600 }}>{skillLabel(pendingSpend.skill)}</span> for <span style={{ color: '#A78BFA', fontWeight: 600 }}>~{pendingSpend.credits.toLocaleString()} credits</span>?
                       </div>
                       <div className="text-[12.5px]" style={{ color: 'rgba(255,255,255,0.5)' }}>
-                        {pendingSpend.available !== null ? `You have ${pendingSpend.available.toLocaleString()}.` : 'Balance unavailable.'}
-                        {!pendingSpend.sufficient && <span style={{ color: '#F4A4A4' }}> Not enough credits.</span>}
+                        {pendingSpend.unlimited
+                          ? <span style={{ color: '#34D399' }}>Unlimited credits (admin) — no charge.</span>
+                          : pendingSpend.available !== null ? `You have ${pendingSpend.available.toLocaleString()}.` : 'Balance unavailable.'}
+                        {!pendingSpend.unlimited && !pendingSpend.sufficient && <span style={{ color: '#F4A4A4' }}> Not enough credits.</span>}
                       </div>
                     </div>
                   </div>

@@ -69,6 +69,7 @@ export default function DashboardDarkLayout({
   const pathname = usePathname();
   const [email, setEmail] = useState<string | null>(null);
   const [credits, setCredits] = useState<number | null>(null);
+  const [unlimitedCredits, setUnlimitedCredits] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
 
@@ -86,8 +87,10 @@ export default function DashboardDarkLayout({
     const load = async () => {
       try {
         const { data } = await invokeFn('credits-check', { method: 'GET' });
-        const t = (data as { credits?: { total?: number } } | null)?.credits?.total;
+        const d = data as { credits?: { total?: number; unlimited?: boolean } } | null;
+        const t = d?.credits?.total;
         if (!cancelled && typeof t === 'number') setCredits(t);
+        if (!cancelled) setUnlimitedCredits(!!d?.credits?.unlimited);
       } catch { /* ignore */ }
     };
     void load();
@@ -159,7 +162,7 @@ export default function DashboardDarkLayout({
             style={{ background: 'linear-gradient(90deg,#A78BFA,#7C3AED)' }}
           >
             <Sparkles className="h-4 w-4" style={{ color: '#0F1015' }} />
-            <RailTip label={`Credits: ${credits === null ? '…' : credits.toLocaleString()} — Get more`} />
+            <RailTip label={unlimitedCredits ? 'Credits: Unlimited (admin)' : `Credits: ${credits === null ? '…' : credits.toLocaleString()} — Get more`} />
           </Link>
 
           {/* User + logout */}
@@ -269,8 +272,8 @@ export default function DashboardDarkLayout({
           <div className="flex flex-col gap-2 rounded-xl px-3 py-2.5" style={{ backgroundColor: '#14151F', border: '1px solid rgba(255,255,255,0.06)' }}>
             <div className="flex items-baseline justify-between">
               <span className="text-[11px] uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.4)' }}>Credits</span>
-              <span className="font-mono text-sm font-semibold" style={{ color: '#E9E9F0' }}>
-                {credits === null ? '…' : credits.toLocaleString()}
+              <span className="font-mono text-sm font-semibold" style={{ color: unlimitedCredits ? '#34D399' : '#E9E9F0' }}>
+                {unlimitedCredits ? 'Unlimited' : credits === null ? '…' : credits.toLocaleString()}
               </span>
             </div>
             <Link

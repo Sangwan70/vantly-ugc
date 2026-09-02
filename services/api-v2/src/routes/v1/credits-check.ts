@@ -20,6 +20,7 @@
 
 import type { Request, Response } from 'express';
 import { supabase } from '../../server.js';
+import { isAdminEmail } from '../../lib/admin-allowlist.js';
 
 // ── Plan tier definitions — MUST mirror supabase/functions/credits-check ──
 const TIER_ORDER: string[] = ['free', 'newby', 'payg', 'starter', 'creator', 'pro_plus'];
@@ -52,6 +53,7 @@ function getPlanConfig(tier: string): PlanConfig {
 export async function creditsCheckRoute(req: Request, res: Response): Promise<void> {
   const userId = (req as { userId?: string }).userId;
   if (!userId) { res.status(401).json({ error: 'unauthorized' }); return; }
+  const unlimited = isAdminEmail((req as { userEmail?: string }).userEmail);
 
   try {
     const { data: subscription, error: subError } = await supabase
@@ -164,6 +166,10 @@ export async function creditsCheckRoute(req: Request, res: Response): Promise<vo
         monthly_allowance: planConfig.monthly_credits,
         purchased: purchasedBalance,
         total: monthlyRemaining + purchasedBalance,
+        // Admins (ADMIN_EMAILS): the dashboard shows "Unlimited" regardless of
+        // the raw total above. See lib/admin-allowlist.ts + routes/v1/skills.ts
+        // (preflightCreditCheck/quoteSkillRoute) for the matching bypass.
+        unlimited,
       },
       limits: {
         max_concurrent_jobs: planConfig.max_concurrent_jobs,

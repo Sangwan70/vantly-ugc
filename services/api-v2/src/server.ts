@@ -68,6 +68,7 @@ import { listApiKeysRoute, createApiKeyRoute, revokeApiKeyRoute } from './routes
 import { listSocialProvidersRoute, listSocialChannelsRoute, connectSocialRoute, deleteSocialChannelRoute, publishSocialRoute } from './routes/v1/social.js';
 import { videoConcurrencyGate } from './concurrency.js';
 import { agentRoute } from './routes/v1/agent.js';
+import { draftScriptRoute } from './routes/v1/assist.js';
 import { creditsCheckRoute } from './routes/v1/credits-check.js';
 import {
   createChatRoute,
@@ -881,6 +882,7 @@ if (isPrimitivesRouteEnabled()) {
   app.delete('/v1/social/channels/:channelId', generateLimiter, authMiddleware, deleteSocialChannelRoute);
   app.post('/v1/social/publish', generateLimiter, authMiddleware, publishSocialRoute);
   app.post('/v1/agent', generateLimiter, authMiddleware, agentRoute);
+  app.post('/v1/assist/draft-script', generateLimiter, authMiddleware, draftScriptRoute);
   // Agent chat persistence (Phase 1) — reopenable sessions. Client-driven,
   // additive: the brain + /v1/skills/run are untouched. See agent-chats.ts.
   //

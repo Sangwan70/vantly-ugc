@@ -7,33 +7,37 @@
  *
  * Combined home for everything the user has made or brought to the
  * product: their generations, a personal media library they can upload
- * to and reference from scripts via a short code, and their brand kit.
- * Previously three separate concerns (a standalone Gallery page, a
- * standalone Brand Kit page, and no media-library page at all) —
- * merged here as tabs so there's one place to look.
+ * to and reference from scripts via a short code, their brand kit, and
+ * a guided wizard for building a make_ugc prompt without knowing what
+ * the underlying fields mean. Previously three separate concerns (a
+ * standalone Gallery page, a standalone Brand Kit page, and no
+ * media-library or guided-prompt page at all) — merged here as tabs so
+ * there's one place to look.
  *
- * Tab state lives in the URL (?tab=generations|media|brand) so it's
- * deep-linkable and back/forward-safe; /dashboard/brand-kit now
+ * Tab state lives in the URL (?tab=generations|media|brand|prompts) so
+ * it's deep-linkable and back/forward-safe; /dashboard/brand-kit now
  * redirects to ?tab=brand for anyone with the old link bookmarked.
  */
 
 import { Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { Images, FolderOpen, Palette } from 'lucide-react';
+import { Images, FolderOpen, Palette, Wand2 } from 'lucide-react';
 import { GenerationsTab } from './_generations-tab';
 import { MyMediaTab } from './_my-media-tab';
 import { BrandKitTab } from './_brand-kit-tab';
+import { MyPromptsTab } from './_my-prompts-tab';
 
-type MainTab = 'generations' | 'media' | 'brand';
+type MainTab = 'generations' | 'media' | 'brand' | 'prompts';
 
 const MAIN_TABS: { id: MainTab; label: string; icon: typeof Images }[] = [
   { id: 'generations', label: 'Generations', icon: Images },
   { id: 'media',       label: 'My Media',    icon: FolderOpen },
   { id: 'brand',       label: 'Brand Kit',   icon: Palette },
+  { id: 'prompts',     label: 'My Prompts',  icon: Wand2 },
 ];
 
 function isMainTab(v: string | null): v is MainTab {
-  return v === 'generations' || v === 'media' || v === 'brand';
+  return v === 'generations' || v === 'media' || v === 'brand' || v === 'prompts';
 }
 
 export default function GalleryPage() {
@@ -77,6 +81,11 @@ function GalleryPageInner() {
       eyebrow: 'Gallery',
       heading: 'Your brand',
       sub: 'What we pulled from your site. Used everywhere the agents need brand context.',
+    },
+    prompts: {
+      eyebrow: 'Gallery',
+      heading: 'My Prompts',
+      sub: 'Describe what you want in plain language — we’ll turn it into a ready-to-run prompt, and you can still edit every field before generating.',
     },
   };
   const t = titles[tab];
@@ -128,7 +137,10 @@ function GalleryPageInner() {
       </div>
 
       <div className="mt-10">
-        {tab === 'generations' ? <GenerationsTab /> : tab === 'media' ? <MyMediaTab /> : <BrandKitTab />}
+        {tab === 'generations' ? <GenerationsTab />
+          : tab === 'media' ? <MyMediaTab />
+          : tab === 'brand' ? <BrandKitTab />
+          : <MyPromptsTab />}
       </div>
     </div>
   );

@@ -233,7 +233,19 @@ export async function agentRoute(req: Request, res: Response): Promise<void> {
   // …and the pinned context of the project this chat belongs to (if any).
   const projectContext = buildProjectContext((req.body as { project_context?: unknown })?.project_context);
 
-  try {
+  // One call to the model provider, with defensive parsing: raw text is read
+  // (not upstream.json(), which silently swallows a malformed body via a bare
+  // `.catch(() => ({}))` and used to make an unparseable response look like a
+  // legitimate empty-content success) and any failure to parse OR a genuinely
+  // empty `content[]` on an ok:true response is reported as a real error
+  // instead of being passed through — passing it through was the root cause
+  // of the "chatbot silently dies" bug: the client happily appended an empty
+  // assistant turn, showed nothing, and re-sent that empty turn as history on
+  // every later message, so the failure re-triggered every subsequent turn.
+  async function callOnce(): Promise<
+    | { ok: true; stop_reason: string; content: unknown[] }
+    | { ok: false; status: number; body: Record<string, unknown> }
+  > {
     const upstream = await callAnthropicMessages({
       model: MODEL,
       max_tokens: 1500,
@@ -241,13 +253,48 @@ export async function agentRoute(req: Request, res: Response): Promise<void> {
       tools: buildTools(supportsAsk),
       messages: windowed,
     }, { signal: AbortSignal.timeout(60_000) });
-    const data = await upstream.json().catch(() => ({}));
+    const rawText = await upstream.text();
+    let data: unknown;
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      console.error('[agent] malformed JSON from model provider', {
+        status: upstream.status,
+        rawTextHead: rawText.slice(0, 500),
+      });
+      return { ok: false, status: 502, body: { error: 'agent_error', detail: 'Malformed response from model provider' } };
+    }
     if (!upstream.ok) {
-      res.status(502).json({ error: 'anthropic_error', detail: (data as { error?: unknown }).error ?? data });
-      return;
+      return { ok: false, status: 502, body: { error: 'anthropic_error', detail: (data as { error?: unknown }).error ?? data } };
     }
     const d = data as { stop_reason?: string; content?: unknown };
-    res.status(200).json({ stop_reason: d.stop_reason ?? 'end_turn', content: d.content ?? [] });
+    const content = Array.isArray(d.content) ? d.content : [];
+    if (content.length === 0) {
+      console.error('[agent] empty content[] from model provider', {
+        status: upstream.status,
+        stopReason: d.stop_reason,
+        model: MODEL,
+        rawTextHead: rawText.slice(0, 1000),
+      });
+      return { ok: false, status: 502, body: { error: 'agent_empty_response', detail: 'The assistant returned no content — please try again.' } };
+    }
+    return { ok: true, stop_reason: d.stop_reason ?? 'end_turn', content };
+  }
+
+  try {
+    let result = await callOnce();
+    // A 200 with an empty content[] is rare and (per the investigation above)
+    // often transient — retry once before surfacing an error, so a one-off
+    // provider hiccup self-heals instead of dead-ending the chat.
+    if (!result.ok && result.body.error === 'agent_empty_response') {
+      console.warn('[agent] retrying once after empty content[]');
+      result = await callOnce();
+    }
+    if (!result.ok) {
+      res.status(result.status).json(result.body);
+      return;
+    }
+    res.status(200).json({ stop_reason: result.stop_reason, content: result.content });
   } catch (err) {
     res.status(502).json({ error: 'agent_error', detail: (err as Error).message });
   }

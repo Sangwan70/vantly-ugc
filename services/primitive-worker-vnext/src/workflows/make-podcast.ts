@@ -101,7 +101,7 @@ const { composedSkillState } = proxyActivities<PrimitiveActivities>({
   startToCloseTimeout: '30 seconds',
   retry: { maximumAttempts: 3 },
 });
-const { refundCredits } = proxyActivities<PrimitiveActivities>({
+const { refundCredits, markPrimitiveRunFailed } = proxyActivities<PrimitiveActivities>({
   startToCloseTimeout: '30 seconds',
   retry: { initialInterval: '2s', maximumInterval: '20s', backoffCoefficient: 2, maximumAttempts: 5 },
 });
@@ -306,15 +306,21 @@ export async function makePodcastWorkflow(
     // Refund every charged child (idempotent — no-ops on the free image steps and
     // on any take that never charged), then mark the run failed so it never sits
     // stuck on "running". Rethrow so Temporal records the failure too.
+    const errorCode = err instanceof ApplicationFailure ? (err.type ?? 'WORKFLOW_FAILED') : 'WORKFLOW_FAILED';
+    const errorMessage = err instanceof Error ? err.message.slice(0, 500) : String(err);
     for (const rid of refundIds) {
       await refundCredits({ primitive_run_id: rid });
+      // Best-effort per-step failure stamp — guarded against clobbering a
+      // succeeded step. Safe to call broadly for the same reason the refund
+      // loop above already is.
+      await markPrimitiveRunFailed({ primitive_run_id: rid, error_code: errorCode, error_message: errorMessage });
     }
     await composedSkillState({
       skill_run_id: skillRunId,
       status: 'failed',
       finished_at_now: true,
-      error_code: err instanceof ApplicationFailure ? (err.type ?? 'WORKFLOW_FAILED') : 'WORKFLOW_FAILED',
-      error_message: err instanceof Error ? err.message.slice(0, 500) : String(err),
+      error_code: errorCode,
+      error_message: errorMessage,
     });
     throw err;
   }

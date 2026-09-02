@@ -171,7 +171,7 @@ export { INTRO_SECONDS, countWords, fitDuration, chunkScript, splitIntroMoves };
 
 // Refund on terminal failure so a paid broll that never completes returns the
 // user's credits. Idempotent (guards ALREADY_REFUNDED / NO_DEDUCTION_FOUND).
-const { refundCredits } = proxyActivities<PrimitiveActivities>({
+const { refundCredits, markPrimitiveRunFailed } = proxyActivities<PrimitiveActivities>({
   startToCloseTimeout: '30 seconds',
   retry: { initialInterval: '2s', maximumInterval: '20s', backoffCoefficient: 2, maximumAttempts: 5 },
 });
@@ -366,10 +366,17 @@ export async function brollTalkingHeadWorkflow(
     // user's credits. refundCredits is idempotent and no-ops on never-charged ids,
     // so refunding a generous fixed set of segment ids (plus voiceref/compose/subs)
     // is safe even though the exact segment count isn't in catch scope.
+    const errorCode = err instanceof ApplicationFailure ? (err.type ?? 'WORKFLOW_FAILED') : 'WORKFLOW_FAILED';
+    const errorMessage = err instanceof Error ? err.message.slice(0, 500) : String(err);
     const childSteps = ['voiceref', 'compose', 'subs'];
     for (let i = 0; i < 12; i += 1) childSteps.push(`seg${i}`);
     for (const step of childSteps) {
-      await refundCredits({ primitive_run_id: makeChildRunId(input.skill_run_id, step) });
+      const primitive_run_id = makeChildRunId(input.skill_run_id, step);
+      await refundCredits({ primitive_run_id });
+      // Best-effort per-step failure stamp — guarded against clobbering a
+      // succeeded step, no-ops on a step whose row was never created. Safe
+      // to call broadly for the same reason the refund loop above already is.
+      await markPrimitiveRunFailed({ primitive_run_id, error_code: errorCode, error_message: errorMessage });
     }
     // Mark the skill_run failed so it never sits stuck on "running". The
     // workflow still rethrows so Temporal records the failure too.
@@ -377,8 +384,8 @@ export async function brollTalkingHeadWorkflow(
       skill_run_id: input.skill_run_id,
       status: 'failed',
       finished_at_now: true,
-      error_code: err instanceof ApplicationFailure ? (err.type ?? 'WORKFLOW_FAILED') : 'WORKFLOW_FAILED',
-      error_message: err instanceof Error ? err.message.slice(0, 500) : String(err),
+      error_code: errorCode,
+      error_message: errorMessage,
     });
     throw err;
   }

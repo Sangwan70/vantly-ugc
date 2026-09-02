@@ -39,6 +39,38 @@ interface RunBody {
 
 const TERMINAL = new Set(['succeeded', 'completed', 'success', 'failed', 'canceled', 'cancelled']);
 
+/**
+ * Short, non-technical explanations for the error codes primitive-worker-vnext
+ * throws (see ApplicationFailure.nonRetryable call sites in
+ * services/primitive-worker-vnext/src/activities/*.ts and the workflow-level
+ * NON_RETRYABLE lists). Falls back to the raw technical message when a code
+ * isn't recognized — "if known" per the ask, never hides real detail.
+ */
+const FRIENDLY_ERROR_MESSAGES: Record<string, string> = {
+  INVALID_INPUT: "Some of the input for this generation wasn't valid.",
+  BUDGET_CAP_PRIMITIVE: "This request costs more than the server's per-generation spending limit allows.",
+  BUDGET_CAP_DAY: "Today's spending limit for your account has been reached — try again tomorrow.",
+  INSUFFICIENT_CREDITS: 'Not enough credits to run this.',
+  REFERENCE_FETCH_FAILED: "Couldn't download one of the reference images or videos you provided.",
+  REFERENCE_NOT_IMAGE: "One of the reference files isn't a valid image.",
+  REFERENCE_NOT_VIDEO: "One of the reference files isn't a valid video.",
+  REFERENCE_URL_NOT_ALLOWED: "One of the reference files wasn't hosted somewhere this server can use.",
+  PROVIDER_UNCONFIGURED: "This feature isn't fully configured on the server yet.",
+  TRANSCRIBE_EMPTY: 'No speech was detected to generate captions from.',
+};
+
+function friendlyErrorMessage(code: string | null | undefined, message: string | null | undefined): string {
+  if (code && FRIENDLY_ERROR_MESSAGES[code]) return FRIENDLY_ERROR_MESSAGES[code];
+  if (code === 'OPENAI_451' || code === 'EVOLINK_451') return 'Blocked by the AI provider\'s content policy.';
+  if (code && /^(OPENAI|EVOLINK)_(400|401|403|404|413|415|422)$/.test(code)) {
+    return `The AI ${code.startsWith('OPENAI') ? 'image' : 'video'} provider rejected this request.`;
+  }
+  if (code && /^(OPENAI|EVOLINK)_(UNKNOWN|TRANSIENT)$/.test(code)) {
+    return 'A temporary provider error occurred.';
+  }
+  return message?.trim() || 'This run failed for an unknown reason — check the server logs.';
+}
+
 export default function RunTimelinePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const search = useSearchParams();
@@ -129,7 +161,12 @@ function RunBodyView({ body, composed, id }: { body: RunBody; composed: boolean;
 
       {body.error && (
         <div className="mt-4 rounded-xl px-4 py-3 text-sm" style={{ border: '1px solid rgba(255,79,79,0.3)', backgroundColor: 'rgba(255,79,79,0.08)', color: '#FCA5A5' }}>
-          <strong>{body.error.code}</strong>: {body.error.message}
+          <div className="font-medium">{friendlyErrorMessage(body.error.code, body.error.message)}</div>
+          {(body.error.code || body.error.message) && (
+            <div className="mt-1 text-[11px]" style={{ color: 'rgba(252,165,165,0.65)' }}>
+              {body.error.code}{body.error.message ? `: ${body.error.message}` : ''}
+            </div>
+          )}
         </div>
       )}
 
@@ -146,6 +183,9 @@ function RunBodyView({ body, composed, id }: { body: RunBody; composed: boolean;
                     <div className="flex flex-col">
                       <span className="text-sm font-medium" style={{ color: '#E9E9F0' }}>{s.primitive}</span>
                       <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{s.status}{dur != null ? ` · ${dur}s` : ''}</span>
+                      {s.status === 'failed' && s.error && (
+                        <span className="mt-0.5 text-[11px]" style={{ color: '#F87171' }}>{friendlyErrorMessage(s.error.code, s.error.message)}</span>
+                      )}
                     </div>
                   </div>
                   {(s.artifacts ?? []).map((a, ai) => (

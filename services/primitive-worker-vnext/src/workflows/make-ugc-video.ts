@@ -19,7 +19,7 @@
  * primitive_runs WHERE skill_run_id = :id.
  */
 
-import { proxyActivities } from '@temporalio/workflow';
+import { proxyActivities, ApplicationFailure } from '@temporalio/workflow';
 import type { PrimitiveActivities } from '../activities/index.js';
 import type { PortraitGpt2ActivityInput, PortraitGpt2ActivityResult } from '../activities/portrait-gpt2.js';
 import type { CharacterSheetGpt2ActivityInput, CharacterSheetGpt2ActivityResult } from '../activities/character-sheet-gpt2.js';
@@ -115,7 +115,7 @@ const { composedSkillState } = proxyActivities<PrimitiveActivities>({
 // credits and does not sit stuck 'running'. Idempotent (refund_credits guards
 // ALREADY_REFUNDED / NO_DEDUCTION_FOUND — portrait/sheet are billed 0 so their
 // refunds no-op; selfie + subtitles are the real charges). Flagship money fix.
-const { refundCredits } = proxyActivities<PrimitiveActivities>({
+const { refundCredits, markPrimitiveRunFailed } = proxyActivities<PrimitiveActivities>({
   startToCloseTimeout: '30 seconds',
   retry: { initialInterval: '2s', maximumInterval: '20s', backoffCoefficient: 2, maximumAttempts: 5 },
 });
@@ -126,14 +126,28 @@ export async function makeUgcVideoWorkflow(
   try {
     return await makeUgcVideoImpl(input);
   } catch (err) {
+    // Same classification the sibling composed workflows (broll-talking-head,
+    // make-podcast) already use, so the run-detail page (?composed=1) can show
+    // a real reason instead of just "failed" — see composed-state.ts.
+    const errorCode = err instanceof ApplicationFailure ? (err.type ?? 'WORKFLOW_FAILED') : 'WORKFLOW_FAILED';
+    const errorMessage = err instanceof Error ? err.message.slice(0, 500) : String(err);
     const steps = ['portrait', 'sheet', 'selfie', 'subtitles'] as const;
     for (const step of steps) {
-      await refundCredits({ primitive_run_id: makeChildRunId(input.skill_run_id, step) });
+      const primitive_run_id = makeChildRunId(input.skill_run_id, step);
+      await refundCredits({ primitive_run_id });
+      // Best-effort per-step failure stamp: guarded against clobbering a step
+      // that already succeeded, and no-ops on a step whose row was never
+      // created (e.g. a budget-cap throw before the primitive_runs upsert) —
+      // see mark-run-failed.ts. Safe to call broadly for the same reason the
+      // refund loop above already is.
+      await markPrimitiveRunFailed({ primitive_run_id, error_code: errorCode, error_message: errorMessage });
     }
     await composedSkillState({
       skill_run_id: input.skill_run_id,
       status: 'failed',
       finished_at_now: true,
+      error_code: errorCode,
+      error_message: errorMessage,
     });
     throw err;
   }

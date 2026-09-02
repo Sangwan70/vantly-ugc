@@ -196,6 +196,22 @@ export async function makeStorybookWorkflow(
     if (takes.length === 0) {
       throw ApplicationFailure.nonRetryable('storybook produced no takes', 'INVALID_INPUT');
     }
+    // Defense in depth: storybookTake calls the provider client directly (it has
+    // no SimpleSelfieToolInputSchema-style gate of its own), so nothing else in
+    // this path checks a take's word count against its duration band before we
+    // spend on it. chunkScript/fitDuration (@vantly-ugc/schema) guarantee every
+    // take already lands in [duration, round(duration x 2.2)] words, so this is
+    // unreachable today — but it fails fast, before any credits move, rather than
+    // mid-render, if that invariant is ever violated by a future caller.
+    for (const t of takes) {
+      const w = t.script.trim().split(/\s+/).filter(Boolean).length;
+      if (w < t.duration || w > Math.round(t.duration * 2.2)) {
+        throw ApplicationFailure.nonRetryable(
+          `a storybook scene line could not be split into a valid ${t.duration}s take (${w} words); keep each line ~5-33 words`,
+          'INVALID_INPUT',
+        );
+      }
+    }
 
     const seed: Record<string, number> = {};
     for (const name of Object.keys(perSpeaker)) seed[name] = seedFromString(`${skillRunId}:${name}`);

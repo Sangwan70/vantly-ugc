@@ -12,7 +12,7 @@ import { getDb } from '../client/db.js';
 import { r2UploadVnext } from '../client/r2.js';
 import { transcribeWithWhisper, type WhisperWord } from '../client/whisper.js';
 import { generateAss } from '../lib/ass.js';
-import { deductPrimitiveCredits, refundPrimitiveCredits } from '../client/credits.js';
+import { deductPrimitiveCredits, refundPrimitiveCredits, isAdminUser } from '../client/credits.js';
 
 const execFileP = promisify(execFile);
 
@@ -76,7 +76,9 @@ export function makeSubtitlesActivity(cfg: WorkerConfig) {
     }
 
     const ESTIMATED_USD = 0.05;
-    if (ESTIMATED_USD > cfg.caps.primitiveUsd) {
+    // Admins (ADMIN_EMAILS) skip this cap entirely, same bypass as
+    // deductPrimitiveCredits.
+    if (ESTIMATED_USD > cfg.caps.primitiveUsd && !(await isAdminUser(db, activityInput.user_id))) {
       throw ApplicationFailure.nonRetryable(
         `estimated $${ESTIMATED_USD} exceeds per-primitive cap`,
         'BUDGET_CAP_PRIMITIVE',

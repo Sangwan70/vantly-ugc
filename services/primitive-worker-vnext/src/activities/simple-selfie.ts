@@ -8,7 +8,7 @@ import { r2UploadVnext } from '../client/r2.js';
 import { buildSimpleSelfiePrompt } from '../client/anthropic.js';
 import { generateSimpleSelfieEvolink } from '../client/evolink.js';
 import { withHeartbeat } from '../lib/heartbeat.js';
-import { deductPrimitiveCredits, refundPrimitiveCredits } from '../client/credits.js';
+import { deductPrimitiveCredits, refundPrimitiveCredits, isAdminUser } from '../client/credits.js';
 
 export interface SimpleSelfieActivityInput {
   primitive_run_id: string;
@@ -112,32 +112,35 @@ export function makeSimpleSelfieActivity(cfg: WorkerConfig) {
       );
     }
 
-    // Budget
+    // Budget — admins (ADMIN_EMAILS) skip both caps entirely, same bypass as
+    // deductPrimitiveCredits, so an admin's run never dies here either.
     const estimatedUsd = PER_DURATION_USD[input.duration];
-    if (estimatedUsd > cfg.caps.primitiveUsd) {
-      throw ApplicationFailure.nonRetryable(
-        `estimated $${estimatedUsd} exceeds per-primitive cap $${cfg.caps.primitiveUsd}`,
-        'BUDGET_CAP_PRIMITIVE',
+    if (!(await isAdminUser(db, activityInput.user_id))) {
+      if (estimatedUsd > cfg.caps.primitiveUsd) {
+        throw ApplicationFailure.nonRetryable(
+          `estimated $${estimatedUsd} exceeds per-primitive cap $${cfg.caps.primitiveUsd}`,
+          'BUDGET_CAP_PRIMITIVE',
+        );
+      }
+      const since = new Date();
+      since.setUTCHours(0, 0, 0, 0);
+      const { data: dayRows, error: dayErr } = await db
+        .from('primitive_runs')
+        .select('actual_credits_usd')
+        .eq('user_id', activityInput.user_id)
+        .gte('created_at', since.toISOString())
+        .not('actual_credits_usd', 'is', null);
+      if (dayErr) throw new Error(`day-cap query failed: ${dayErr.message}`);
+      const dayUsed = (dayRows ?? []).reduce(
+        (s, r) => s + Number(r.actual_credits_usd ?? 0),
+        0,
       );
-    }
-    const since = new Date();
-    since.setUTCHours(0, 0, 0, 0);
-    const { data: dayRows, error: dayErr } = await db
-      .from('primitive_runs')
-      .select('actual_credits_usd')
-      .eq('user_id', activityInput.user_id)
-      .gte('created_at', since.toISOString())
-      .not('actual_credits_usd', 'is', null);
-    if (dayErr) throw new Error(`day-cap query failed: ${dayErr.message}`);
-    const dayUsed = (dayRows ?? []).reduce(
-      (s, r) => s + Number(r.actual_credits_usd ?? 0),
-      0,
-    );
-    if (dayUsed + estimatedUsd > cfg.caps.dayUsd) {
-      throw ApplicationFailure.nonRetryable(
-        `day budget exceeded: used $${dayUsed.toFixed(2)} + estimate $${estimatedUsd} > cap $${cfg.caps.dayUsd}`,
-        'BUDGET_CAP_DAY',
-      );
+      if (dayUsed + estimatedUsd > cfg.caps.dayUsd) {
+        throw ApplicationFailure.nonRetryable(
+          `day budget exceeded: used $${dayUsed.toFixed(2)} + estimate $${estimatedUsd} > cap $${cfg.caps.dayUsd}`,
+          'BUDGET_CAP_DAY',
+        );
+      }
     }
 
     // Upsert run row

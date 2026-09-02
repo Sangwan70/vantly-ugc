@@ -9,7 +9,7 @@ import { r2UploadVnext } from '../client/r2.js';
 import { buildPortraitPrompt } from '../client/anthropic.js';
 import { sanitizeImagePrompt } from '../lib/sanitize-prompt.js';
 import { withHeartbeat } from '../lib/heartbeat.js';
-import { deductPrimitiveCredits, refundPrimitiveCredits } from '../client/credits.js';
+import { deductPrimitiveCredits, refundPrimitiveCredits, isAdminUser } from '../client/credits.js';
 
 export interface PortraitGpt2ActivityInput {
   /** UUID minted by the API before workflow start. */
@@ -107,34 +107,38 @@ export function makePortraitGpt2Activity(cfg: WorkerConfig) {
     // Per-primitive estimated debit. Real reconciliation comes when OpenAI
     // exposes per-image usage; for now a flat estimate is the actual.
     const ESTIMATED_USD = 0.2;
-    if (ESTIMATED_USD > cfg.caps.primitiveUsd) {
-      throw ApplicationFailure.nonRetryable(
-        `estimated $${ESTIMATED_USD} exceeds per-primitive cap $${cfg.caps.primitiveUsd}`,
-        'BUDGET_CAP_PRIMITIVE',
-      );
-    }
+    // Admins (ADMIN_EMAILS) skip both caps entirely, same bypass as
+    // deductPrimitiveCredits, so an admin's run never dies here either.
+    if (!(await isAdminUser(db, activityInput.user_id))) {
+      if (ESTIMATED_USD > cfg.caps.primitiveUsd) {
+        throw ApplicationFailure.nonRetryable(
+          `estimated $${ESTIMATED_USD} exceeds per-primitive cap $${cfg.caps.primitiveUsd}`,
+          'BUDGET_CAP_PRIMITIVE',
+        );
+      }
 
-    // Per-day cap: sum actual_credits_usd for this user_id over today (UTC).
-    const since = new Date();
-    since.setUTCHours(0, 0, 0, 0);
-    const { data: dayRows, error: dayErr } = await db
-      .from('primitive_runs')
-      .select('actual_credits_usd')
-      .eq('user_id', activityInput.user_id)
-      .gte('created_at', since.toISOString())
-      .not('actual_credits_usd', 'is', null);
-    if (dayErr) {
-      throw new Error(`day-cap query failed: ${dayErr.message}`);
-    }
-    const dayUsed = (dayRows ?? []).reduce(
-      (s, r) => s + Number(r.actual_credits_usd ?? 0),
-      0,
-    );
-    if (dayUsed + ESTIMATED_USD > cfg.caps.dayUsd) {
-      throw ApplicationFailure.nonRetryable(
-        `day budget exceeded: used $${dayUsed.toFixed(2)} + estimate $${ESTIMATED_USD} > cap $${cfg.caps.dayUsd}`,
-        'BUDGET_CAP_DAY',
+      // Per-day cap: sum actual_credits_usd for this user_id over today (UTC).
+      const since = new Date();
+      since.setUTCHours(0, 0, 0, 0);
+      const { data: dayRows, error: dayErr } = await db
+        .from('primitive_runs')
+        .select('actual_credits_usd')
+        .eq('user_id', activityInput.user_id)
+        .gte('created_at', since.toISOString())
+        .not('actual_credits_usd', 'is', null);
+      if (dayErr) {
+        throw new Error(`day-cap query failed: ${dayErr.message}`);
+      }
+      const dayUsed = (dayRows ?? []).reduce(
+        (s, r) => s + Number(r.actual_credits_usd ?? 0),
+        0,
       );
+      if (dayUsed + ESTIMATED_USD > cfg.caps.dayUsd) {
+        throw ApplicationFailure.nonRetryable(
+          `day budget exceeded: used $${dayUsed.toFixed(2)} + estimate $${ESTIMATED_USD} > cap $${cfg.caps.dayUsd}`,
+          'BUDGET_CAP_DAY',
+        );
+      }
     }
 
     // Upsert the primitive_runs row (idempotent on primitive_run_id PK).

@@ -27,7 +27,7 @@ const ADMIN_EMAILS = new Set<string>(
     .filter(Boolean),
 );
 
-async function isAdminUser(db: SupabaseClient, userId: string): Promise<boolean> {
+export async function isAdminUser(db: SupabaseClient, userId: string): Promise<boolean> {
   if (ADMIN_EMAILS.size === 0) return false;
   try {
     const { data } = await db.auth.admin.getUserById(userId);

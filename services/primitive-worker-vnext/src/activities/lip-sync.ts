@@ -12,7 +12,7 @@ import { getDb } from '../client/db.js';
 import { r2UploadVnext } from '../client/r2.js';
 import { generateLipSyncEvolink } from '../client/evolink.js';
 import { withHeartbeat } from '../lib/heartbeat.js';
-import { deductPrimitiveCredits, refundPrimitiveCredits } from '../client/credits.js';
+import { deductPrimitiveCredits, refundPrimitiveCredits, isAdminUser } from '../client/credits.js';
 
 const execFileP = promisify(execFile);
 
@@ -94,8 +94,10 @@ export function makeLipSyncActivity(cfg: WorkerConfig) {
       }
     }
 
-    // Budget caps.
-    if (ESTIMATED_USD > cfg.caps.primitiveUsd) {
+    // Budget caps — admins (ADMIN_EMAILS) skip both entirely, same bypass as
+    // deductPrimitiveCredits.
+    const lipSyncIsAdmin = await isAdminUser(db, activityInput.user_id);
+    if (!lipSyncIsAdmin && ESTIMATED_USD > cfg.caps.primitiveUsd) {
       throw ApplicationFailure.nonRetryable(
         `estimated $${ESTIMATED_USD} exceeds per-primitive cap $${cfg.caps.primitiveUsd}`,
         'BUDGET_CAP_PRIMITIVE',
@@ -111,7 +113,7 @@ export function makeLipSyncActivity(cfg: WorkerConfig) {
       .not('actual_credits_usd', 'is', null);
     if (dayErr) throw new Error(`day-cap query failed: ${dayErr.message}`);
     const dayUsed = (dayRows ?? []).reduce((s, r) => s + Number(r.actual_credits_usd ?? 0), 0);
-    if (dayUsed + ESTIMATED_USD > cfg.caps.dayUsd) {
+    if (!lipSyncIsAdmin && dayUsed + ESTIMATED_USD > cfg.caps.dayUsd) {
       throw ApplicationFailure.nonRetryable(
         `day budget exceeded: used $${dayUsed.toFixed(2)} + estimate $${ESTIMATED_USD} > cap $${cfg.caps.dayUsd}`,
         'BUDGET_CAP_DAY',

@@ -7,7 +7,7 @@ import { getDb } from '../client/db.js';
 import { generateImageWithFallback, classifyOpenAIError } from '../client/openai.js';
 import { r2UploadVnext } from '../client/r2.js';
 import { buildWireframePrompt } from '../client/anthropic.js';
-import { deductPrimitiveCredits, refundPrimitiveCredits } from '../client/credits.js';
+import { deductPrimitiveCredits, refundPrimitiveCredits, isAdminUser } from '../client/credits.js';
 import { withHeartbeat } from '../lib/heartbeat.js';
 
 export interface WireframeGpt2ActivityInput {
@@ -70,7 +70,9 @@ export function makeWireframeGpt2Activity(cfg: WorkerConfig) {
     }
 
     const ESTIMATED_USD = 0.2;
-    if (ESTIMATED_USD > cfg.caps.primitiveUsd) {
+    // Admins (ADMIN_EMAILS) skip this cap entirely, same bypass as
+    // deductPrimitiveCredits.
+    if (ESTIMATED_USD > cfg.caps.primitiveUsd && !(await isAdminUser(db, activityInput.user_id))) {
       throw ApplicationFailure.nonRetryable(
         `estimated $${ESTIMATED_USD} exceeds per-primitive cap $${cfg.caps.primitiveUsd}`,
         'BUDGET_CAP_PRIMITIVE',

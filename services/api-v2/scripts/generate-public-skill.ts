@@ -43,6 +43,10 @@ const COSTS: Record<string, { credits: number | string; seconds: number | string
     credits: 'per-take: 140/280/420 per 5s/10s/15s take, summed across every A/B turn (+15 if subtitles); the master scene + both close-ups are free',
     seconds: '360–1400',
   },
+  make_storybook: {
+    credits: 'per-take: 140/280/420 per 5s/10s/15s take, summed across every scene (+15 if subtitles); each character\'s stylized design is free',
+    seconds: '300–1400',
+  },
 };
 
 const EXAMPLE_INPUTS: Record<string, unknown> = {
@@ -97,6 +101,26 @@ const EXAMPLE_INPUTS: Record<string, unknown> = {
       { speaker: 'B', line: 'Honestly I have been waiting all week for this one.' },
     ],
     room: 'a cozy wood-panelled podcast studio with warm lamps',
+  },
+  make_storybook: {
+    title: 'Pip and the Lost Star',
+    characters: [
+      { name: 'Pip the fox', description: 'a small orange fox cub with a blue scarf, big curious eyes' },
+    ],
+    art_style: 'flat_vector_cartoon',
+    scenes: [
+      {
+        speaker: 'Pip the fox',
+        line: 'Where did all the stars go tonight? I can only see one!',
+        visual_description: 'Pip looks up at a cloudy night sky from a mossy hilltop, ears perked.',
+      },
+      {
+        speaker: 'Pip the fox',
+        line: 'I bet the biggest one is hiding behind that old oak tree!',
+        visual_description: 'Pip trots toward a large oak silhouette, tail wagging with excitement.',
+      },
+    ],
+    aspect_ratio: '9:16',
   },
 };
 

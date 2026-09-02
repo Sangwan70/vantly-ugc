@@ -344,7 +344,7 @@ function InstallPanel({ skill }: { skill: SkillEntry }) {
     },
   }, null, 2);
 
-  const ghLink = `https://github.com/gitroomhq/agent-media/blob/main/skills/${skill.slug.replace(/_/g, '-')}/SKILL.md`;
+  const ghLink = `https://github.com/Sangwan70/vantly-ugc/blob/main/public-skill/skills/${skill.slug.replace(/_/g, '-')}/SKILL.md`;
 
   return (
     <div className="flex flex-col gap-4 rounded-2xl p-5" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#14151F' }}>

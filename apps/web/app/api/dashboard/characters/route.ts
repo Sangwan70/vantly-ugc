@@ -25,7 +25,7 @@ export async function GET(_req: NextRequest) {
 
   const { data: characters, error } = await supabase
     .from('user_characters')
-    .select('id, name, source_kind, actor_slug, source_image_url, description, character_sheet_url, thumbnail_url, created_at')
+    .select('id, name, source_kind, actor_slug, source_image_url, description, character_sheet_url, thumbnail_url, voice_brief, preset_default, signature_look, created_at')
     .eq('user_id', user.id)
     .is('archived_at', null)
     .order('created_at', { ascending: false })

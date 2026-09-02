@@ -15,7 +15,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Play, Search, Users, X, UploadCloud } from 'lucide-react';
+import { Loader2, Play, Search, Users, X, UploadCloud, Pencil, Check } from 'lucide-react';
 
 interface SavedCharacter {
   id: string;
@@ -23,6 +23,9 @@ interface SavedCharacter {
   description?: string | null;
   character_sheet_url: string | null;
   thumbnail_url: string | null;
+  voice_brief?: string | null;
+  preset_default?: string | null;
+  signature_look?: string | null;
   created_at?: string;
   video_count?: number;
 }
@@ -210,6 +213,15 @@ export default function ActorsPage() {
           subtitle={selectedCharacter.description ?? undefined}
           copyValue={selectedCharacter.character_sheet_url ?? undefined}
           copyLabel="character_sheet_url"
+          editable
+          characterId={selectedCharacter.id}
+          editDescription={selectedCharacter.description}
+          editVoiceBrief={selectedCharacter.voice_brief}
+          editSignatureLook={selectedCharacter.signature_look}
+          onSaved={(updated) => {
+            setCharacters((prev) => (prev ? prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)) : prev));
+            setSelectedCharacter((prev) => (prev ? { ...prev, ...updated } : prev));
+          }}
         />
       )}
       {selectedActor && (
@@ -250,6 +262,12 @@ function DetailLightbox({
   subtitle,
   copyValue,
   copyLabel,
+  editable,
+  characterId,
+  editDescription,
+  editVoiceBrief,
+  editSignatureLook,
+  onSaved,
 }: {
   onClose: () => void;
   imageUrl?: string | null;
@@ -257,8 +275,66 @@ function DetailLightbox({
   subtitle?: string;
   copyValue?: string;
   copyLabel?: string;
+  /** When true (only for "My characters"), shows an Edit affordance that opens a form to update name/metadata. */
+  editable?: boolean;
+  characterId?: string;
+  editDescription?: string | null;
+  editVoiceBrief?: string | null;
+  editSignatureLook?: string | null;
+  onSaved?: (updated: SavedCharacter) => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(title);
+  const [description, setDescription] = useState(editDescription ?? '');
+  const [voiceBrief, setVoiceBrief] = useState(editVoiceBrief ?? '');
+  const [signatureLook, setSignatureLook] = useState(editSignatureLook ?? '');
+  const [saving, setSaving] = useState(false);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+
+  const startEditing = () => {
+    setName(title);
+    setDescription(editDescription ?? '');
+    setVoiceBrief(editVoiceBrief ?? '');
+    setSignatureLook(editSignatureLook ?? '');
+    setSaveErr(null);
+    setEditing(true);
+  };
+
+  const onSave = async () => {
+    if (!characterId || saving) return;
+    if (!name.trim()) { setSaveErr('Name cannot be empty.'); return; }
+    setSaving(true);
+    setSaveErr(null);
+    try {
+      const resp = await fetch(`/api/dashboard/characters/${encodeURIComponent(characterId)}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(),
+          description: description.trim() || null,
+          voice_brief: voiceBrief.trim() || null,
+          signature_look: signatureLook.trim() || null,
+        }),
+      });
+      const data = (await resp.json()) as Record<string, unknown>;
+      if (!resp.ok) {
+        const msg = (data as any)?.error?.message ?? (data as any)?.error ?? `HTTP ${resp.status}`;
+        setSaveErr(typeof msg === 'string' ? msg : JSON.stringify(data));
+        setSaving(false);
+        return;
+      }
+      setSaving(false);
+      setEditing(false);
+      const updated = (data as { character?: SavedCharacter }).character;
+      if (updated) onSaved?.(updated);
+    } catch (e) {
+      setSaveErr((e as Error).message);
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.7)' }} onClick={onClose}>
       <div
@@ -278,28 +354,122 @@ function DetailLightbox({
           )}
         </div>
         <div className="flex flex-1 flex-col justify-center gap-3 p-5">
-          <div>
-            <h2 className="text-lg font-semibold" style={{ color: '#E9E9F0' }}>{title}</h2>
-            {subtitle && <p className="mt-0.5 text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>{subtitle}</p>}
-          </div>
-          {copyValue && (
-            <div className="flex flex-col gap-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.4)' }}>{copyLabel}</span>
-              <button
-                type="button"
-                onClick={async () => {
-                  try { await navigator.clipboard.writeText(copyValue); setCopied(true); setTimeout(() => setCopied(false), 1200); } catch {}
-                }}
-                className="truncate rounded-lg px-3 py-2 text-left text-[11px]"
-                style={{ backgroundColor: '#0F1015', border: '1px solid rgba(255,255,255,0.08)', color: copied ? '#34D399' : '#A78BFA' }}
-              >
-                {copied ? 'copied!' : copyValue}
-              </button>
+          {editing ? (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>Name</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  maxLength={80}
+                  className="rounded-lg px-3 py-2 text-sm"
+                  style={{ backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)' }}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>Description</label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  maxLength={400}
+                  rows={2}
+                  placeholder="Sara, 28 years old — warm, upbeat vibe"
+                  className="resize-none rounded-lg px-3 py-2 text-sm"
+                  style={{ backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)' }}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>Voice notes (optional)</label>
+                <input
+                  type="text"
+                  value={voiceBrief}
+                  onChange={(e) => setVoiceBrief(e.target.value)}
+                  maxLength={240}
+                  placeholder="e.g. warm, upbeat, mid-pitched American accent"
+                  className="rounded-lg px-3 py-2 text-sm"
+                  style={{ backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)' }}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>Signature look (optional)</label>
+                <input
+                  type="text"
+                  value={signatureLook}
+                  onChange={(e) => setSignatureLook(e.target.value)}
+                  maxLength={240}
+                  placeholder="e.g. always in a denim jacket, wavy dark hair"
+                  className="rounded-lg px-3 py-2 text-sm"
+                  style={{ backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)' }}
+                />
+              </div>
+              {saveErr && (
+                <div className="rounded-lg px-3 py-2 text-xs" style={{ border: '1px solid rgba(255,79,79,0.3)', backgroundColor: 'rgba(255,79,79,0.08)', color: '#FCA5A5' }}>
+                  {saveErr}
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onSave}
+                  disabled={saving}
+                  className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] font-medium"
+                  style={{ backgroundColor: saving ? 'rgba(167,139,250,0.4)' : '#A78BFA', color: '#0F1015' }}
+                >
+                  {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setEditing(false); setSaveErr(null); }}
+                  disabled={saving}
+                  className="rounded-full px-3.5 py-1.5 text-[13px] font-medium"
+                  style={{ backgroundColor: 'transparent', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.7)' }}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
+          ) : (
+            <>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-semibold" style={{ color: '#E9E9F0' }}>{title}</h2>
+                  {editable && (
+                    <button
+                      type="button"
+                      onClick={startEditing}
+                      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                      style={{ backgroundColor: 'rgba(167,139,250,0.12)', color: '#A78BFA' }}
+                    >
+                      <Pencil className="h-3 w-3" /> Edit
+                    </button>
+                  )}
+                </div>
+                {subtitle && <p className="mt-0.5 text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>{subtitle}</p>}
+                {editVoiceBrief && <p className="mt-1 text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>Voice: {editVoiceBrief}</p>}
+                {editSignatureLook && <p className="mt-0.5 text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>Look: {editSignatureLook}</p>}
+              </div>
+              {copyValue && (
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.4)' }}>{copyLabel}</span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try { await navigator.clipboard.writeText(copyValue); setCopied(true); setTimeout(() => setCopied(false), 1200); } catch {}
+                    }}
+                    className="truncate rounded-lg px-3 py-2 text-left text-[11px]"
+                    style={{ backgroundColor: '#0F1015', border: '1px solid rgba(255,255,255,0.08)', color: copied ? '#34D399' : '#A78BFA' }}
+                  >
+                    {copied ? 'copied!' : copyValue}
+                  </button>
+                </div>
+              )}
+              <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                Pick this from any skill&apos;s &quot;reuse a saved character&quot; picker, or paste the URL above.
+              </p>
+            </>
           )}
-          <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.35)' }}>
-            Pick this from any skill&apos;s &quot;reuse a saved character&quot; picker, or paste the URL above.
-          </p>
         </div>
       </div>
     </div>

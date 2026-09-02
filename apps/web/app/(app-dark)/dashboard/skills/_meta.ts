@@ -7,7 +7,7 @@
  * services/primitive-worker-vnext/src/client/credits.ts.
  */
 
-import { Sparkles, LayoutGrid, Video, Captions, Film, type LucideIcon } from 'lucide-react';
+import { Sparkles, LayoutGrid, Video, Captions, Film, BookOpen, type LucideIcon } from 'lucide-react';
 
 export interface SkillMeta {
   icon: LucideIcon;
@@ -28,6 +28,7 @@ export const SKILL_META: Record<string, SkillMeta> = {
   make_lip_sync: { icon: Video, cost: '140–420 credits', time: '~7–8 min', outputKind: 'video' },
   make_ugc_video: { icon: Film, cost: '~155–435 credits', time: '6–10 min', outputKind: 'video' },
   make_podcast: { icon: Film, cost: '~280–1400 credits', time: '8–30 min', outputKind: 'video' },
+  make_storybook: { icon: BookOpen, cost: '~140–1700 credits', time: '6–25 min', outputKind: 'video' },
 };
 
 export function metaFor(slug: string): SkillMeta {

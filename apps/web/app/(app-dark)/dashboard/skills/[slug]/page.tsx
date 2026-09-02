@@ -17,6 +17,9 @@ import { Loader2, Play, ArrowLeft, ExternalLink, Copy, Check } from 'lucide-reac
 import { metaFor } from '../_meta';
 import { FORMS, type Field } from '../_forms';
 
+interface CharacterItem { name: string; description: string; ref: string; ref_base64: string }
+interface SceneItem { speaker: string; line: string; visual_description: string }
+
 interface SkillEntry {
   slug: string;
   name: string;
@@ -213,6 +216,7 @@ function RunPanel({
       if (f.kind === 'select') o[f.name] = f.defaultValue ?? f.options[0];
       else if (f.kind === 'number-select') o[f.name] = f.defaultValue ?? f.options[0];
       else if (f.kind === 'boolean') o[f.name] = f.defaultValue ?? false;
+      else if (f.kind === 'character-list' || f.kind === 'scene-list') o[f.name] = [];
       else o[f.name] = '';
     }
     return o;
@@ -229,6 +233,26 @@ function RunPanel({
     const body: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(values)) {
       if (typeof v === 'string' && v.trim() === '') continue;
+      if (k === 'characters' && Array.isArray(v)) {
+        const cleaned = (v as CharacterItem[])
+          .filter((c) => c.name?.trim())
+          .map((c) => {
+            const out: Record<string, unknown> = { name: c.name.trim() };
+            if (c.description?.trim()) out.description = c.description.trim();
+            if (c.ref_base64?.trim()) out.ref_base64 = c.ref_base64.trim();
+            else if (c.ref?.trim()) out.ref = c.ref.trim();
+            return out;
+          });
+        if (cleaned.length) body[k] = cleaned;
+        continue;
+      }
+      if (k === 'scenes' && Array.isArray(v)) {
+        const cleaned = (v as SceneItem[])
+          .filter((s) => s.speaker?.trim() && s.line?.trim() && s.visual_description?.trim())
+          .map((s) => ({ speaker: s.speaker.trim(), line: s.line.trim(), visual_description: s.visual_description.trim() }));
+        if (cleaned.length) body[k] = cleaned;
+        continue;
+      }
       body[k] = v;
     }
     try {
@@ -260,7 +284,7 @@ function RunPanel({
       {form ? (
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           {form.fields.map((f) => (
-            <FieldRow key={f.name} field={f} value={values[f.name]} onChange={(v) => setValues((p) => ({ ...p, [f.name]: v }))} />
+            <FieldRow key={f.name} field={f} value={values[f.name]} allValues={values} onChange={(v) => setValues((p) => ({ ...p, [f.name]: v }))} />
           ))}
           {submitErr && (
             <div className="rounded-lg px-3 py-2 text-xs" style={{ border: '1px solid rgba(255,79,79,0.3)', backgroundColor: 'rgba(255,79,79,0.08)', color: '#FCA5A5' }}>
@@ -362,7 +386,7 @@ function SnippetBlock({ title, code }: { title: string; code: string }) {
   );
 }
 
-function FieldRow({ field, value, onChange }: { field: Field; value: unknown; onChange: (v: unknown) => void }) {
+function FieldRow({ field, value, onChange, allValues }: { field: Field; value: unknown; onChange: (v: unknown) => void; allValues?: Record<string, unknown> }) {
   const inputStyle: React.CSSProperties = { backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 10px', fontSize: 13, width: '100%' };
   const labelEl = (
     <label className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>{field.label}{('required' in field && field.required) ? ' *' : ''}</label>
@@ -403,6 +427,16 @@ function FieldRow({ field, value, onChange }: { field: Field; value: unknown; on
   }
   if (field.kind === 'character-picker') {
     return <CharacterPickerField field={field} value={value} onChange={onChange} />;
+  }
+  if (field.kind === 'character-list') {
+    return <CharacterListField field={field} value={value} onChange={onChange} />;
+  }
+  if (field.kind === 'scene-list') {
+    const chars = allValues?.[field.charactersField];
+    const characterNames = Array.isArray(chars)
+      ? Array.from(new Set((chars as CharacterItem[]).map((c) => c.name?.trim()).filter((n): n is string => Boolean(n))))
+      : [];
+    return <SceneListField field={field} value={value} onChange={onChange} characterNames={characterNames} />;
   }
   if (field.kind === 'image') {
     const dataUrl = typeof value === 'string' ? value : '';
@@ -595,3 +629,267 @@ function CharacterPickerField({ field, value, onChange }: { field: Extract<Field
   );
 }
 
+
+interface CharacterListValue extends CharacterItem {}
+
+function CharacterListField({ field, value, onChange }: { field: Extract<Field, { kind: 'character-list' }>; value: unknown; onChange: (v: unknown) => void }) {
+  const items = Array.isArray(value) ? (value as CharacterListValue[]) : [];
+  const [characters, setCharacters] = useState<SavedCharacter[] | null>(null);
+  const [actors, setActors] = useState<StockActor[] | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  const ensureLoaded = () => {
+    if (loaded) return;
+    setLoaded(true);
+    fetch('/api/dashboard/characters', { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : { characters: [] }))
+      .then((j) => setCharacters(j.characters ?? []))
+      .catch(() => setCharacters([]));
+    fetch('/api/actors', { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : { actors: [] }))
+      .then((j) => setActors(j.actors ?? []))
+      .catch(() => setActors([]));
+  };
+
+  const updateItem = (i: number, patch: Partial<CharacterListValue>) => {
+    const next = items.slice();
+    next[i] = { ...next[i], ...patch };
+    onChange(next);
+  };
+  const addItem = () => {
+    if (items.length >= field.max) return;
+    onChange([...items, { name: '', description: '', ref: '', ref_base64: '' }]);
+    ensureLoaded();
+  };
+  const removeItem = (i: number) => onChange(items.filter((_, idx) => idx !== i));
+
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>{field.label}</label>
+      {items.length === 0 && (
+        <div className="rounded-lg px-3 py-3 text-center text-[12px]" style={{ border: '1px dashed rgba(255,255,255,0.18)', color: 'rgba(255,255,255,0.4)' }}>
+          No characters yet — add at least one.
+        </div>
+      )}
+      <div className="flex flex-col gap-3">
+        {items.map((item, i) => (
+          <CharacterRow key={i} index={i} item={item} characters={characters} actors={actors} onOpenPicker={ensureLoaded} onChange={(patch) => updateItem(i, patch)} onRemove={() => removeItem(i)} />
+        ))}
+      </div>
+      {items.length < field.max && (
+        <button type="button" onClick={addItem} className="self-start rounded-full px-3 py-1.5 text-[12px]" style={{ backgroundColor: 'rgba(167,139,250,0.12)', color: '#A78BFA', border: '1px solid rgba(167,139,250,0.3)' }}>
+          + add character
+        </button>
+      )}
+      {field.help && <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{field.help}</span>}
+    </div>
+  );
+}
+
+function CharacterRow({
+  index,
+  item,
+  characters,
+  actors,
+  onOpenPicker,
+  onChange,
+  onRemove,
+}: {
+  index: number;
+  item: CharacterListValue;
+  characters: SavedCharacter[] | null;
+  actors: StockActor[] | null;
+  onOpenPicker: () => void;
+  onChange: (patch: Partial<CharacterListValue>) => void;
+  onRemove: () => void;
+}) {
+  const inputStyle: React.CSSProperties = { backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 10px', fontSize: 13, width: '100%' };
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerTab, setPickerTab] = useState<'mine' | 'stock'>('mine');
+
+  const onFile = (file: File | null) => {
+    if (!file) { onChange({ ref_base64: '' }); return; }
+    const reader = new FileReader();
+    reader.onload = () => onChange({ ref_base64: typeof reader.result === 'string' ? reader.result : '', ref: '' });
+    reader.readAsDataURL(file);
+  };
+
+  const pickedThumb = item.ref && (item.ref.includes('r2.dev') || item.ref.includes('supabase')) ? item.ref : null;
+
+  return (
+    <div className="flex flex-col gap-2 rounded-xl p-3" style={{ border: '1px solid rgba(255,255,255,0.08)', backgroundColor: '#0F1015' }}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.45)' }}>Character {index + 1}</span>
+        <button type="button" onClick={onRemove} className="text-[11px] underline" style={{ color: 'rgba(255,255,255,0.45)' }}>remove</button>
+      </div>
+
+      <input type="text" value={item.name} onChange={(e) => onChange({ name: e.target.value })} placeholder="Name — must match a scene speaker (e.g. Pip)" style={inputStyle} />
+
+      <textarea rows={2} value={item.description} onChange={(e) => onChange({ description: e.target.value })} placeholder="Description — a curious fox cub in a blue scarf" style={inputStyle} />
+
+      <div className="flex flex-col gap-1">
+        <label
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => { e.preventDefault(); onFile(e.dataTransfer.files?.[0] ?? null); }}
+          className="flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg px-3 py-3 text-center"
+          style={{ backgroundColor: '#14151F', border: '1px dashed rgba(255,255,255,0.18)', fontSize: 11, color: 'rgba(255,255,255,0.5)' }}
+        >
+          <input type="file" accept="image/png,image/jpeg" className="hidden" onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
+          {item.ref_base64 ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={item.ref_base64} alt="character preview" style={{ maxHeight: 72, borderRadius: 6 }} />
+              <span style={{ color: '#34D399' }}>photo attached — click to replace</span>
+            </>
+          ) : (
+            <span>…or upload a photo</span>
+          )}
+        </label>
+        {item.ref_base64 && (
+          <button type="button" onClick={() => onChange({ ref_base64: '' })} className="self-start text-[11px] underline" style={{ color: 'rgba(255,255,255,0.45)' }}>remove photo</button>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1">
+        {item.ref && !item.ref_base64 && (
+          <div className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ backgroundColor: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.25)' }}>
+            {pickedThumb && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={pickedThumb} alt="" style={{ width: 24, height: 24, borderRadius: 6, objectFit: 'cover' }} />
+            )}
+            <span className="flex-1 truncate text-[12px]" style={{ color: '#E9E9F0' }}>{item.ref}</span>
+            <button type="button" onClick={() => onChange({ ref: '' })} className="text-[11px] underline" style={{ color: 'rgba(255,255,255,0.5)' }}>clear</button>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => { setPickerOpen((o) => !o); if (!pickerOpen) onOpenPicker(); }}
+          className="self-start text-[12px] underline"
+          style={{ color: '#A78BFA' }}
+        >
+          {pickerOpen ? 'hide picker' : item.ref && !item.ref_base64 ? 'change saved character' : '…or reuse a saved character'}
+        </button>
+
+        {pickerOpen && (
+          <div className="flex flex-col gap-2 rounded-xl p-3" style={{ border: '1px solid rgba(255,255,255,0.08)', backgroundColor: '#14151F' }}>
+            <div className="flex gap-1">
+              <button type="button" onClick={() => setPickerTab('mine')} className="rounded-full px-3 py-1 text-[11px]" style={{ backgroundColor: pickerTab === 'mine' ? '#A78BFA' : 'rgba(255,255,255,0.06)', color: pickerTab === 'mine' ? '#0F1015' : 'rgba(255,255,255,0.6)' }}>My characters</button>
+              <button type="button" onClick={() => setPickerTab('stock')} className="rounded-full px-3 py-1 text-[11px]" style={{ backgroundColor: pickerTab === 'stock' ? '#A78BFA' : 'rgba(255,255,255,0.06)', color: pickerTab === 'stock' ? '#0F1015' : 'rgba(255,255,255,0.6)' }}>Stock actors</button>
+            </div>
+            {pickerTab === 'mine' && (
+              characters === null ? (
+                <div className="py-3 text-center text-[12px]" style={{ color: 'rgba(255,255,255,0.4)' }}>loading…</div>
+              ) : characters.length === 0 ? (
+                <div className="py-3 text-center text-[12px]" style={{ color: 'rgba(255,255,255,0.4)' }}>No saved characters yet.</div>
+              ) : (
+                <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+                  {characters.filter((c) => c.character_sheet_url).map((c) => (
+                    <button
+                      type="button"
+                      key={c.id}
+                      onClick={() => { onChange({ ref: c.character_sheet_url ?? '', ref_base64: '' }); setPickerOpen(false); }}
+                      className="flex flex-col items-center gap-1 rounded-lg p-1.5 transition-colors hover:opacity-80"
+                      style={{ border: item.ref === c.character_sheet_url ? '1px solid #A78BFA' : '1px solid rgba(255,255,255,0.06)' }}
+                      title={c.name ?? undefined}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={c.thumbnail_url ?? c.character_sheet_url ?? ''} alt={c.name ?? 'character'} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: 6 }} />
+                      <span className="w-full truncate text-center text-[10px]" style={{ color: 'rgba(255,255,255,0.6)' }}>{c.name ?? 'Unnamed'}</span>
+                    </button>
+                  ))}
+                </div>
+              )
+            )}
+            {pickerTab === 'stock' && (
+              actors === null ? (
+                <div className="py-3 text-center text-[12px]" style={{ color: 'rgba(255,255,255,0.4)' }}>loading…</div>
+              ) : actors.length === 0 ? (
+                <div className="py-3 text-center text-[12px]" style={{ color: 'rgba(255,255,255,0.4)' }}>No stock actors available.</div>
+              ) : (
+                <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+                  {actors.filter((a) => a.portrait_url).map((a) => (
+                    <button
+                      type="button"
+                      key={a.id}
+                      onClick={() => { onChange({ ref: a.portrait_url ?? '', ref_base64: '' }); setPickerOpen(false); }}
+                      className="flex flex-col items-center gap-1 rounded-lg p-1.5 transition-colors hover:opacity-80"
+                      style={{ border: item.ref === a.portrait_url ? '1px solid #A78BFA' : '1px solid rgba(255,255,255,0.06)' }}
+                      title={a.name}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={a.portrait_url ?? ''} alt={a.name} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: 6 }} />
+                      <span className="w-full truncate text-center text-[10px]" style={{ color: 'rgba(255,255,255,0.6)' }}>{a.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SceneListField({
+  field,
+  value,
+  onChange,
+  characterNames,
+}: {
+  field: Extract<Field, { kind: 'scene-list' }>;
+  value: unknown;
+  onChange: (v: unknown) => void;
+  characterNames: string[];
+}) {
+  const inputStyle: React.CSSProperties = { backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 10px', fontSize: 13, width: '100%' };
+  const items = Array.isArray(value) ? (value as SceneItem[]) : [];
+
+  const updateItem = (i: number, patch: Partial<SceneItem>) => {
+    const next = items.slice();
+    next[i] = { ...next[i], ...patch };
+    onChange(next);
+  };
+  const addItem = () => {
+    if (items.length >= field.max) return;
+    onChange([...items, { speaker: characterNames[0] ?? '', line: '', visual_description: '' }]);
+  };
+  const removeItem = (i: number) => onChange(items.filter((_, idx) => idx !== i));
+
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>{field.label}</label>
+      {items.length === 0 && (
+        <div className="rounded-lg px-3 py-3 text-center text-[12px]" style={{ border: '1px dashed rgba(255,255,255,0.18)', color: 'rgba(255,255,255,0.4)' }}>
+          No scenes yet — add at least one.
+        </div>
+      )}
+      <div className="flex flex-col gap-3">
+        {items.map((item, i) => (
+          <div key={i} className="flex flex-col gap-2 rounded-xl p-3" style={{ border: '1px solid rgba(255,255,255,0.08)', backgroundColor: '#0F1015' }}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.45)' }}>Scene {i + 1}</span>
+              <button type="button" onClick={() => removeItem(i)} className="text-[11px] underline" style={{ color: 'rgba(255,255,255,0.45)' }}>remove</button>
+            </div>
+            {characterNames.length > 0 ? (
+              <select value={item.speaker} onChange={(e) => updateItem(i, { speaker: e.target.value })} style={inputStyle}>
+                <option value="" disabled>choose a speaker</option>
+                {characterNames.map((n) => (<option key={n} value={n}>{n}</option>))}
+              </select>
+            ) : (
+              <input type="text" value={item.speaker} onChange={(e) => updateItem(i, { speaker: e.target.value })} placeholder="add a character name above first" style={inputStyle} />
+            )}
+            <textarea rows={2} value={item.line} onChange={(e) => updateItem(i, { line: e.target.value })} placeholder="Line — what they say (5+ words)" style={inputStyle} />
+            <textarea rows={2} value={item.visual_description} onChange={(e) => updateItem(i, { visual_description: e.target.value })} placeholder="Visual description — standing in a sunny meadow, looking curious" style={inputStyle} />
+          </div>
+        ))}
+      </div>
+      {items.length < field.max && (
+        <button type="button" onClick={addItem} className="self-start rounded-full px-3 py-1.5 text-[12px]" style={{ backgroundColor: 'rgba(167,139,250,0.12)', color: '#A78BFA', border: '1px solid rgba(167,139,250,0.3)' }}>
+          + add scene
+        </button>
+      )}
+      {field.help && <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{field.help}</span>}
+    </div>
+  );
+}

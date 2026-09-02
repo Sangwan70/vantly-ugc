@@ -22,6 +22,9 @@ import {
   WireframeGpt2ToolInputSchema,
   LipSyncToolInputSchema,
   BrollTalkingHeadToolInputSchema,
+  STORYBOOK_ART_STYLE_KEYS,
+  STORYBOOK_MAX_CHARACTERS,
+  STORYBOOK_MAX_SCENES,
 } from '@vantly-ugc/schema';
 
 /**
@@ -281,6 +284,98 @@ export const MakePodcastSkillInputSchema = z
     path: ['character_b'],
   });
 
+/**
+ * User-facing skill input for make_storybook. A cast of 1-4 characters — each
+ * either a saved character/photo reference OR a text description (the common
+ * case: most storybook characters have no photo, they're designed fresh) —
+ * acts out an ordered sequence of scenes in ONE consistent illustrated art
+ * style. Each scene's speaking character talks on-screen (Seedance native
+ * voice), never a static-illustration-plus-voiceover.
+ */
+const StorybookCharacterSchema = z
+  .object({
+    name: z
+      .string()
+      .min(1)
+      .max(60)
+      .describe('Short name as it appears in the story (e.g. "Pip the fox"). Must match a scene\'s `speaker` exactly.'),
+    ref: z
+      .string()
+      .min(3)
+      .max(400)
+      .optional()
+      .describe('Optional saved character_id (char_…) OR an https image URL to stylize the design from.'),
+    ref_base64: z
+      .string()
+      .min(64)
+      .optional()
+      .describe('An uploaded photo (data URL or raw base64) to stylize the design from — the API re-hosts it to R2. Use this OR ref, not both.'),
+    description: z
+      .string()
+      .min(10)
+      .max(400)
+      .optional()
+      .describe('Physical look + personality to design the character from when there is no photo — the common case for a storybook cast (a talking fox, a friendly dragon, etc).'),
+  })
+  .refine(
+    (c) => (c.ref && c.ref.trim()) || (c.ref_base64 && c.ref_base64.trim()) || (c.description && c.description.trim()),
+    {
+      message: 'each character needs a ref, an uploaded photo (ref_base64), or a description',
+      path: ['description'],
+    },
+  );
+
+const StorybookSceneSchema = z.object({
+  speaker: z
+    .string()
+    .min(1)
+    .max(60)
+    .describe('Character name (must match a `name` in `characters`) who speaks and is on-screen in this scene.'),
+  line: z
+    .string()
+    .min(1)
+    .max(600)
+    .refine((s) => s.trim().split(/\s+/).filter(Boolean).length >= 5, {
+      message: 'each scene needs at least 5 words so it fills a clip — merge a very short line into an adjacent scene',
+    })
+    .describe('The dialogue/narration this character speaks aloud in the scene, at least 5 words. Long lines auto-split into ≤15s takes.'),
+  visual_description: z
+    .string()
+    .min(1)
+    .max(400)
+    .describe('The setting, action and expression for this scene\'s shot (e.g. "standing in a sunny meadow, looking curious").'),
+});
+
+export const MakeStorybookSkillInputSchema = z
+  .object({
+    title: z.string().min(1).max(120).optional().describe('Optional story title.'),
+    characters: z
+      .array(StorybookCharacterSchema)
+      .min(1)
+      .max(STORYBOOK_MAX_CHARACTERS)
+      .describe('The story\'s cast — 1 to 4 characters, each with one locked stylized design reused across every scene they appear in.'),
+    art_style: z
+      .enum(STORYBOOK_ART_STYLE_KEYS)
+      .default('flat_vector_cartoon')
+      .describe('The illustrated style every character design and scene shares. Offer the user a couple of choices before generating.'),
+    style_notes: z.string().max(240).optional().describe('Optional extra style guidance (palette, mood, era) layered on top of art_style.'),
+    scenes: z
+      .array(StorybookSceneSchema)
+      .min(1)
+      .max(STORYBOOK_MAX_SCENES)
+      .describe('Ordered scenes, each with a speaking character, their line, and the shot\'s visual description. 5-8 scenes is a good default length for a short story.'),
+    aspect_ratio: z.enum(['9:16', '1:1', '16:9']).default('9:16'),
+    subtitles: z
+      .boolean()
+      .default(false)
+      .describe('Burn TikTok/Hormozi captions. OPT-IN — ask the user whether they want captions before generating; leave off unless they say yes.'),
+    subtitles_style: z.enum(['hormozi', 'tiktok', 'minimal']).default('hormozi'),
+  })
+  .refine(
+    (d) => d.scenes.every((s) => d.characters.some((c) => c.name.trim() === s.speaker.trim())),
+    { message: 'every scene\'s speaker must match a name in characters', path: ['scenes'] },
+  );
+
 export interface SkillEntry {
   slug: string;
   name: string;
@@ -400,6 +495,17 @@ export const SKILLS: Record<string, SkillEntry> = {
     primitive: 'composed:make_podcast',
     workflowType: 'makePodcastWorkflow',
     inputSchema: MakePodcastSkillInputSchema,
+    agentFacing: true,
+  },
+  make_storybook: {
+    slug: 'make_storybook',
+    name: 'Make Storybook',
+    version: '1.0.0',
+    description:
+      'A short illustrated kids\' story where 1-4 characters TALK on-screen in a consistent cartoon/illustrated art style (not a static picture with a voiceover). Provide `characters` (each a name plus either a saved char_… / image ref, or a text description — most storybook characters have no photo), an `art_style`, and ordered `scenes` (each { speaker, line, visual_description }). Every scene\'s speaker must match a character name. Renders each character\'s locked stylized design once, then animates every scene with native lip-synced Seedance voice, and hard-cuts the scenes together into one vertical video. Captions are OPT-IN — ask the user first, then set subtitles:true.',
+    primitive: 'composed:make_storybook',
+    workflowType: 'makeStorybookWorkflow',
+    inputSchema: MakeStorybookSkillInputSchema,
     agentFacing: true,
   },
   make_ugc: {

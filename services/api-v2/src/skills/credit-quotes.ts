@@ -13,7 +13,7 @@
 import { decideMakeUgcRoute, type MakeUgcProps } from './make-ugc-router.js';
 // Shared take planner — the SAME module the worker plans with, so quote and run
 // cannot disagree. See packages/schema/src/take-planner.ts.
-import { countWords, fitDuration, planTakeDurations } from '@vantly-ugc/schema';
+import { countWords, fitDuration, planTakeDurations, chunkScript } from '@vantly-ugc/schema';
 
 // Portraits are free; a character sheet is charged only standalone (a sheet
 // generated inside make_ugc_video is free — see the make_ugc_video case).
@@ -178,6 +178,23 @@ export function quoteSkillCredits(
         for (const turn of script) {
           const line = typeof turn?.line === 'string' ? turn.line : '';
           for (const d of chunkPodcastTurn(line).map(fitDuration)) cost += SELFIE_BY_DURATION[d];
+        }
+      }
+      const subs = (i as { subtitles?: boolean }).subtitles ? SUBTITLES_CREDITS : 0;
+      return cost + subs;
+    }
+    case 'make_storybook': {
+      // Price the EXACT takes the worker will render: each scene's line is
+      // chunked into <=15s takes via the SAME shared planner
+      // make_broll_talking_head uses (@vantly-ugc/schema's chunkScript), so
+      // quote and run cannot drift the way make_podcast's local copy could.
+      // Character designs are free images (like the sheet inside a video).
+      const scenes = (i as { scenes?: Array<{ line?: unknown }> }).scenes;
+      let cost = 0;
+      if (Array.isArray(scenes)) {
+        for (const scene of scenes) {
+          const line = typeof scene?.line === 'string' ? scene.line : '';
+          for (const chunk of chunkScript(line)) cost += SELFIE_BY_DURATION[fitDuration(chunk)];
         }
       }
       const subs = (i as { subtitles?: boolean }).subtitles ? SUBTITLES_CREDITS : 0;

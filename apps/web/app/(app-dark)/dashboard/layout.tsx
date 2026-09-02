@@ -26,7 +26,7 @@
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Home, Palette, Images, LogOut, Loader2, LifeBuoy, BookOpen, Sparkles, ListChecks, KeyRound, Share2, ShieldCheck, Bot } from 'lucide-react';
+import { Home, Palette, Images, LogOut, Loader2, LifeBuoy, BookOpen, Sparkles, ListChecks, KeyRound, Share2, ShieldCheck, Bot, Users } from 'lucide-react';
 import { VantlyLogo } from '@/components/vantly-logo';
 import { createClient } from '@/lib/supabase/client';
 import { goToMarketingSite } from '@/lib/marketing';
@@ -55,6 +55,7 @@ const NAV = [
   { href: '/dashboard/agent',     label: 'Agent',        icon: Bot },
   { href: '/dashboard/jobs',      label: 'Jobs',         icon: ListChecks },
   { href: '/dashboard/gallery',   label: 'Gallery',      icon: Images },
+  { href: '/dashboard/actors',    label: 'Actors',       icon: Users },
   { href: '/dashboard/social',    label: 'Social',       icon: Share2 },
   { href: '/dashboard/api-keys',  label: 'API Keys',     icon: KeyRound },
   { href: '/dashboard/brand-kit', label: 'Brand Kit',    icon: Palette },

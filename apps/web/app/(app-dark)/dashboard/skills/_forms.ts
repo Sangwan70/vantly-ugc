@@ -19,7 +19,18 @@ export type Field =
   // (saved character) or portrait_url (stock actor) — both accepted as-is
   // by resolveCharacterSheetUrl() on the API side. A plain text fallback
   // stays available for pasting a char_... id or URL by hand.
-  | { kind: 'character-picker'; name: string; label: string; placeholder?: string; help?: string };
+  | { kind: 'character-picker'; name: string; label: string; placeholder?: string; help?: string }
+  // Repeatable cast list for make_storybook. Each row is one character:
+  // a name, plus at most one identity source (a description, an uploaded
+  // photo, or a saved character/stock actor) — a description alone is the
+  // common case. Value is an array of
+  // { name, description?, ref?, ref_base64? } objects.
+  | { kind: 'character-list'; name: string; label: string; max: number; help?: string }
+  // Repeatable ordered scene list for make_storybook. Each row is one
+  // scene: a speaking character (drawn from the sibling `charactersField`
+  // list), their spoken line, and a visual description of the shot. Value
+  // is an array of { speaker, line, visual_description } objects.
+  | { kind: 'scene-list'; name: string; label: string; max: number; charactersField: string; help?: string };
 
 export interface SkillForm {
   fields: Field[];
@@ -55,7 +66,8 @@ export const FORMS: Record<string, SkillForm> = {
   make_character_sheet: {
     composed: false,
     fields: [
-      { kind: 'text', name: 'portrait_url', label: 'Portrait URL (R2-hosted)', placeholder: 'https://pub-...r2.dev/vnext/...', required: true },
+      { kind: 'text', name: 'portrait_url', label: 'Portrait URL (R2-hosted)', placeholder: 'https://pub-...r2.dev/vnext/... — or use the upload below', help: 'Provide a URL OR upload a photo below (not both).' },
+      { kind: 'image', name: 'portrait_image_base64', label: '…or upload a photo', help: 'PNG/JPEG. Use this OR the URL above — the character auto-saves to My Characters (see the Actors page) once it finishes.' },
       { kind: 'text', name: 'description', label: 'Description (≤10 words)', placeholder: 'Sara, 28 years old' },
       { kind: 'select', name: 'aspect_ratio', label: 'Aspect ratio', options: ['1:1', '9:16'], defaultValue: '1:1' },
     ],
@@ -130,6 +142,24 @@ export const FORMS: Record<string, SkillForm> = {
       { kind: 'select', name: 'realism_target', label: 'Realism', options: ['natural', 'commercial', 'raw_iphone'], defaultValue: 'natural' },
       { kind: 'select', name: 'aspect_ratio', label: 'Aspect ratio', options: ['9:16', '1:1'], defaultValue: '9:16' },
       { kind: 'boolean', name: 'subtitles', label: 'Burn subtitles', defaultValue: true },
+      { kind: 'select', name: 'subtitles_style', label: 'Subtitles style', options: ['hormozi', 'tiktok', 'minimal'], defaultValue: 'hormozi' },
+    ],
+  },
+  make_storybook: {
+    composed: true,
+    fields: [
+      { kind: 'text', name: 'title', label: 'Title (optional)', placeholder: 'Pip the Fox and the Lost Scarf' },
+      // 1-4 characters (STORYBOOK_MAX_CHARACTERS in @vantly-ugc/schema); each
+      // row needs a name plus at least one identity source — a description
+      // alone is the common case, matching MakeStorybookSkillInputSchema.
+      { kind: 'character-list', name: 'characters', label: 'Characters (cast)', max: 4, help: 'Up to 4 characters. Each needs a name, plus a description, an uploaded photo, or a saved character — a description alone works great (e.g. "a curious fox cub in a blue scarf").' },
+      { kind: 'select', name: 'art_style', label: 'Art style', options: ['flat_vector_cartoon', 'storybook_watercolor', 'crayon_sketch', 'felt_stopmotion', 'classic_storybook_ink'], defaultValue: 'flat_vector_cartoon' },
+      { kind: 'text', name: 'style_notes', label: 'Style notes (optional)', placeholder: 'warm pastel palette, cozy autumn mood' },
+      // Ordered scenes (1-12, STORYBOOK_MAX_SCENES); each speaker must match
+      // a character name above.
+      { kind: 'scene-list', name: 'scenes', label: 'Scenes (story, in order)', max: 12, charactersField: 'characters', help: 'Each scene needs a speaking character, their line (5+ words), and a visual description of the shot. 5–8 scenes is a good length for a short story.' },
+      { kind: 'select', name: 'aspect_ratio', label: 'Aspect ratio', options: ['9:16', '1:1', '16:9'], defaultValue: '9:16' },
+      { kind: 'boolean', name: 'subtitles', label: 'Burn subtitles', defaultValue: false },
       { kind: 'select', name: 'subtitles_style', label: 'Subtitles style', options: ['hormozi', 'tiktok', 'minimal'], defaultValue: 'hormozi' },
     ],
   },

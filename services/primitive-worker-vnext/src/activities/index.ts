@@ -15,6 +15,8 @@ import { makeExtractAudioActivity } from './extract-audio.js';
 import { makeComposeBrollOverlayActivity } from './compose-broll-overlay.js';
 import { makePodcastSceneActivity } from './podcast-scene.js';
 import { makePodcastReframeActivity } from './podcast-reframe.js';
+import { makeStorybookCharacterActivity } from './storybook-character.js';
+import { makeStorybookTakeActivity } from './storybook-take.js';
 import { makeRefundCreditsActivity } from './refund-credits.js';
 import { makeMarkPrimitiveRunFailedActivity } from './mark-run-failed.js';
 
@@ -36,6 +38,8 @@ export function createActivities(cfg: WorkerConfig) {
     composeBrollOverlay: makeComposeBrollOverlayActivity(cfg),
     podcastScene: makePodcastSceneActivity(cfg),
     podcastReframe: makePodcastReframeActivity(cfg),
+    storybookCharacter: makeStorybookCharacterActivity(cfg),
+    storybookTake: makeStorybookTakeActivity(cfg),
   };
 }
 

@@ -558,6 +558,13 @@ export async function runSkillRoute(req: Request, res: Response): Promise<void> 
     return;
   }
 
+  // Composed-skill dispatch — make_storybook: 1-4 characters designed once in
+  // one illustrated art style, animated scene by scene, hard-cut together.
+  if (slug === 'make_storybook') {
+    await dispatchMakeStorybook(res, userId, activityInputBody);
+    return;
+  }
+
   const idempotencyKey = readIdempotencyKey(req);
   if (idempotencyKey) {
     const { data: existing, error: existingErr } = await supabase
@@ -995,6 +1002,181 @@ async function dispatchMakePodcast(
     skill_run_id: skillRunId,
     workflow_id: `make_podcast-${skillRunId}`,
     skill: 'make_podcast',
+    status: 'submitted',
+  });
+}
+
+interface ResolvedStorybookCharacter {
+  name: string;
+  /** R2-hosted reference image — omitted when the character is description-only
+   *  (the common case: most storybook characters have no photo at all). */
+  ref_url?: string;
+  description?: string;
+}
+
+/**
+ * Resolve ONE make_storybook character (a name plus a saved char_… id /
+ * https image URL / uploaded photo, OR a text description, OR both) into the
+ * shape the workflow expects. Unlike resolvePodcastCharacter, a character
+ * with no photo at all is valid and expected — storybookCharacter designs it
+ * fresh from the description. Any photo (ref or ref_base64) is ALWAYS
+ * re-hosted onto R2 so the worker's SSRF guard accepts it, mirroring
+ * resolvePodcastCharacter.
+ */
+async function resolveStorybookCharacter(
+  userId: string,
+  c: { name?: unknown; ref?: unknown; ref_base64?: unknown; description?: unknown },
+): Promise<ResolvedStorybookCharacter | null> {
+  const name = typeof c.name === 'string' ? c.name.trim() : '';
+  if (!name) return null;
+  const description =
+    typeof c.description === 'string' && c.description.trim() ? c.description.trim() : undefined;
+
+  // An uploaded photo takes precedence over a URL/id — the Skill Center form
+  // clears one when the other is set, but be defensive here too.
+  const rawBase64 = typeof c.ref_base64 === 'string' ? c.ref_base64.trim() : '';
+  if (rawBase64) {
+    const up = await uploadUserImageBase64(userId, rawBase64);
+    return { name, ref_url: up.url, description };
+  }
+
+  const rawRef = typeof c.ref === 'string' ? c.ref.trim() : '';
+  if (!rawRef) {
+    // description-only — no photo to resolve/re-host.
+    return { name, description };
+  }
+  let sourceUrl: string | null = null;
+  if (/^https?:\/\//i.test(rawRef)) {
+    sourceUrl = rawRef;
+  } else {
+    const { data } = await supabase
+      .from('user_characters')
+      .select('portrait_url, character_sheet_url')
+      .eq('user_id', userId)
+      .eq('public_id', rawRef)
+      .is('archived_at', null)
+      .maybeSingle();
+    if (!data) return null;
+    sourceUrl = (data.portrait_url as string | null) || (data.character_sheet_url as string | null);
+  }
+  if (!sourceUrl) return null;
+  const up = await uploadUserImageFromUrl(userId, sourceUrl);
+  return { name, ref_url: up.url, description };
+}
+
+async function dispatchMakeStorybook(
+  res: Response,
+  userId: string,
+  body: Record<string, unknown>,
+): Promise<void> {
+  const chars = body.characters as Array<{ name?: unknown; ref?: unknown; ref_base64?: unknown; description?: unknown }> | undefined;
+  const scenes = body.scenes as Array<{ speaker?: unknown; line?: unknown; visual_description?: unknown }> | undefined;
+  if (!Array.isArray(chars) || chars.length === 0) {
+    res.status(400).json({ error: 'invalid_input', skill: 'make_storybook', detail: 'characters must be a non-empty array' });
+    return;
+  }
+  if (!Array.isArray(scenes) || scenes.length === 0) {
+    res.status(400).json({ error: 'invalid_input', skill: 'make_storybook', detail: 'scenes must be a non-empty array' });
+    return;
+  }
+
+  const resolvedChars: ResolvedStorybookCharacter[] = [];
+  try {
+    for (const c of chars) {
+      const r = await resolveStorybookCharacter(userId, c);
+      if (!r) {
+        res.status(400).json({
+          error: 'storybook_character_not_found',
+          skill: 'make_storybook',
+          detail: `Could not resolve character "${typeof c.name === 'string' ? c.name : ''}" — give it a name plus either a saved char_… id, an https image URL, or a description.`,
+        });
+        return;
+      }
+      resolvedChars.push(r);
+    }
+  } catch (err) {
+    if (respondIfModerationBlocked(res, err, 'make_storybook')) return;
+    res.status(400).json({ error: 'storybook_identity_failed', skill: 'make_storybook', detail: errorMessage(err) });
+    return;
+  }
+
+  const names = new Set(resolvedChars.map((c) => c.name));
+  for (const s of scenes) {
+    const speaker = typeof s.speaker === 'string' ? s.speaker.trim() : '';
+    if (!names.has(speaker)) {
+      res.status(400).json({
+        error: 'invalid_input',
+        skill: 'make_storybook',
+        detail: `scene speaker "${speaker}" does not match any character name`,
+      });
+      return;
+    }
+  }
+
+  const { data: skillRunRow, error: insertErr } = await supabase
+    .from('skill_runs')
+    .insert({
+      user_id: userId,
+      skill_slug: 'make_storybook',
+      skill_version: '1.0.0',
+      status: 'submitted',
+      input: body,
+      current_step: 'pending',
+    })
+    .select('id')
+    .single();
+  if (insertErr || !skillRunRow) {
+    res.status(500).json({ error: 'skill_run_insert_failed', detail: insertErr?.message ?? 'no row' });
+    return;
+  }
+  const skillRunId = skillRunRow.id as string;
+
+  const workflowInput = {
+    skill_run_id: skillRunId,
+    user_id: userId,
+    title: body.title,
+    characters: resolvedChars.map((c) => ({ name: c.name, ref_url: c.ref_url, description: c.description })),
+    art_style: body.art_style ?? 'flat_vector_cartoon',
+    style_notes: body.style_notes,
+    scenes: scenes.map((s) => ({
+      speaker: String(s.speaker ?? '').trim(),
+      line: String(s.line ?? ''),
+      visual_description: String(s.visual_description ?? ''),
+    })),
+    aspect_ratio: body.aspect_ratio ?? '9:16',
+    subtitles: body.subtitles ?? false,
+    subtitles_style: body.subtitles_style ?? 'hormozi',
+  };
+
+  let cfg: ReturnType<typeof getTemporalConfig>;
+  try {
+    cfg = getTemporalConfig();
+  } catch (err) {
+    res.status(503).json({ error: 'temporal_unconfigured', detail: errorMessage(err) });
+    return;
+  }
+  try {
+    const client = await getTemporalClient();
+    await withTimeout(
+      client.workflow.start('makeStorybookWorkflow', {
+        workflowId: `make_storybook-${skillRunId}`,
+        taskQueue: getPrimitiveTaskQueue(),
+        workflowExecutionTimeout: 45 * 60_000,
+        workflowRunTimeout: 45 * 60_000,
+        args: [workflowInput],
+      }),
+      cfg.startTimeoutMs,
+      'temporal.workflow.start.make_storybook',
+    );
+  } catch (err) {
+    res.status(502).json({ error: 'temporal_dispatch_failed', detail: errorMessage(err) });
+    return;
+  }
+
+  res.status(202).json({
+    skill_run_id: skillRunId,
+    workflow_id: `make_storybook-${skillRunId}`,
+    skill: 'make_storybook',
     status: 'submitted',
   });
 }

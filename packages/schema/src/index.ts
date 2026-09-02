@@ -14,3 +14,4 @@ export * from './tooling/contracts.js';
 // Shared take planner — quote (api-v2) and execution (primitive-worker-vnext)
 // MUST plan identically. See src/take-planner.ts.
 export * from './take-planner.js';
+export * from './storybook.js';

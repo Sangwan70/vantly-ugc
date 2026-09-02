@@ -62,7 +62,8 @@ export type PrimitiveCreditableId =
   | 'product_in_hands'
   | 'subtitles_v2'
   | 'wireframe_gpt2'
-  | 'lip_sync';
+  | 'lip_sync'
+  | 'storybook_take';
 
 // Portraits are not charged (free identity prep). Character sheets are charged
 // ONLY when generated standalone (make_character_sheet); inside a video flow the
@@ -96,6 +97,10 @@ export function quotePrimitiveCredits(
     case 'wireframe_gpt2':
       return 35;
     case 'lip_sync':
+      return SELFIE_CREDITS_BY_DURATION[duration ?? 10];
+    case 'storybook_take':
+      // Same $/s economics as simple_selfie — it's the same Seedance
+      // reference-to-video call, just a stylized (not photoreal) reference.
       return SELFIE_CREDITS_BY_DURATION[duration ?? 10];
   }
 }

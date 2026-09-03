@@ -869,7 +869,7 @@ export default function AgentPage() {
     if ((p.person_mode === 'stock-actor' || p.person_mode === 'upload') && p.person_image_url) lines.push(`[reference_photo_url: ${p.person_image_url}]`);
     return lines.join('\n');
   }
-  function useSavedPrompt(p: AgentSavedPrompt) {
+  function applySavedPrompt(p: AgentSavedPrompt) {
     setInput(promptToDraftMessage(p));
     setPromptPickerOpen(false);
     textareaRef.current?.focus();
@@ -1239,7 +1239,7 @@ export default function AgentPage() {
           ) : (
             <div className="flex flex-col gap-1.5">
               {savedPrompts.map((p) => (
-                <button key={p.id} type="button" onClick={() => useSavedPrompt(p)} className="flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-white/[0.06]" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#0F1015' }}>
+                <button key={p.id} type="button" onClick={() => applySavedPrompt(p)} className="flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-white/[0.06]" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#0F1015' }}>
                   <span className="truncate text-[13px] font-medium" style={{ color: '#E9E9F0' }}>{p.name}</span>
                   <span className="line-clamp-1 text-[11.5px]" style={{ color: 'rgba(255,255,255,0.45)' }}>{p.script}</span>
                 </button>

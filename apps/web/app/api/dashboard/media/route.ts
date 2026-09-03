@@ -16,17 +16,25 @@
  * reference to this asset (alongside its real URL, which is what actually
  * has to go into a script/broll_url/image field today — nothing server-side
  * parses short codes out of scripts).
+ *
+ * Public URL: built with publicStorageUrl() (@/lib/media-url), NOT
+ * supabase.storage.from(BUCKET).getPublicUrl() — that derives from the
+ * server-side client's SUPABASE_URL, which in this self-hosted deployment is
+ * the internal docker-network gateway address, unreachable from a browser.
+ * GET also self-heals any older row whose stored `url` was built the wrong
+ * way (e.g. a bug shipped one that pointed at http://gateway:3000/...).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { publicStorageUrl } from '@/lib/media-url';
 
 const BUCKET = 'user-media';
 const MAX_BYTES = 40 * 1024 * 1024; // 40 MiB decoded
 const KIND_MIME_PREFIX: Record<string, string> = { image: 'image/', video: 'video/', audio: 'audio/' };
 
 const SELECT_COLUMNS =
-  'id, kind, name, short_code, url, mime_type, size_bytes, category, notes, created_at, updated_at';
+  'id, kind, name, short_code, url, storage_path, mime_type, size_bytes, category, notes, created_at, updated_at';
 
 const DIACRITIC_RE = new RegExp('[̀-ͯ]', 'g');
 
@@ -43,6 +51,27 @@ function slugify(input: string): string {
 
 function randomSuffix(): string {
   return Math.random().toString(36).slice(2, 6);
+}
+
+interface MediaRow {
+  id: string;
+  kind: string;
+  name: string;
+  short_code: string;
+  url: string;
+  storage_path: string;
+  mime_type: string;
+  size_bytes: number;
+  category: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Strip the internal-only storage_path before a row leaves this API. */
+function toPublicMedia(row: MediaRow): Omit<MediaRow, 'storage_path'> {
+  const { storage_path: _storage_path, ...rest } = row;
+  return rest;
 }
 
 export async function GET(_req: NextRequest) {
@@ -63,7 +92,24 @@ export async function GET(_req: NextRequest) {
     return NextResponse.json({ error: { code: 'db_error', message: error.message } }, { status: 500 });
   }
 
-  return NextResponse.json({ media: data ?? [] }, { headers: { 'Cache-Control': 'no-store' } });
+  const rows = (data ?? []) as MediaRow[];
+  const fixes: PromiseLike<unknown>[] = [];
+  const media = rows.map((row) => {
+    const expected = publicStorageUrl(BUCKET, row.storage_path);
+    if (row.url !== expected) {
+      const fixed = { ...row, url: expected };
+      fixes.push(supabase.from('user_media').update({ url: expected }).eq('id', row.id).then(() => undefined));
+      return toPublicMedia(fixed);
+    }
+    return toPublicMedia(row);
+  });
+  if (fixes.length) {
+    // Best-effort repair of rows built with the old (internal-host) URL —
+    // never block the response on it.
+    await Promise.allSettled(fixes);
+  }
+
+  return NextResponse.json({ media }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function POST(req: NextRequest) {
@@ -164,8 +210,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: { code: 'upload_failed', message: uploadError.message } }, { status: 500 });
   }
 
-  const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
-  const url = pub.publicUrl;
+  const url = publicStorageUrl(BUCKET, storagePath);
 
   // Short code: user-supplied (validated) or derived from the name, with a
   // random suffix retried on collision (UNIQUE (user_id, short_code)).
@@ -184,7 +229,7 @@ export async function POST(req: NextRequest) {
     shortCode = `${slugify(nameRaw)}-${randomSuffix()}`;
   }
 
-  let row: Record<string, unknown> | null = null;
+  let row: MediaRow | null = null;
   let lastError: { message: string; code?: string } | null = null;
   for (let attempt = 0; attempt < 5; attempt++) {
     const { data, error } = await supabase
@@ -204,7 +249,7 @@ export async function POST(req: NextRequest) {
       .select(SELECT_COLUMNS)
       .single();
     if (!error) {
-      row = data;
+      row = data as MediaRow;
       break;
     }
     lastError = error;
@@ -231,5 +276,5 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  return NextResponse.json({ media: row }, { status: 201 });
+  return NextResponse.json({ media: toPublicMedia(row) }, { status: 201 });
 }

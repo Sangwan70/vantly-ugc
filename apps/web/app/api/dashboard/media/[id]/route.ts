@@ -7,12 +7,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { publicStorageUrl } from '@/lib/media-url';
 
 const BUCKET = 'user-media';
 type Params = { params: Promise<{ id: string }> };
 
 const SELECT_COLUMNS =
-  'id, kind, name, short_code, url, mime_type, size_bytes, category, notes, created_at, updated_at';
+  'id, kind, name, short_code, url, storage_path, mime_type, size_bytes, category, notes, created_at, updated_at';
 const VALID_CATEGORIES = new Set(['branding', 'script', 'audio_sample', 'image', 'video', 'other']);
 
 export async function PATCH(req: NextRequest, { params }: Params) {
@@ -104,7 +105,18 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: { code: 'not_found', message: 'Media not found' } }, { status: 404 });
   }
 
-  return NextResponse.json({ media: data }, { headers: { 'Cache-Control': 'no-store' } });
+  // Self-heal: a row created by the old getPublicUrl()-based code path may
+  // still carry an internal-only host (e.g. http://gateway:3000/...) — this
+  // is the same repair GET /api/dashboard/media does on read.
+  const row = data as typeof data & { storage_path: string };
+  const expected = publicStorageUrl(BUCKET, row.storage_path);
+  if (row.url !== expected) {
+    await supabase.from('user_media').update({ url: expected }).eq('id', id);
+    row.url = expected;
+  }
+  const { storage_path: _storage_path, ...media } = row;
+
+  return NextResponse.json({ media }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function DELETE(_req: NextRequest, { params }: Params) {

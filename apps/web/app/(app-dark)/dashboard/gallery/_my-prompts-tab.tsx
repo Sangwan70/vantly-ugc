@@ -4,18 +4,26 @@
 
 /**
  * My Prompts tab of /dashboard/gallery — a guided, non-technical-friendly
- * way to build a make_ugc request. Every field maps directly onto
- * MakeUgcSkillInputSchema (services/api-v2/src/skills/registry.ts):
+ * way to build and SAVE a reusable make_ugc preset. This tab creates and
+ * edits prompts; it never runs them. A saved prompt is picked up and run
+ * from the agent chat instead — /dashboard/agent's "+" menu has a "Use a
+ * saved prompt" option that lists everything saved here and drops the
+ * chosen one into the chat composer as a normal message, so running a
+ * prompt always goes through the same confirm-before-spend agent flow
+ * every other generation does.
+ *
+ * Every field maps directly onto MakeUgcSkillInputSchema (services/api-v2/
+ * src/skills/registry.ts), same as before:
  *   - "I want to generate" is a helper-only pitch, used to draft a script
  *     via POST /v1/assist/draft-script — it is NEVER sent to make_ugc itself.
  *   - "Script" is `script`. Always shown as an editable textarea, whether
  *     typed by hand or drafted by AI, so the user can add their own
- *     personal touch before submitting.
+ *     personal touch before saving.
  *   - "Person" resolves to exactly one of `person` (free text), `character`
  *     (a saved character's character_sheet_url), or `image` (a stock
- *     actor's portrait_url, or an uploaded photo as base64) — matching the
- *     schema's "at most one of person/image/character" rule structurally,
- *     by construction, rather than by validating it after the fact.
+ *     actor's portrait_url, or an uploaded photo) — matching the schema's
+ *     "at most one of person/image/character" rule structurally, by
+ *     construction, rather than by validating it after the fact.
  *   - "Look" is `look` (natural/commercial/raw_iphone).
  *   - "Aspect ratio" is `aspect_ratio` (9:16 default, or 1:1).
  *   - Everything else the schema accepts (name hint, captions, music,
@@ -25,7 +33,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Loader2, Wand2, Play, Users, ChevronDown, Info, UploadCloud, Sparkles,
+  Loader2, Wand2, Save, Users, ChevronDown, Info, UploadCloud, Trash2, Pencil, Plus, X,
 } from 'lucide-react';
 
 type Look = 'natural' | 'commercial' | 'raw_iphone';
@@ -37,7 +45,26 @@ type DraftLength = '5' | '10' | '15' | 'auto';
 interface SavedCharacter { id: string; name: string | null; character_sheet_url: string | null; thumbnail_url: string | null }
 interface StockActor { id: string; name: string; portrait_url: string | null }
 
-const TERMINAL = new Set(['succeeded', 'completed', 'success', 'failed', 'canceled', 'cancelled']);
+interface SavedPrompt {
+  id: string;
+  name: string;
+  pitch: string | null;
+  script: string;
+  person_mode: PersonMode;
+  person_text: string | null;
+  person_ref_id: string | null;
+  person_ref_name: string | null;
+  person_image_url: string | null;
+  look: Look;
+  aspect_ratio: AspectRatio;
+  name_hint: string | null;
+  captions: boolean;
+  caption_style: CaptionStyle;
+  music: boolean;
+  music_text: string | null;
+  broll_url: string | null;
+  updated_at: string;
+}
 
 const LOOK_OPTIONS: { value: Look; label: string; hint: string }[] = [
   { value: 'natural', label: 'Natural', hint: 'Warm and casual, soft daylight — like talking to a friend.' },
@@ -78,7 +105,28 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
 const inputStyle: React.CSSProperties = { backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)' };
 
 export function MyPromptsTab() {
-  // "I want to generate" — helper-only, drafts the script, never submitted itself.
+  // ── Saved-prompt library (list + which one, if any, is loaded for editing) ──
+  const [prompts, setPrompts] = useState<SavedPrompt[] | null>(null);
+  const [promptsErr, setPromptsErr] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const loadPrompts = useCallback(async () => {
+    try {
+      const r = await fetch('/api/dashboard/prompts', { credentials: 'include' });
+      const j = r.ok ? ((await r.json()) as { prompts?: SavedPrompt[] }) : { prompts: [] };
+      setPrompts(j.prompts ?? []);
+      if (!r.ok) setPromptsErr('Could not load your saved prompts.');
+    } catch {
+      setPrompts([]);
+      setPromptsErr('Could not load your saved prompts.');
+    }
+  }, []);
+  useEffect(() => { void loadPrompts(); }, [loadPrompts]);
+
+  // ── Form fields (a new, blank prompt until a saved one is loaded) ──
+  const [promptName, setPromptName] = useState('');
+
   const [pitch, setPitch] = useState('');
   const [draftLength, setDraftLength] = useState<DraftLength>('auto');
   const [drafting, setDrafting] = useState(false);
@@ -103,14 +151,9 @@ export function MyPromptsTab() {
   const [musicText, setMusicText] = useState('');
   const [brollUrl, setBrollUrl] = useState('');
 
-  const [submitting, setSubmitting] = useState(false);
-  const [submitErr, setSubmitErr] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
-  const [currentStep, setCurrentStep] = useState<string | null>(null);
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  const [runId, setRunId] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { if (pollRef.current) clearTimeout(pollRef.current); }, []);
+  const [saving, setSaving] = useState(false);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+  const [saveOk, setSaveOk] = useState(false);
 
   const draftScript = useCallback(async () => {
     if (!pitch.trim() || drafting) return;
@@ -139,35 +182,53 @@ export function MyPromptsTab() {
     }
   }, [pitch, drafting, draftLength, look]);
 
-  const poll = useCallback((id: string) => {
-    const tick = async () => {
-      try {
-        const r = await fetch(`/api/v1/skills/runs/${encodeURIComponent(id)}`, { credentials: 'include' });
-        if (r.ok) {
-          const d = (await r.json()) as {
-            status?: string; current_step?: string | null;
-            final_output?: { video_url?: string; artifacts?: Array<{ url?: string }> } | null;
-            error?: { message?: string | null } | null;
-          };
-          if (d.status) setStatus(d.status);
-          setCurrentStep(d.current_step ?? null);
-          if (d.status && TERMINAL.has(d.status)) {
-            setSubmitting(false);
-            if (d.status === 'succeeded' || d.status === 'completed' || d.status === 'success') {
-              setVideoUrl(d.final_output?.video_url ?? d.final_output?.artifacts?.[0]?.url ?? null);
-            } else {
-              setSubmitErr(d.error?.message ?? 'Generation failed.');
-            }
-            return;
-          }
-        }
-      } catch { /* keep polling */ }
-      pollRef.current = setTimeout(tick, 4000);
-    };
-    pollRef.current = setTimeout(tick, 4000);
-  }, []);
+  function resetForm() {
+    setEditingId(null);
+    setPromptName('');
+    setPitch(''); setDraftLength('auto'); setDraftErr(null);
+    setScript('');
+    setPersonMode('describe'); setPersonText('');
+    setSelectedCharacter(null); setSelectedActor(null); setUploadDataUrl('');
+    setLook('natural'); setAspectRatio('9:16');
+    setAdvancedOpen(false); setNameHint('');
+    setCaptionsOn(false); setCaptionStyle('hormozi');
+    setMusicOn(false); setMusicText('');
+    setBrollUrl('');
+    setSaveErr(null); setSaveOk(false);
+  }
+
+  function loadPromptIntoForm(p: SavedPrompt) {
+    setEditingId(p.id);
+    setPromptName(p.name);
+    setPitch(p.pitch ?? '');
+    setScript(p.script);
+    setPersonMode(p.person_mode);
+    setPersonText(p.person_text ?? '');
+    setSelectedCharacter(
+      p.person_mode === 'my-character' && p.person_ref_id
+        ? { id: p.person_ref_id, name: p.person_ref_name, character_sheet_url: p.person_image_url, thumbnail_url: p.person_image_url }
+        : null,
+    );
+    setSelectedActor(
+      p.person_mode === 'stock-actor' && p.person_ref_id
+        ? { id: p.person_ref_id, name: p.person_ref_name ?? '', portrait_url: p.person_image_url }
+        : null,
+    );
+    setUploadDataUrl(p.person_mode === 'upload' ? (p.person_image_url ?? '') : '');
+    setLook(p.look);
+    setAspectRatio(p.aspect_ratio);
+    setNameHint(p.name_hint ?? '');
+    setCaptionsOn(p.captions);
+    setCaptionStyle(p.caption_style);
+    setMusicOn(p.music);
+    setMusicText(p.music_text ?? '');
+    setBrollUrl(p.broll_url ?? '');
+    setAdvancedOpen(Boolean(p.name_hint || p.captions || p.music || p.broll_url));
+    setSaveErr(null); setSaveOk(false);
+  }
 
   const validate = (): string | null => {
+    if (!promptName.trim()) return 'Give this prompt a name so you can find it again.';
     if (!script.trim()) return 'Write or draft a script first.';
     if (script.trim().length > 1200) return 'Script is too long — keep it under 1200 characters.';
     if (personMode === 'my-character' && !selectedCharacter) return 'Pick one of your characters, or switch to another Person option.';
@@ -179,271 +240,354 @@ export function MyPromptsTab() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const validationError = validate();
-    if (validationError) { setSubmitErr(validationError); return; }
-    if (submitting) return;
-    setSubmitErr(null);
-    setVideoUrl(null);
-    setSubmitting(true);
-    setStatus('submitting');
-    setCurrentStep(null);
+    if (validationError) { setSaveErr(validationError); setSaveOk(false); return; }
+    if (saving) return;
+    setSaveErr(null); setSaveOk(false); setSaving(true);
 
-    const body: Record<string, unknown> = { script: script.trim(), look, aspect_ratio: aspectRatio };
-    if (personMode === 'describe' && personText.trim()) body.person = personText.trim();
-    else if (personMode === 'my-character' && selectedCharacter?.character_sheet_url) body.character = selectedCharacter.character_sheet_url;
-    else if (personMode === 'stock-actor' && selectedActor?.portrait_url) body.image = selectedActor.portrait_url;
-    else if (personMode === 'upload' && uploadDataUrl) body.image = uploadDataUrl;
-    if (nameHint.trim()) body.name = nameHint.trim();
-    if (captionsOn) { body.captions = true; body.caption_style = captionStyle; }
-    if (musicOn) body.music = musicText.trim() || true;
-    if (brollUrl.trim()) body.broll_url = brollUrl.trim();
+    const body: Record<string, unknown> = {
+      name: promptName.trim(),
+      pitch: pitch.trim() || null,
+      script: script.trim(),
+      person_mode: personMode,
+      look,
+      aspect_ratio: aspectRatio,
+      name_hint: nameHint.trim() || null,
+      captions: captionsOn,
+      caption_style: captionStyle,
+      music: musicOn,
+      music_text: musicText.trim() || null,
+      broll_url: brollUrl.trim() || null,
+    };
+    if (personMode === 'describe') {
+      body.person_text = personText.trim() || null;
+    } else if (personMode === 'my-character' && selectedCharacter) {
+      body.person_ref_id = selectedCharacter.id;
+      body.person_ref_name = selectedCharacter.name;
+      body.person_image_url = selectedCharacter.character_sheet_url;
+    } else if (personMode === 'stock-actor' && selectedActor) {
+      body.person_ref_id = selectedActor.id;
+      body.person_ref_name = selectedActor.name;
+      body.person_image_url = selectedActor.portrait_url;
+    } else if (personMode === 'upload' && uploadDataUrl) {
+      if (uploadDataUrl.startsWith('data:')) body.upload_data_url = uploadDataUrl;
+      else body.person_image_url = uploadDataUrl;
+    }
 
     try {
-      const resp = await fetch('/api/v1/skills/make_ugc/run', {
-        method: 'POST',
+      const url = editingId ? `/api/dashboard/prompts/${editingId}` : '/api/dashboard/prompts';
+      const method = editingId ? 'PATCH' : 'POST';
+      const resp = await fetch(url, {
+        method,
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       const data = (await resp.json()) as Record<string, unknown>;
       if (!resp.ok) {
-        const msg = (data as any)?.error?.message ?? (data as any)?.error ?? `HTTP ${resp.status}`;
-        setSubmitErr(typeof msg === 'string' ? msg : JSON.stringify(data));
-        setSubmitting(false);
-        setStatus(null);
+        const msg = (data as any)?.error?.message ?? `HTTP ${resp.status}`;
+        setSaveErr(typeof msg === 'string' ? msg : 'Could not save this prompt.');
+        setSaving(false);
         return;
       }
-      const id = (data.skill_run_id ?? data.run_id) as string | undefined;
-      if (!id) { setSubmitErr('No run id returned.'); setSubmitting(false); setStatus(null); return; }
-      setRunId(id);
-      setStatus((data.status as string | undefined) ?? 'submitted');
-      poll(id);
+      const saved = data.prompt as SavedPrompt | undefined;
+      if (saved) { setEditingId(saved.id); setSaveOk(true); }
+      setSaving(false);
+      void loadPrompts();
     } catch (e) {
-      setSubmitErr((e as Error).message);
-      setSubmitting(false);
-      setStatus(null);
+      setSaveErr((e as Error).message);
+      setSaving(false);
+    }
+  };
+
+  const deletePrompt = async (id: string) => {
+    if (!confirm('Delete this saved prompt? This can’t be undone.')) return;
+    setDeletingId(id);
+    try {
+      await fetch(`/api/dashboard/prompts/${id}`, { method: 'DELETE', credentials: 'include' });
+      if (id === editingId) resetForm();
+      void loadPrompts();
+    } finally {
+      setDeletingId(null);
     }
   };
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-8">
-      {/* 1. I want to generate */}
-      <div className="flex flex-col gap-2 rounded-2xl p-5" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#14151F' }}>
-        <FieldLabel>1. I want to generate…</FieldLabel>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+    <div className="flex flex-col gap-6">
+      {/* Saved prompts library */}
+      <div className="flex flex-col gap-3 rounded-2xl p-5" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#14151F' }}>
+        <div className="flex items-center justify-between">
+          <span className="text-[13px] font-medium" style={{ color: '#E9E9F0' }}>Your saved prompts</span>
+          {editingId && (
+            <button type="button" onClick={resetForm} className="inline-flex items-center gap-1 text-[12px] font-medium" style={{ color: '#A78BFA' }}>
+              <Plus className="h-3.5 w-3.5" /> New prompt
+            </button>
+          )}
+        </div>
+        {promptsErr && <p className="text-[12px]" style={{ color: '#FCA5A5' }}>{promptsErr}</p>}
+        {prompts === null ? (
+          <div className="flex h-10 items-center"><Loader2 className="h-4 w-4 animate-spin" style={{ color: 'rgba(255,255,255,0.5)' }} /></div>
+        ) : prompts.length === 0 ? (
+          <p className="text-[12px]" style={{ color: 'rgba(255,255,255,0.45)' }}>Nothing saved yet — build one below, give it a name, and save it. Run it later from the &quot;+&quot; menu on the Agent page.</p>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {prompts.map((p) => {
+              const active = p.id === editingId;
+              return (
+                <div
+                  key={p.id}
+                  className="flex items-center gap-2 rounded-lg px-3 py-2"
+                  style={{ backgroundColor: active ? 'rgba(167,139,250,0.1)' : '#0F1015', border: `1px solid ${active ? 'rgba(167,139,250,0.4)' : 'rgba(255,255,255,0.06)'}` }}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-medium" style={{ color: '#E9E9F0' }}>{p.name}</p>
+                    <p className="truncate text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{p.script}</p>
+                  </div>
+                  <button type="button" onClick={() => loadPromptIntoForm(p)} aria-label={`Edit ${p.name}`} title="Edit" className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-100" style={{ color: 'rgba(255,255,255,0.5)', opacity: 0.8 }}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button type="button" onClick={() => void deletePrompt(p.id)} disabled={deletingId === p.id} aria-label={`Delete ${p.name}`} title="Delete" className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-100 disabled:opacity-40" style={{ color: '#FCA5A5', opacity: 0.8 }}>
+                    {deletingId === p.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <Callout>Saved prompts don&apos;t run from here — open the Agent page, tap the &quot;+&quot; by the message box, and choose &quot;Use a saved prompt&quot; to generate.</Callout>
+      </div>
+
+      <form onSubmit={onSubmit} className="flex flex-col gap-8">
+        {/* Prompt name */}
+        <div className="flex flex-col gap-2 rounded-2xl p-5" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#14151F' }}>
+          <FieldLabel required>{editingId ? 'Editing' : 'New prompt'} — name</FieldLabel>
           <input
             type="text"
-            value={pitch}
-            onChange={(e) => setPitch(e.target.value)}
-            placeholder="a coffee shop's grand opening, 20% off this week"
-            maxLength={400}
-            className="flex-1 rounded-lg px-3 py-2.5 text-sm"
-            style={inputStyle}
-          />
-          <select
-            value={draftLength}
-            onChange={(e) => setDraftLength(e.target.value as DraftLength)}
+            value={promptName}
+            onChange={(e) => setPromptName(e.target.value)}
+            placeholder="e.g. Coffee shop grand opening"
+            maxLength={80}
             className="rounded-lg px-3 py-2.5 text-sm"
             style={inputStyle}
-          >
-            {DRAFT_LENGTH_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-          <button
-            type="button"
-            onClick={draftScript}
-            disabled={!pitch.trim() || drafting}
-            className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2.5 text-sm font-medium"
-            style={{ backgroundColor: !pitch.trim() || drafting ? 'rgba(167,139,250,0.4)' : '#A78BFA', color: '#0F1015' }}
-          >
-            {drafting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-            Draft script
-          </button>
-        </div>
-        <Callout>One line is enough — Claude turns it into a spoken script below, which you can then edit however you like.</Callout>
-        {draftErr && <p className="text-[12px]" style={{ color: '#FCA5A5' }}>{draftErr}</p>}
-      </div>
-
-      {/* 2. Script */}
-      <div className="flex flex-col gap-2 rounded-2xl p-5" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#14151F' }}>
-        <FieldLabel required>2. Script</FieldLabel>
-        <textarea
-          value={script}
-          onChange={(e) => setScript(e.target.value)}
-          placeholder="What the on-camera person says, word for word…"
-          rows={4}
-          maxLength={1200}
-          className="resize-y rounded-lg px-3 py-2.5 text-sm"
-          style={inputStyle}
-        />
-        <div className="flex items-center justify-between">
-          <Callout>This is exactly what gets spoken — make it sound like a real person talking, not an ad.</Callout>
-          <span className="shrink-0 pl-3 text-[11px]" style={{ color: 'rgba(255,255,255,0.35)' }}>{script.trim().length}/1200</span>
-        </div>
-      </div>
-
-      {/* 3. Person */}
-      <div className="flex flex-col gap-3 rounded-2xl p-5" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#14151F' }}>
-        <FieldLabel>3. Person</FieldLabel>
-        <div className="flex flex-wrap gap-1.5 rounded-full p-1" style={{ backgroundColor: '#0F1015', border: '1px solid rgba(255,255,255,0.06)', width: 'fit-content' }}>
-          {([
-            ['describe', 'Describe'],
-            ['my-character', 'My characters'],
-            ['stock-actor', 'Stock actors'],
-            ['upload', 'Upload photo'],
-          ] as [PersonMode, string][]).map(([mode, label]) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => setPersonMode(mode)}
-              className="rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors"
-              style={{ backgroundColor: personMode === mode ? '#A78BFA' : 'transparent', color: personMode === mode ? '#0F1015' : 'rgba(255,255,255,0.62)' }}
-            >
-              {label}
-            </button>
-          ))}
+          />
+          <Callout>How you&apos;ll find this prompt again in this list, and in the Agent page&apos;s &quot;+&quot; menu.</Callout>
         </div>
 
-        {personMode === 'describe' && (
-          <>
+        {/* 1. I want to generate */}
+        <div className="flex flex-col gap-2 rounded-2xl p-5" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#14151F' }}>
+          <FieldLabel>1. I want to generate…</FieldLabel>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
             <input
               type="text"
-              value={personText}
-              onChange={(e) => setPersonText(e.target.value)}
-              placeholder="a friendly 28-year-old woman, soft daylight, candid framing"
+              value={pitch}
+              onChange={(e) => setPitch(e.target.value)}
+              placeholder="a coffee shop's grand opening, 20% off this week"
               maxLength={400}
-              className="rounded-lg px-3 py-2.5 text-sm"
+              className="flex-1 rounded-lg px-3 py-2.5 text-sm"
               style={inputStyle}
             />
-            <Callout>Leave this blank to let a default AI person be generated for you.</Callout>
-          </>
-        )}
-        {personMode === 'my-character' && (
-          <CharacterGrid selected={selectedCharacter?.id ?? null} onSelect={setSelectedCharacter} />
-        )}
-        {personMode === 'stock-actor' && (
-          <ActorGrid selected={selectedActor?.id ?? null} onSelect={setSelectedActor} />
-        )}
-        {personMode === 'upload' && (
-          <PhotoUpload dataUrl={uploadDataUrl} onChange={setUploadDataUrl} />
-        )}
-      </div>
+            <select
+              value={draftLength}
+              onChange={(e) => setDraftLength(e.target.value as DraftLength)}
+              className="rounded-lg px-3 py-2.5 text-sm"
+              style={inputStyle}
+            >
+              {DRAFT_LENGTH_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <button
+              type="button"
+              onClick={draftScript}
+              disabled={!pitch.trim() || drafting}
+              className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2.5 text-sm font-medium"
+              style={{ backgroundColor: !pitch.trim() || drafting ? 'rgba(167,139,250,0.4)' : '#A78BFA', color: '#0F1015' }}
+            >
+              {drafting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+              Draft script
+            </button>
+          </div>
+          <Callout>One line is enough — Claude turns it into a spoken script below, which you can then edit however you like.</Callout>
+          {draftErr && <p className="text-[12px]" style={{ color: '#FCA5A5' }}>{draftErr}</p>}
+        </div>
 
-      {/* 4. Look + 5. Aspect ratio */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+        {/* 2. Script */}
         <div className="flex flex-col gap-2 rounded-2xl p-5" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#14151F' }}>
-          <FieldLabel>4. Look</FieldLabel>
-          <div className="flex flex-col gap-2">
-            {LOOK_OPTIONS.map((o) => (
-              <label key={o.value} className="flex cursor-pointer items-start gap-2.5 rounded-lg px-3 py-2" style={{ backgroundColor: look === o.value ? 'rgba(167,139,250,0.1)' : '#0F1015', border: `1px solid ${look === o.value ? 'rgba(167,139,250,0.4)' : 'rgba(255,255,255,0.06)'}` }}>
-                <input type="radio" name="look" checked={look === o.value} onChange={() => setLook(o.value)} className="mt-1" />
-                <span>
-                  <span className="block text-[13px] font-medium" style={{ color: '#E9E9F0' }}>{o.label}</span>
-                  <span className="block text-[11px]" style={{ color: 'rgba(255,255,255,0.45)' }}>{o.hint}</span>
-                </span>
-              </label>
-            ))}
+          <FieldLabel required>2. Script</FieldLabel>
+          <textarea
+            value={script}
+            onChange={(e) => setScript(e.target.value)}
+            placeholder="What the on-camera person says, word for word…"
+            rows={4}
+            maxLength={1200}
+            className="resize-y rounded-lg px-3 py-2.5 text-sm"
+            style={inputStyle}
+          />
+          <div className="flex items-center justify-between">
+            <Callout>This is exactly what gets spoken — make it sound like a real person talking, not an ad.</Callout>
+            <span className="shrink-0 pl-3 text-[11px]" style={{ color: 'rgba(255,255,255,0.35)' }}>{script.trim().length}/1200</span>
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 rounded-2xl p-5" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#14151F' }}>
-          <FieldLabel>5. Aspect ratio</FieldLabel>
-          <div className="flex flex-col gap-2">
-            {ASPECT_OPTIONS.map((o) => (
-              <label key={o.value} className="flex cursor-pointer items-start gap-2.5 rounded-lg px-3 py-2" style={{ backgroundColor: aspectRatio === o.value ? 'rgba(167,139,250,0.1)' : '#0F1015', border: `1px solid ${aspectRatio === o.value ? 'rgba(167,139,250,0.4)' : 'rgba(255,255,255,0.06)'}` }}>
-                <input type="radio" name="aspect" checked={aspectRatio === o.value} onChange={() => setAspectRatio(o.value)} className="mt-1" />
-                <span>
-                  <span className="block text-[13px] font-medium" style={{ color: '#E9E9F0' }}>{o.label}</span>
-                  <span className="block text-[11px]" style={{ color: 'rgba(255,255,255,0.45)' }}>{o.hint}</span>
-                </span>
-              </label>
+        {/* 3. Person */}
+        <div className="flex flex-col gap-3 rounded-2xl p-5" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#14151F' }}>
+          <FieldLabel>3. Person</FieldLabel>
+          <div className="flex flex-wrap gap-1.5 rounded-full p-1" style={{ backgroundColor: '#0F1015', border: '1px solid rgba(255,255,255,0.06)', width: 'fit-content' }}>
+            {([
+              ['describe', 'Describe'],
+              ['my-character', 'My characters'],
+              ['stock-actor', 'Stock actors'],
+              ['upload', 'Upload photo'],
+            ] as [PersonMode, string][]).map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setPersonMode(mode)}
+                className="rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors"
+                style={{ backgroundColor: personMode === mode ? '#A78BFA' : 'transparent', color: personMode === mode ? '#0F1015' : 'rgba(255,255,255,0.62)' }}
+              >
+                {label}
+              </button>
             ))}
           </div>
+
+          {personMode === 'describe' && (
+            <>
+              <input
+                type="text"
+                value={personText}
+                onChange={(e) => setPersonText(e.target.value)}
+                placeholder="a friendly 28-year-old woman, soft daylight, candid framing"
+                maxLength={400}
+                className="rounded-lg px-3 py-2.5 text-sm"
+                style={inputStyle}
+              />
+              <Callout>Leave this blank to let a default AI person be generated for you.</Callout>
+            </>
+          )}
+          {personMode === 'my-character' && (
+            <CharacterGrid selected={selectedCharacter?.id ?? null} onSelect={setSelectedCharacter} />
+          )}
+          {personMode === 'stock-actor' && (
+            <ActorGrid selected={selectedActor?.id ?? null} onSelect={setSelectedActor} />
+          )}
+          {personMode === 'upload' && (
+            <PhotoUpload dataUrl={uploadDataUrl} onChange={setUploadDataUrl} />
+          )}
         </div>
-      </div>
 
-      {/* Advanced (optional) */}
-      <div className="rounded-2xl" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#14151F' }}>
-        <button
-          type="button"
-          onClick={() => setAdvancedOpen((v) => !v)}
-          className="flex w-full items-center justify-between gap-2 px-5 py-4 text-left"
-        >
-          <span className="text-[13px] font-medium" style={{ color: '#E9E9F0' }}>Advanced (optional)</span>
-          <ChevronDown className="h-4 w-4 transition-transform" style={{ color: 'rgba(255,255,255,0.5)', transform: advancedOpen ? 'rotate(180deg)' : 'none' }} />
-        </button>
-        {advancedOpen && (
-          <div className="flex flex-col gap-4 border-t px-5 py-4" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-            <div className="flex flex-col gap-1">
-              <FieldLabel>Name / vibe hint</FieldLabel>
-              <input type="text" value={nameHint} onChange={(e) => setNameHint(e.target.value)} placeholder="Maya, 27" maxLength={80} className="rounded-lg px-3 py-2 text-sm" style={inputStyle} />
-            </div>
-
-            <div className="flex items-center gap-3">
-              <label className="flex items-center gap-2 text-[13px]" style={{ color: '#E9E9F0' }}>
-                <input type="checkbox" checked={captionsOn} onChange={(e) => setCaptionsOn(e.target.checked)} />
-                Burn in captions
-              </label>
-              {captionsOn && (
-                <select value={captionStyle} onChange={(e) => setCaptionStyle(e.target.value as CaptionStyle)} className="rounded-lg px-2.5 py-1.5 text-[13px]" style={inputStyle}>
-                  <option value="hormozi">Hormozi</option>
-                  <option value="tiktok">TikTok</option>
-                  <option value="minimal">Minimal</option>
-                </select>
-              )}
-            </div>
-
+        {/* 4. Look + 5. Aspect ratio */}
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+          <div className="flex flex-col gap-2 rounded-2xl p-5" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#14151F' }}>
+            <FieldLabel>4. Look</FieldLabel>
             <div className="flex flex-col gap-2">
-              <label className="flex items-center gap-2 text-[13px]" style={{ color: '#E9E9F0' }}>
-                <input type="checkbox" checked={musicOn} onChange={(e) => setMusicOn(e.target.checked)} />
-                Background music
-              </label>
-              {musicOn && (
-                <input type="text" value={musicText} onChange={(e) => setMusicText(e.target.value)} placeholder="e.g. upbeat lo-fi (leave blank for a default track)" maxLength={120} className="rounded-lg px-3 py-2 text-sm" style={inputStyle} />
-              )}
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <FieldLabel>B-roll URL</FieldLabel>
-              <input type="text" value={brollUrl} onChange={(e) => setBrollUrl(e.target.value)} placeholder="https://…  — the person narrates over this footage" className="rounded-lg px-3 py-2 text-sm" style={inputStyle} />
-              <Callout>An https video URL the person talks over instead of appearing full-frame.</Callout>
+              {LOOK_OPTIONS.map((o) => (
+                <label key={o.value} className="flex cursor-pointer items-start gap-2.5 rounded-lg px-3 py-2" style={{ backgroundColor: look === o.value ? 'rgba(167,139,250,0.1)' : '#0F1015', border: `1px solid ${look === o.value ? 'rgba(167,139,250,0.4)' : 'rgba(255,255,255,0.06)'}` }}>
+                  <input type="radio" name="look" checked={look === o.value} onChange={() => setLook(o.value)} className="mt-1" />
+                  <span>
+                    <span className="block text-[13px] font-medium" style={{ color: '#E9E9F0' }}>{o.label}</span>
+                    <span className="block text-[11px]" style={{ color: 'rgba(255,255,255,0.45)' }}>{o.hint}</span>
+                  </span>
+                </label>
+              ))}
             </div>
           </div>
-        )}
-      </div>
 
-      {/* Submit */}
-      <div className="flex flex-col gap-3">
-        <button
-          type="submit"
-          disabled={submitting}
-          className="inline-flex items-center justify-center gap-2 self-start rounded-full px-5 py-2.5 text-sm font-semibold"
-          style={{ backgroundColor: submitting ? 'rgba(167,139,250,0.4)' : '#A78BFA', color: '#0F1015' }}
-        >
-          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-          Generate video
-        </button>
+          <div className="flex flex-col gap-2 rounded-2xl p-5" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#14151F' }}>
+            <FieldLabel>5. Aspect ratio</FieldLabel>
+            <div className="flex flex-col gap-2">
+              {ASPECT_OPTIONS.map((o) => (
+                <label key={o.value} className="flex cursor-pointer items-start gap-2.5 rounded-lg px-3 py-2" style={{ backgroundColor: aspectRatio === o.value ? 'rgba(167,139,250,0.1)' : '#0F1015', border: `1px solid ${aspectRatio === o.value ? 'rgba(167,139,250,0.4)' : 'rgba(255,255,255,0.06)'}` }}>
+                  <input type="radio" name="aspect" checked={aspectRatio === o.value} onChange={() => setAspectRatio(o.value)} className="mt-1" />
+                  <span>
+                    <span className="block text-[13px] font-medium" style={{ color: '#E9E9F0' }}>{o.label}</span>
+                    <span className="block text-[11px]" style={{ color: 'rgba(255,255,255,0.45)' }}>{o.hint}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
 
-        {status && !submitErr && (
-          <span className="inline-flex items-center gap-2 text-[13px]" style={{ color: 'rgba(255,255,255,0.55)' }}>
-            {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {status}{currentStep ? ` · ${currentStep}` : ''}
-          </span>
-        )}
-        {submitErr && (
-          <div className="rounded-lg px-3 py-2 text-xs" style={{ border: '1px solid rgba(255,79,79,0.3)', backgroundColor: 'rgba(255,79,79,0.08)', color: '#FCA5A5' }}>
-            {submitErr}
+        {/* Advanced (optional) */}
+        <div className="rounded-2xl" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#14151F' }}>
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen((v) => !v)}
+            className="flex w-full items-center justify-between gap-2 px-5 py-4 text-left"
+          >
+            <span className="text-[13px] font-medium" style={{ color: '#E9E9F0' }}>Advanced (optional)</span>
+            <ChevronDown className="h-4 w-4 transition-transform" style={{ color: 'rgba(255,255,255,0.5)', transform: advancedOpen ? 'rotate(180deg)' : 'none' }} />
+          </button>
+          {advancedOpen && (
+            <div className="flex flex-col gap-4 border-t px-5 py-4" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+              <div className="flex flex-col gap-1">
+                <FieldLabel>Name / vibe hint</FieldLabel>
+                <input type="text" value={nameHint} onChange={(e) => setNameHint(e.target.value)} placeholder="Maya, 27" maxLength={80} className="rounded-lg px-3 py-2 text-sm" style={inputStyle} />
+              </div>
+
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 text-[13px]" style={{ color: '#E9E9F0' }}>
+                  <input type="checkbox" checked={captionsOn} onChange={(e) => setCaptionsOn(e.target.checked)} />
+                  Burn in captions
+                </label>
+                {captionsOn && (
+                  <select value={captionStyle} onChange={(e) => setCaptionStyle(e.target.value as CaptionStyle)} className="rounded-lg px-2.5 py-1.5 text-[13px]" style={inputStyle}>
+                    <option value="hormozi">Hormozi</option>
+                    <option value="tiktok">TikTok</option>
+                    <option value="minimal">Minimal</option>
+                  </select>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2 text-[13px]" style={{ color: '#E9E9F0' }}>
+                  <input type="checkbox" checked={musicOn} onChange={(e) => setMusicOn(e.target.checked)} />
+                  Background music
+                </label>
+                {musicOn && (
+                  <input type="text" value={musicText} onChange={(e) => setMusicText(e.target.value)} placeholder="e.g. upbeat lo-fi (leave blank for a default track)" maxLength={120} className="rounded-lg px-3 py-2 text-sm" style={inputStyle} />
+                )}
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <FieldLabel>B-roll URL</FieldLabel>
+                <input type="text" value={brollUrl} onChange={(e) => setBrollUrl(e.target.value)} placeholder="https://…  — the person narrates over this footage" className="rounded-lg px-3 py-2 text-sm" style={inputStyle} />
+                <Callout>An https video URL the person talks over instead of appearing full-frame.</Callout>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Save */}
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="inline-flex items-center justify-center gap-2 self-start rounded-full px-5 py-2.5 text-sm font-semibold"
+              style={{ backgroundColor: saving ? 'rgba(167,139,250,0.4)' : '#A78BFA', color: '#0F1015' }}
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {editingId ? 'Save changes' : 'Save prompt'}
+            </button>
+            {editingId && (
+              <button type="button" onClick={resetForm} className="inline-flex items-center gap-1.5 rounded-full px-4 py-2.5 text-sm" style={{ color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.12)' }}>
+                <X className="h-3.5 w-3.5" /> Cancel
+              </button>
+            )}
           </div>
-        )}
-        {videoUrl && (
-          <div className="mt-2 flex flex-col gap-2 rounded-2xl p-4" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#0F1015', maxWidth: 320 }}>
-            <video src={videoUrl} controls className="w-full rounded-lg" />
-            <a href={videoUrl} target="_blank" rel="noreferrer" className="text-[12px]" style={{ color: '#A78BFA' }}>Open full video</a>
-          </div>
-        )}
-        {runId && !videoUrl && (
-          <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.35)' }}>This will also show up in the Generations tab once it finishes.</p>
-        )}
-      </div>
-    </form>
+
+          {saveOk && !saveErr && (
+            <span className="inline-flex items-center gap-2 text-[13px]" style={{ color: '#34D399' }}>
+              Saved. Head to the Agent page and use the &quot;+&quot; menu to run it.
+            </span>
+          )}
+          {saveErr && (
+            <div className="rounded-lg px-3 py-2 text-xs" style={{ border: '1px solid rgba(255,79,79,0.3)', backgroundColor: 'rgba(255,79,79,0.08)', color: '#FCA5A5' }}>
+              {saveErr}
+            </div>
+          )}
+        </div>
+      </form>
+    </div>
   );
 }
 

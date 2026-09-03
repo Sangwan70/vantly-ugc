@@ -19,7 +19,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { Loader2, Send, Square, Sparkles, Wrench, Check, AlertCircle, ArrowDown, Plus, Trash2, X, RotateCcw, PanelRight, ListChecks, Users, Images, CornerDownLeft, Pencil, MessageSquarePlus, History, Pin, PinOff, Archive, Search, MoreHorizontal, Folder, FolderPlus, ChevronRight, ChevronDown } from 'lucide-react';
+import { Loader2, Send, Square, Sparkles, Wrench, Check, AlertCircle, ArrowDown, Plus, Trash2, X, RotateCcw, PanelRight, ListChecks, Users, Images, CornerDownLeft, Pencil, MessageSquarePlus, History, Pin, PinOff, Archive, Search, MoreHorizontal, Folder, FolderPlus, ChevronRight, ChevronDown, UploadCloud, Wand2 } from 'lucide-react';
 import { invokeFn } from '@/lib/supabase/fn-proxy';
 
 import { SAMPLE_PROMPTS } from '@/lib/sample-prompts';
@@ -46,6 +46,14 @@ interface BrandSnapshot {
   palette?: string[];
 }
 interface SavedCharacter { id: string; name: string; character_sheet_url?: string | null; thumbnail_url?: string | null }
+interface AgentSavedPrompt {
+  id: string; name: string; script: string;
+  person_mode: 'describe' | 'my-character' | 'stock-actor' | 'upload';
+  person_text: string | null; person_ref_name: string | null; person_image_url: string | null;
+  look: 'natural' | 'commercial' | 'raw_iphone'; aspect_ratio: '9:16' | '1:1';
+  name_hint: string | null; captions: boolean; caption_style: string;
+  music: boolean; music_text: string | null; broll_url: string | null;
+}
 interface StepArtifact { url?: string; kind?: string; mime?: string }
 interface StepInfo { primitive_run_id: string; primitive: string; status: string; artifacts?: StepArtifact[]; error?: { message?: string } | null }
 interface ToolRun { skill: string; status: 'running' | 'succeeded' | 'failed'; mediaUrl?: string; note?: string; runId?: string; composed?: boolean; characters?: SavedCharacter[]; currentStep?: string; steps?: StepInfo[] }
@@ -212,6 +220,10 @@ export default function AgentPage() {
   const [hydrated, setHydrated] = useState(false);
   const [attachedImage, setAttachedImage] = useState<{ url: string; name: string } | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [composerMenuOpen, setComposerMenuOpen] = useState(false);
+  const [promptPickerOpen, setPromptPickerOpen] = useState(false);
+  const [savedPrompts, setSavedPrompts] = useState<AgentSavedPrompt[] | null>(null);
+  const [promptsLoadErr, setPromptsLoadErr] = useState<string | null>(null);
   const [pendingAsk, setPendingAsk] = useState<PendingAsk | null>(null);
   const [askHighlight, setAskHighlight] = useState(0);
   const askResolverRef = useRef<((answer: string) => void) | null>(null);
@@ -802,6 +814,67 @@ export default function AgentPage() {
     return () => window.removeEventListener('click', close);
   }, [menuFor, projectMenuFor]);
 
+  // Close the composer's "+" menu on outside click.
+  useEffect(() => {
+    if (!composerMenuOpen) return;
+    const close = () => setComposerMenuOpen(false);
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, [composerMenuOpen]);
+
+  // Saved prompts (Gallery > My Prompts) for the "+" menu's "Use a saved prompt" picker.
+  const loadSavedPrompts = useCallback(async () => {
+    setPromptsLoadErr(null);
+    try {
+      const r = await fetch('/api/dashboard/prompts', { credentials: 'include' });
+      const j = r.ok ? ((await r.json()) as { prompts?: AgentSavedPrompt[] }) : { prompts: [] };
+      setSavedPrompts(j.prompts ?? []);
+      if (!r.ok) setPromptsLoadErr('Could not load your saved prompts.');
+    } catch {
+      setSavedPrompts([]);
+      setPromptsLoadErr('Could not load your saved prompts.');
+    }
+  }, []);
+  function openPromptPicker() {
+    setComposerMenuOpen(false);
+    setPromptPickerOpen(true);
+    if (savedPrompts === null) void loadSavedPrompts();
+  }
+  const LOOK_LABEL: Record<AgentSavedPrompt['look'], string> = { natural: 'Natural', commercial: 'Commercial', raw_iphone: 'Raw / iPhone' };
+  // Turn a saved prompt into an editable draft message — never auto-sent, so the
+  // user can adjust it, same as an AI-drafted script always lands in an editable
+  // textarea rather than being submitted straight away. The bracketed hints match
+  // conventions the agent's own SYSTEM prompt already parses (services/api-v2/src/
+  // routes/v1/agent.ts) for character_sheet_url / reference_photo_url.
+  function promptToDraftMessage(p: AgentSavedPrompt): string {
+    const lines: string[] = [`Run my saved prompt "${p.name}" with make_ugc:`, ''];
+    lines.push(`Script: "${p.script}"`);
+    if (p.person_mode === 'describe') {
+      lines.push(p.person_text ? `Person: ${p.person_text}` : 'Person: use a default AI-generated person.');
+    } else if (p.person_mode === 'my-character' && p.person_image_url) {
+      lines.push(`Person: reuse my saved character "${p.person_ref_name ?? ''}".`);
+    } else if (p.person_mode === 'stock-actor' && p.person_image_url) {
+      lines.push(`Person: use the stock actor "${p.person_ref_name ?? ''}".`);
+    } else if (p.person_mode === 'upload' && p.person_image_url) {
+      lines.push('Person: use my uploaded reference photo.');
+    }
+    lines.push(`Look: ${LOOK_LABEL[p.look]}`);
+    lines.push(`Aspect ratio: ${p.aspect_ratio}`);
+    if (p.name_hint) lines.push(`Name/vibe hint: ${p.name_hint}`);
+    if (p.captions) lines.push(`Captions: on (${p.caption_style} style)`);
+    if (p.music) lines.push(`Music: ${p.music_text ? p.music_text : 'on (default track)'}`);
+    if (p.broll_url) lines.push(`B-roll: ${p.broll_url}`);
+    lines.push('');
+    if (p.person_mode === 'my-character' && p.person_image_url) lines.push(`[character_sheet_url: ${p.person_image_url}]`);
+    if ((p.person_mode === 'stock-actor' || p.person_mode === 'upload') && p.person_image_url) lines.push(`[reference_photo_url: ${p.person_image_url}]`);
+    return lines.join('\n');
+  }
+  function useSavedPrompt(p: AgentSavedPrompt) {
+    setInput(promptToDraftMessage(p));
+    setPromptPickerOpen(false);
+    textareaRef.current?.focus();
+  }
+
   // Upload a product image → Supabase Storage (signed PUT) → a signed read URL.
   async function handlePickImage(file: File) {
     setError(null);
@@ -884,12 +957,22 @@ export default function AgentPage() {
           style={{ color: '#E9E9F0', maxHeight: COMPOSER_MAX_HEIGHT }}
         />
         <div className="mt-2 flex items-center justify-between">
-          <>
+          <div className="relative">
             <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handlePickImage(f); }} />
-            <button type="button" aria-label="Attach a product image" title="Attach a product image" disabled={busy || uploadingImage} onClick={() => fileInputRef.current?.click()} className="inline-flex h-7 w-7 items-center justify-center rounded-full transition-opacity disabled:opacity-40" style={{ border: '1px solid rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.45)' }}>
+            <button type="button" aria-label="Add" title="Add" disabled={busy || uploadingImage} onClick={(e) => { e.stopPropagation(); setComposerMenuOpen((v) => !v); }} className="inline-flex h-7 w-7 items-center justify-center rounded-full transition-opacity disabled:opacity-40" style={{ border: '1px solid rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.45)' }}>
               {uploadingImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             </button>
-          </>
+            {composerMenuOpen && (
+              <div onClick={(e) => e.stopPropagation()} className="absolute bottom-full left-0 z-20 mb-2 w-56 rounded-xl p-1.5" style={{ background: '#1B1C2A', border: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+                <button type="button" onClick={() => { setComposerMenuOpen(false); fileInputRef.current?.click(); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors hover:bg-white/[0.06]" style={{ color: '#E9E9F0' }}>
+                  <UploadCloud className="h-4 w-4" style={{ color: 'rgba(255,255,255,0.5)' }} /> Upload from your device
+                </button>
+                <button type="button" onClick={openPromptPicker} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors hover:bg-white/[0.06]" style={{ color: '#E9E9F0' }}>
+                  <Wand2 className="h-4 w-4" style={{ color: 'rgba(255,255,255,0.5)' }} /> Use a saved prompt
+                </button>
+              </div>
+            )}
+          </div>
           {busy && !pendingAsk ? (
             <button type="button" onClick={() => void stop()} aria-label="Stop generation" title="Stop" className="inline-flex h-9 w-9 items-center justify-center rounded-full transition-opacity" style={{ background: '#A78BFA', color: '#0F1015' }}>
               <Square className="h-3.5 w-3.5" fill="currentColor" />
@@ -1131,10 +1214,51 @@ export default function AgentPage() {
     </div>
   ) : null;
 
+  // "+" menu -> "Use a saved prompt" picker (Gallery > My Prompts). Selecting
+  // one drops a ready-to-edit draft message into the composer — it never
+  // sends on its own, matching how an AI-drafted script always lands in an
+  // editable textarea rather than being submitted straight away.
+  const promptPicker = promptPickerOpen ? (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={() => setPromptPickerOpen(false)}>
+      <div onClick={(e) => e.stopPropagation()} className="flex max-h-[70vh] w-full max-w-md flex-col rounded-2xl p-5" style={{ background: '#14151F', border: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+        <div className="mb-1 flex items-center gap-2">
+          <Wand2 className="h-4 w-4" style={{ color: '#A78BFA' }} />
+          <span className="text-[15px] font-medium" style={{ color: '#E9E9F0' }}>Use a saved prompt</span>
+        </div>
+        <p className="mb-3 text-[12.5px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>Picks up a prompt you built on Gallery &gt; My Prompts and drops it into the message box, ready to edit before you send it.</p>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {savedPrompts === null ? (
+            <div className="flex h-16 items-center justify-center"><Loader2 className="h-4 w-4 animate-spin" style={{ color: 'rgba(255,255,255,0.5)' }} /></div>
+          ) : promptsLoadErr ? (
+            <p className="px-1 text-[12.5px]" style={{ color: '#FCA5A5' }}>{promptsLoadErr}</p>
+          ) : savedPrompts.length === 0 ? (
+            <div className="px-1 text-[12.5px]" style={{ color: 'rgba(255,255,255,0.5)' }}>
+              No saved prompts yet.{' '}
+              <Link href="/dashboard/gallery?tab=prompts" className="underline" style={{ color: '#A78BFA' }} onClick={() => setPromptPickerOpen(false)}>Build one on My Prompts</Link>.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {savedPrompts.map((p) => (
+                <button key={p.id} type="button" onClick={() => useSavedPrompt(p)} className="flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-white/[0.06]" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#0F1015' }}>
+                  <span className="truncate text-[13px] font-medium" style={{ color: '#E9E9F0' }}>{p.name}</span>
+                  <span className="line-clamp-1 text-[11.5px]" style={{ color: 'rgba(255,255,255,0.45)' }}>{p.script}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button type="button" onClick={() => setPromptPickerOpen(false)} className="rounded-lg px-3 py-1.5 text-[13px]" style={{ color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.12)' }}>Close</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   if (empty) {
     return (
       <div className="flex h-screen w-full">
         {projectEditor}
+        {promptPicker}
         {historyRail}
         <div className="mx-auto flex h-full min-w-0 flex-1 flex-col items-center justify-center px-6">
         <div className="mb-6 flex items-center gap-3">
@@ -1159,6 +1283,7 @@ export default function AgentPage() {
     <div className="flex h-screen w-full">
       <style>{`.am-noscroll::-webkit-scrollbar{display:none}`}</style>
       {projectEditor}
+      {promptPicker}
       {historyRail}
 
       {/* ── Conversation column ─────────────────────────────────────────── */}

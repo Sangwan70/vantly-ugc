@@ -3,6 +3,9 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 
+import { getStaticPage } from '@/lib/content/get-page';
+import { renderContentVars } from '@/lib/content/render-vars';
+
 /**
  * Terms of Use — a self-hosted default.
  *
@@ -34,9 +37,13 @@ function supportContact(): string | null {
   return email ? email : null;
 }
 
-export default function TermsPage() {
+export default async function TermsPage() {
   const url = siteUrl();
   const contact = supportContact();
+  const page = await getStaticPage('terms');
+  const customHtml = page?.content_html?.trim()
+    ? renderContentVars(page.content_html, { site_url: url, support_contact: contact ?? '' })
+    : null;
 
   return (
     <div className="min-h-screen bg-background text-text">
@@ -48,6 +55,12 @@ export default function TermsPage() {
         <h1 className="mt-8 text-3xl font-semibold">Terms of Use</h1>
         <p className="mt-2 text-sm text-text-muted">Last updated: fill in when you adapt this page.</p>
 
+        {customHtml ? (
+          <div
+            className="prose-terms mt-10 space-y-8 text-sm leading-relaxed text-text"
+            dangerouslySetInnerHTML={{ __html: customHtml }}
+          />
+        ) : (
         <div className="prose-terms mt-10 space-y-8 text-sm leading-relaxed text-text">
           <section>
             <p>
@@ -154,6 +167,7 @@ export default function TermsPage() {
             </p>
           </section>
         </div>
+        )}
 
         <div className="mt-12 text-sm text-text-muted">
           See also our <Link href="/privacy" className="underline hover:text-text">Privacy policy</Link>.

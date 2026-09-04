@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 
 import { MarketingShell, PageHero } from '@/components/landing/marketing-shell';
 import { CtaSection } from '@/components/landing/cta-section';
+import { getStaticPage } from '@/lib/content/get-page';
 
 export const metadata: Metadata = {
   title: 'Blog — Vantly UGC',
@@ -28,12 +29,14 @@ const POSTS: Array<{ title: string; excerpt: string }> = [
   },
 ];
 
-export default function BlogPage() {
+export default async function BlogPage() {
+  const page = await getStaticPage('blog');
+
   return (
     <MarketingShell>
       <PageHero
         eyebrow="Blog"
-        title="Notes from the team"
+        title={page?.title || 'Notes from the team'}
         lede="Short write-ups on how the pipeline is built and why."
       />
 

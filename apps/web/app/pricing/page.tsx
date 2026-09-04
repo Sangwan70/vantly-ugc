@@ -3,6 +3,7 @@
 import type { Metadata } from 'next';
 
 import { MarketingShell, PageHero } from '@/components/landing/marketing-shell';
+import { getStaticPage } from '@/lib/content/get-page';
 import { PricingCards } from '@/components/pricing-cards';
 import { CtaSection } from '@/components/landing/cta-section';
 
@@ -26,12 +27,14 @@ const PRICING_FAQS: Array<{ q: string; a: string }> = [
   },
 ];
 
-export default function PricingPage() {
+export default async function PricingPage() {
+  const page = await getStaticPage('pricing');
+
   return (
     <MarketingShell>
       <PageHero
         eyebrow="Pricing"
-        title="Simple, transparent pricing"
+        title={page?.title || 'Simple, transparent pricing'}
         lede="Pick a plan, generate videos, upgrade or cancel anytime."
       />
 

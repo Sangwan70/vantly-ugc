@@ -126,8 +126,18 @@ const SECURITY_HEADERS: Record<string, string> = {
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://plausible.io https://www.dubcdn.com",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob: *.supabase.co *.fal.media fal.media *.r2.dev vantly.social *.vantly.social *.licdn.com *.pbs.twimg.com *.cdninstagram.com *.fbcdn.net *.googleusercontent.com *.ytimg.com *.tiktokcdn.com *.tiktokcdn-us.com *.bsky.social",
-    "media-src 'self' blob: *.supabase.co *.fal.media fal.media *.r2.dev",
+    [
+      "img-src 'self' data: blob: *.supabase.co *.fal.media fal.media *.r2.dev vantly.social *.vantly.social *.licdn.com *.pbs.twimg.com *.cdninstagram.com *.fbcdn.net *.googleusercontent.com *.ytimg.com *.tiktokcdn.com *.tiktokcdn-us.com *.bsky.social",
+      SUPABASE_PUBLIC_URL,
+    ]
+      .filter(Boolean)
+      .join(' '),
+    [
+      "media-src 'self' blob: *.supabase.co *.fal.media fal.media *.r2.dev",
+      SUPABASE_PUBLIC_URL,
+    ]
+      .filter(Boolean)
+      .join(' '),
     [
       "connect-src 'self' *.supabase.co *.supabase.in wss://*.supabase.co https://api.stripe.com https://plausible.io https://api.dub.co",
       SUPABASE_PUBLIC_URL,

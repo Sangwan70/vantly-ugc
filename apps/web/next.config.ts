@@ -45,6 +45,28 @@ function imageHosts(): { protocol: 'http' | 'https'; hostname: string }[] {
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@vantly-ugc/ui'],
+  experimental: {
+    // Next buffers the body of any request matched by middleware.ts's
+    // matcher (which covers /api/v1/* -- see its comment) so middleware
+    // COULD read it, even though most routes never do. Past this limit,
+    // Next does NOT reject the request: it silently truncates the body
+    // and lets the route handler run on the partial data, logging only a
+    // console warning ("Request body exceeded ... Only the first N MB
+    // will be available"). That is exactly what broke
+    // /api/v1/skills/[slug]/run for make_storybook -- a 12.7MB request
+    // (4 uncompressed cast photos) got cut to the platform's *implicit*
+    // default of 10MB, and the truncated JSON failed to parse server-side
+    // as a confusing "invalid_json" instead of a clear size error.
+    // Pinning the same 10MB here doesn't change current behavior -- it
+    // makes the limit explicit and documented instead of an invisible
+    // platform default that could shift on a future Next upgrade. It
+    // does NOT by itself turn truncation into a clean client error for
+    // every /api/v1/* route -- routes need their own Content-Length
+    // pre-check for that (see videos/route.ts and skills/[slug]/run/
+    // route.ts, both of which reject well below this ceiling before ever
+    // reading the body).
+    middlewareClientMaxBodySize: 10 * 1024 * 1024,
+  },
   // Emit a self-contained server bundle so the Docker image does not need the
   // whole pnpm workspace at runtime. See apps/web/Dockerfile.
   output: 'standalone',

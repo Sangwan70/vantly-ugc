@@ -20,6 +20,46 @@ import { FORMS, type Field } from '../_forms';
 interface CharacterItem { name: string; description: string; ref: string; ref_base64: string }
 interface SceneItem { speaker: string; line: string; visual_description: string }
 
+// make_storybook can attach up to 4 of these in ONE run request (one per
+// cast member) with nothing upstream to shrink them until the request
+// hits skills/[slug]/run/route.ts's own Content-Length guard. An
+// unresized phone/camera photo runs 2-3MB+ each — times 4 that blows well
+// past what a reverse proxy in front of this app will forward intact, and
+// the request arrives at the server truncated, surfacing as a confusing
+// "invalid_json" error instead of a clear size message. Downscaling to
+// the longest edge below and re-encoding as JPEG keeps a solid recognizable
+// reference photo while cutting a typical phone photo to a fraction of its
+// original size, so this stays well under any body-size limit in practice.
+const IMAGE_MAX_DIM = 1280;
+const IMAGE_JPEG_QUALITY = 0.82;
+
+function compressImageFile(file: File, maxDim = IMAGE_MAX_DIM, quality = IMAGE_JPEG_QUALITY): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const { width, height } = img;
+      if (!width || !height) { reject(new Error('Could not read image dimensions')); return; }
+      const scale = Math.min(1, maxDim / Math.max(width, height));
+      const outW = Math.max(1, Math.round(width * scale));
+      const outH = Math.max(1, Math.round(height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = outW;
+      canvas.height = outH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { reject(new Error('Canvas is not supported in this browser')); return; }
+      ctx.drawImage(img, 0, 0, outW, outH);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('Could not read that image file'));
+    };
+    img.src = objectUrl;
+  });
+}
+
 interface SkillEntry {
   slug: string;
   name: string;
@@ -706,12 +746,17 @@ function CharacterRow({
   const inputStyle: React.CSSProperties = { backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 10px', fontSize: 13, width: '100%' };
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerTab, setPickerTab] = useState<'mine' | 'stock'>('mine');
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [compressing, setCompressing] = useState(false);
 
   const onFile = (file: File | null) => {
-    if (!file) { onChange({ ref_base64: '' }); return; }
-    const reader = new FileReader();
-    reader.onload = () => onChange({ ref_base64: typeof reader.result === 'string' ? reader.result : '', ref: '' });
-    reader.readAsDataURL(file);
+    if (!file) { setPhotoError(null); onChange({ ref_base64: '' }); return; }
+    setPhotoError(null);
+    setCompressing(true);
+    compressImageFile(file)
+      .then((dataUrl) => onChange({ ref_base64: dataUrl, ref: '' }))
+      .catch(() => setPhotoError('Could not read that image — try a different file.'))
+      .finally(() => setCompressing(false));
   };
 
   const pickedThumb = item.ref && (item.ref.includes('r2.dev') || item.ref.includes('supabase')) ? item.ref : null;
@@ -735,7 +780,9 @@ function CharacterRow({
           style={{ backgroundColor: '#14151F', border: '1px dashed rgba(255,255,255,0.18)', fontSize: 11, color: 'rgba(255,255,255,0.5)' }}
         >
           <input type="file" accept="image/png,image/jpeg" className="hidden" onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
-          {item.ref_base64 ? (
+          {compressing ? (
+            <span>compressing photo…</span>
+          ) : item.ref_base64 ? (
             <>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={item.ref_base64} alt="character preview" style={{ maxHeight: 72, borderRadius: 6 }} />
@@ -745,6 +792,7 @@ function CharacterRow({
             <span>…or upload a photo</span>
           )}
         </label>
+        {photoError && <span className="text-[11px]" style={{ color: '#FCA5A5' }}>{photoError}</span>}
         {item.ref_base64 && (
           <button type="button" onClick={() => onChange({ ref_base64: '' })} className="self-start text-[11px] underline" style={{ color: 'rgba(255,255,255,0.45)' }}>remove photo</button>
         )}

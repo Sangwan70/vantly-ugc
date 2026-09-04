@@ -10,6 +10,19 @@ import { createClient } from '@/lib/supabase/server';
 const API_V2_URL = process.env.API_V2_URL?.replace(/\/+$/, '')
   ?? 'https://api.vantly-ugc.com';
 
+// Some skill inputs carry base64-encoded reference photos (make_storybook's
+// character-list can attach up to 4 -- see FieldRow/CharacterRow in
+// apps/web/app/(app-dark)/dashboard/skills/[slug]/page.tsx, now downscaled
+// client-side before upload). Without a check here, an oversized body gets
+// silently truncated somewhere between the browser and this handler --
+// confirmed via a HAR capture: a 12.7MB make_storybook request arrived here
+// as malformed JSON and fell into the generic "invalid_json" branch below,
+// with no indication of why. This mirrors the guard already used in
+// apps/web/app/api/v1/videos/route.ts. 4MB gives comfortable headroom for a
+// full storybook cast (4 downscaled photos + text) while staying well under
+// the size that reproduced the truncation.
+const MAX_BODY_BYTES = 4 * 1024 * 1024;
+
 export async function POST(
   req: NextRequest,
   ctx: { params: Promise<{ slug: string }> },
@@ -19,6 +32,13 @@ export async function POST(
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) {
     return NextResponse.json({ error: { code: 'unauthenticated' } }, { status: 401 });
+  }
+  const contentLength = req.headers.get('content-length');
+  if (contentLength && Number(contentLength) > MAX_BODY_BYTES) {
+    return NextResponse.json(
+      { error: { code: 'body_too_large', message: 'Request body must be 4 MB or smaller -- try a smaller reference photo.' } },
+      { status: 413 },
+    );
   }
   let body: unknown;
   try { body = await req.json(); } catch {

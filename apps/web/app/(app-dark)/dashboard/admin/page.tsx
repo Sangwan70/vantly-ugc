@@ -15,6 +15,7 @@ import { Loader2, Search, Coins, ExternalLink, ChevronDown, ChevronRight, Shield
 import { createClient } from '@/lib/supabase/client';
 import { isAdminEmailIn } from '@/lib/admin-allowlist';
 import { useVariables } from '@/components/variable-context';
+import { OpsPanels, type DashboardMetrics, type SignupsByDay } from './_ops-panels';
 
 interface Job {
   id: string;
@@ -30,6 +31,10 @@ interface AdminUser {
   id: string;
   email: string | null;
   display_name: string | null;
+  created_at: string | null;
+  is_blocked: boolean;
+  blocked_at: string | null;
+  blocked_reason: string | null;
   subscription: { plan_slug: string; status: string; current_period_end: string | null } | null;
   credits: { monthly_credits_remaining: number; purchased_balance: number } | null;
   jobs: Job[];
@@ -64,11 +69,21 @@ export default function AdminPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [growth, setGrowth] = useState<Growth | null>(null);
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [signups, setSignups] = useState<SignupsByDay | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState('');
   const [sort, setSort] = useState<'recent' | 'credits_used' | 'creations'>('recent');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // Users moderation (block/delete): default view stays subscription-only
+  // (today's behavior, and the common case) -- "Show all" opts into
+  // ?all=1 so free signups who never subscribed become visible and
+  // therefore moderatable, per the admin-replication plan's identified gap.
+  const [showAll, setShowAll] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmDeleteIds, setConfirmDeleteIds] = useState<string[] | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -80,11 +95,15 @@ export default function AdminPage() {
 
   const load = useCallback(async () => {
     try {
-      // Users list + growth funnel load in parallel; a metrics hiccup must not
-      // block the user table, so growth failure is swallowed (panel just hides).
-      const [r, m] = await Promise.all([
-        fetch('/api/admin/users', { credentials: 'include' }),
+      setSelected(new Set());
+      // Users list + growth funnel + ops metrics + signups trend load in
+      // parallel; a metrics/signups hiccup must not block the user table,
+      // so those failures are swallowed (their panels just hide).
+      const usersUrl = showAll ? '/api/admin/users?all=1' : '/api/admin/users';
+      const [r, m, s] = await Promise.all([
+        fetch(usersUrl, { credentials: 'include' }),
         fetch('/api/admin/metrics', { credentials: 'include' }).catch(() => null),
+        fetch('/api/admin/dashboard/signups-by-day?days=30', { credentials: 'include' }).catch(() => null),
       ]);
       if (r.status === 403) { setError('Not authorized.'); setUsers([]); return; }
       if (!r.ok) { setError(`users ${r.status}`); setUsers([]); return; }
@@ -93,9 +112,14 @@ export default function AdminPage() {
       if (m && m.ok) {
         const mj = await m.json().catch(() => null);
         setGrowth(mj?.growth ?? null);
+        setMetrics(mj ?? null);
+      }
+      if (s && s.ok) {
+        const sj = await s.json().catch(() => null);
+        setSignups(sj ?? null);
       }
     } catch (e) { setError((e as Error).message); setUsers([]); }
-  }, []);
+  }, [showAll]);
   useEffect(() => { if (isAdmin) void load(); }, [isAdmin, load]);
 
   const stats = useMemo(() => {
@@ -141,6 +165,86 @@ export default function AdminPage() {
       if (!r.ok) { const j = await r.json().catch(() => ({})); alert(`Failed: ${j.error ?? r.status}`); return; }
       await load();
     } finally { setBusy(null); }
+  }
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelected((prev) => (prev.size === filtered.length && filtered.length > 0) ? new Set() : new Set(filtered.map((u) => u.id)));
+  }
+
+  async function blockUser(u: AdminUser, blocked: boolean) {
+    const reason = blocked ? (window.prompt(`Block ${u.email ?? u.id}\nReason (optional, shown to no one but admins):`, '') ?? undefined) : undefined;
+    if (blocked && reason === undefined) return; // prompt cancelled
+    setBusy(u.id);
+    try {
+      const r = await fetch('/api/admin/block-user', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: u.id, blocked, reason: reason || undefined }) });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); alert(`Failed: ${j.error ?? r.status}`); return; }
+      await load();
+    } finally { setBusy(null); }
+  }
+
+  async function bulkBlock(blocked: boolean) {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    if (!window.confirm(blocked
+      ? `Block ${ids.length} user${ids.length === 1 ? '' : 's'}? They'll be signed out immediately and unable to log back in until unblocked.`
+      : `Unblock ${ids.length} user${ids.length === 1 ? '' : 's'}?`)) return;
+    setBulkBusy(true);
+    try {
+      const failures: string[] = [];
+      for (const id of ids) {
+        const r = await fetch('/api/admin/block-user', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: id, blocked }) });
+        if (!r.ok) { const j = await r.json().catch(() => ({})); failures.push(`${id}: ${j.error ?? r.status}`); }
+      }
+      if (failures.length) alert(`${ids.length - failures.length} succeeded, ${failures.length} failed:\n${failures.join('\n')}`);
+      await load();
+    } finally { setBulkBusy(false); }
+  }
+
+  async function confirmBulkDelete() {
+    const ids = confirmDeleteIds;
+    if (!ids || ids.length === 0) return;
+    setBulkBusy(true);
+    try {
+      const r = await fetch('/api/admin/bulk-delete-users', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_ids: ids }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { alert(`Failed: ${j.error ?? r.status}`); return; }
+      setConfirmDeleteIds(null);
+      if (j.error_count > 0) {
+        const details = (j.errors ?? []).map((e: { user_id: string; error: string }) => `${e.user_id}: ${e.error}`).join('\n');
+        alert(`Deleted ${j.deleted_count}, ${j.error_count} failed:\n${details}`);
+      }
+      await load();
+    } finally { setBulkBusy(false); }
+  }
+
+  function exportCsv() {
+    const rows = filtered.filter((u) => selected.size === 0 || selected.has(u.id));
+    const header = ['email', 'display_name', 'plan_slug', 'status', 'is_blocked', 'monthly_credits_remaining', 'purchased_balance', 'total_credits_used', 'total_creations', 'created_at'];
+    const esc = (v: unknown) => { const s = v === null || v === undefined ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const lines = [header.join(',')];
+    for (const u of rows) {
+      lines.push([
+        u.email, u.display_name, u.subscription?.plan_slug ?? '', u.subscription?.status ?? '', u.is_blocked,
+        u.credits?.monthly_credits_remaining ?? '', u.credits?.purchased_balance ?? '', u.computed.total_credits_used, u.computed.total_creations, u.created_at,
+      ].map(esc).join(','));
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `vantly-users-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   if (!authChecked) {
@@ -285,6 +389,8 @@ export default function AdminPage() {
         );
       })() : null}
 
+      <OpsPanels metrics={metrics} signups={signups} />
+
       {/* Controls */}
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <div className="relative flex-1" style={{ minWidth: 220 }}>
@@ -296,7 +402,23 @@ export default function AdminPage() {
           <option value="credits_used">Most credits used</option>
           <option value="creations">Most creations</option>
         </select>
+        <label className="flex h-10 items-center gap-2 rounded-xl px-3 text-[12px]" style={{ background: '#0F1015', color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)' }}>
+          <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />
+          Show all signups (incl. free)
+        </label>
       </div>
+
+      {/* Bulk-action bar -- only appears once rows are selected */}
+      {selected.size > 0 ? (
+        <div className="mt-3 flex flex-wrap items-center gap-3 rounded-2xl px-4 py-3" style={{ background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.25)' }}>
+          <span className="text-[12px] font-medium" style={{ color: '#C4B5FD' }}>{selected.size} selected</span>
+          <button type="button" disabled={bulkBusy} onClick={exportCsv} className="rounded-lg px-2.5 py-1.5 text-[12px]" style={{ background: '#1B1C2A', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }}>Export CSV</button>
+          <button type="button" disabled={bulkBusy} onClick={() => bulkBlock(true)} className="rounded-lg px-2.5 py-1.5 text-[12px]" style={{ background: '#1B1C2A', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }}>Block</button>
+          <button type="button" disabled={bulkBusy} onClick={() => bulkBlock(false)} className="rounded-lg px-2.5 py-1.5 text-[12px]" style={{ background: '#1B1C2A', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }}>Unblock</button>
+          <button type="button" disabled={bulkBusy} onClick={() => setConfirmDeleteIds(Array.from(selected))} className="rounded-lg px-2.5 py-1.5 text-[12px]" style={{ background: 'rgba(248,113,113,0.12)', color: '#FCA5A5', border: '1px solid rgba(248,113,113,0.3)' }}>Delete…</button>
+          <button type="button" disabled={bulkBusy} onClick={() => setSelected(new Set())} className="ml-auto text-[12px]" style={{ color: 'rgba(255,255,255,0.4)' }}>Clear</button>
+        </div>
+      ) : null}
 
       {error ? <div className="mt-4 rounded-2xl px-4 py-3 text-sm" style={{ border: '1px solid rgba(255,79,79,0.3)', background: 'rgba(255,79,79,0.08)', color: '#FCA5A5' }}>{error}</div> : null}
 
@@ -307,6 +429,11 @@ export default function AdminPage() {
         ) : filtered.length === 0 ? (
           <p className="px-4 py-6 text-sm" style={{ color: 'rgba(255,255,255,0.45)' }}>No users.</p>
         ) : (
+          <>
+          <div className="flex items-center gap-3 px-4 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+            <input type="checkbox" checked={selected.size === filtered.length && filtered.length > 0} onChange={toggleSelectAll} aria-label="Select all" />
+            <span className="text-[11px] uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.35)' }}>Select all ({filtered.length})</span>
+          </div>
           <ul>
             {filtered.map((u) => {
               const open = expanded === u.id;
@@ -314,10 +441,12 @@ export default function AdminPage() {
               return (
                 <li key={u.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                   <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+                    <input type="checkbox" checked={selected.has(u.id)} onChange={() => toggleSelect(u.id)} onClick={(e) => e.stopPropagation()} aria-label={`Select ${u.email ?? u.id}`} />
                     <button type="button" onClick={() => setExpanded(open ? null : u.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
                       {open ? <ChevronDown className="h-4 w-4 shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} /> : <ChevronRight className="h-4 w-4 shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />}
                       <span className="truncate text-sm" style={{ color: '#E9E9F0' }}>{u.email ?? '(no email)'}</span>
                       {u.subscription ? <span className="rounded-full px-2 py-0.5 text-[10px]" style={{ background: 'rgba(167,139,250,0.12)', color: '#C4B5FD' }}>{u.subscription.plan_slug}</span> : null}
+                      {u.is_blocked ? <span className="rounded-full px-2 py-0.5 text-[10px]" style={{ background: 'rgba(248,113,113,0.12)', color: '#FCA5A5' }}>Blocked</span> : null}
                     </button>
                     <div className="flex items-center gap-4 text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
                       <span title="credits left"><Coins className="mr-1 inline h-3 w-3" />{left.toLocaleString()}</span>
@@ -326,10 +455,13 @@ export default function AdminPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <button type="button" disabled={busy === u.id} onClick={() => giveCredits(u)} className="rounded-lg px-2.5 py-1.5 text-[12px]" style={{ background: '#1B1C2A', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }}>{busy === u.id ? '…' : '+ Credits'}</button>
-                      <select disabled={busy === u.id} value="" onChange={(e) => grantPlan(u, e.target.value)} className="rounded-lg px-2 py-1.5 text-[12px]" style={{ background: '#1B1C2A', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }}>
+                      <select disabled={busy === u.id} value="" onChange={(e) => { if (e.target.value === 'free' && !window.confirm(`Downgrade ${u.email ?? u.id} to free? Their monthly allowance zeroes out immediately (purchased credits are kept).`)) return; grantPlan(u, e.target.value); }} className="rounded-lg px-2 py-1.5 text-[12px]" style={{ background: '#1B1C2A', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }}>
                         <option value="">Plan…</option>
                         {PLANS.map((p) => <option key={p} value={p}>{p}</option>)}
+                        <option value="free">Downgrade to free</option>
                       </select>
+                      <button type="button" disabled={busy === u.id} onClick={() => blockUser(u, !u.is_blocked)} className="rounded-lg px-2.5 py-1.5 text-[12px]" style={{ background: '#1B1C2A', color: u.is_blocked ? '#34D399' : '#FCA5A5', border: '1px solid rgba(255,255,255,0.1)' }}>{busy === u.id ? '…' : u.is_blocked ? 'Unblock' : 'Block'}</button>
+                      <button type="button" disabled={busy === u.id} onClick={() => setConfirmDeleteIds([u.id])} className="rounded-lg px-2.5 py-1.5 text-[12px]" style={{ background: 'rgba(248,113,113,0.08)', color: '#FCA5A5', border: '1px solid rgba(248,113,113,0.2)' }}>Delete</button>
                     </div>
                   </div>
                   {open && (
@@ -356,8 +488,42 @@ export default function AdminPage() {
               );
             })}
           </ul>
+          </>
         )}
       </div>
+
+      {/* Delete confirmation -- lists exactly which users are about to be
+          permanently removed, per the admin-replication plan's spec. This
+          is a real hard delete (see 20260904150000_admin_user_moderation.sql):
+          it cascades through subscriptions, credits, generation history and
+          the credit-transaction ledger with no way back. */}
+      {confirmDeleteIds ? (() => {
+        const targets = (users ?? []).filter((u) => confirmDeleteIds.includes(u.id));
+        return (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center px-4" role="dialog" aria-modal="true" aria-label="Confirm delete">
+            <div className="absolute inset-0" style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }} onClick={() => !bulkBusy && setConfirmDeleteIds(null)} aria-hidden />
+            <div className="relative w-full max-w-lg rounded-3xl p-6" style={{ backgroundColor: '#191A22', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 30px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(248,113,113,0.08) inset' }}>
+              <h2 className="text-base font-semibold" style={{ color: '#E9E9F0' }}>
+                Permanently delete {confirmDeleteIds.length} user{confirmDeleteIds.length === 1 ? '' : 's'}?
+              </h2>
+              <p className="mt-2 text-[13px]" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                This is irreversible. Their account, subscription, credit balance, generation history, and credit-transaction ledger are all deleted -- nothing is retained.
+              </p>
+              <div className="mt-3 max-h-48 overflow-y-auto rounded-xl px-3 py-2" style={{ background: '#0F1015', border: '1px solid rgba(255,255,255,0.06)' }}>
+                {targets.length === 0 ? (
+                  <p className="py-1 text-[12px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{confirmDeleteIds.length} user{confirmDeleteIds.length === 1 ? '' : 's'} not currently in view.</p>
+                ) : targets.map((u) => (
+                  <div key={u.id} className="truncate py-1 text-[12px]" style={{ color: 'rgba(255,255,255,0.75)' }}>{u.email ?? u.id}</div>
+                ))}
+              </div>
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <button type="button" disabled={bulkBusy} onClick={() => setConfirmDeleteIds(null)} className="rounded-lg px-3 py-2 text-[13px]" style={{ background: '#1B1C2A', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }}>Cancel</button>
+                <button type="button" disabled={bulkBusy} onClick={confirmBulkDelete} className="rounded-lg px-3 py-2 text-[13px] font-medium" style={{ background: '#F87171', color: '#191A22' }}>{bulkBusy ? 'Deleting…' : 'Delete permanently'}</button>
+              </div>
+            </div>
+          </div>
+        );
+      })() : null}
     </div>
   );
 }

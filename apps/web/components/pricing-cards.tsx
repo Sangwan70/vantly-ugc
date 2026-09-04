@@ -1,13 +1,16 @@
 // Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
+'use client';
+
 import Link from 'next/link';
 import { Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useCurrencyDisplay, formatPlanPrice } from '@/lib/billing/currency-display';
 
 export const plans = [
   {
     name: 'Creator',
-    price: '$39',
+    priceUsd: 39,
     videos: '~13',
     videoLabel: '10s UGC videos/month',
     credits: '3,900',
@@ -22,7 +25,7 @@ export const plans = [
   },
   {
     name: 'Pro',
-    price: '$69',
+    priceUsd: 69,
     videos: '~23',
     videoLabel: '10s UGC videos/month',
     credits: '6,900',
@@ -37,7 +40,7 @@ export const plans = [
   },
   {
     name: 'Pro Plus',
-    price: '$129',
+    priceUsd: 129,
     videos: '~43',
     videoLabel: '10s UGC videos/month',
     credits: '12,900',
@@ -54,6 +57,7 @@ export const plans = [
 ];
 
 export function PricingCards() {
+  const currency = useCurrencyDisplay();
   return (
     <div>
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -76,7 +80,7 @@ export function PricingCards() {
             </h3>
             <div className="mt-4">
               <span className={`text-4xl font-extrabold ${plan.popular ? 'text-white' : 'text-[#121212]'}`}>
-                {plan.price}
+                {formatPlanPrice(plan.priceUsd, currency)}
               </span>
               <span className={plan.popular ? 'text-white/60' : 'text-[#6b6b76]'}>/mo</span>
             </div>
@@ -115,7 +119,7 @@ export function PricingCards() {
         ))}
       </div>
       <p className="mt-8 text-center text-xs text-[#6b6b76]">
-        ~300 credits per 10s video (~$3) · Pay-as-you-go packs from $39
+        ~300 credits per 10s video (~{formatPlanPrice(3, currency)}) · Pay-as-you-go packs from {formatPlanPrice(39, currency)}
       </p>
     </div>
   );

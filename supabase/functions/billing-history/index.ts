@@ -19,6 +19,7 @@ import { verifyAuth } from "../_shared/auth.ts";
 import { checkRateLimit, getRateLimitHeaders } from "../_shared/rate-limit.ts";
 import { getCorsHeaders, getSecurityHeaders } from "../_shared/security-headers.ts";
 import Stripe from "https://esm.sh/stripe@17?target=deno";
+import { listSubscriptionInvoices } from "../_shared/razorpay.ts";
 
 function getStripe(): Stripe {
   const secretKey = Deno.env.get("STRIPE_SECRET_KEY");
@@ -62,37 +63,100 @@ async function handleBillingHistory(req: Request): Promise<Response> {
     );
   }
 
-  // 3. Look up stripe_customer_id
+  // 3. Look up the user's most recent subscription row -- branch by gateway.
+  // payment_gateway defaults to 'stripe' for every pre-existing row, so
+  // this is backward compatible with no data migration.
   const { data: subscription } = await db
     .from("subscriptions")
-    .select("stripe_customer_id")
+    .select("payment_gateway, stripe_customer_id, razorpay_subscription_id")
     .eq("user_id", user.id)
-    .not("stripe_customer_id", "is", null)
+    .or("stripe_customer_id.not.is.null,razorpay_subscription_id.not.is.null")
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  // No Stripe customer = free user, return empty (not an error)
-  if (!subscription?.stripe_customer_id) {
+  // No subscription on file = free user, return empty (not an error)
+  if (!subscription?.stripe_customer_id && !subscription?.razorpay_subscription_id) {
     return corsRes({ invoices: [], payment_method: null });
   }
 
-  const stripe = getStripe();
-  const customerId = subscription.stripe_customer_id;
+  const isRazorpay = subscription.payment_gateway === "razorpay";
 
-  // 4. Fetch subscription invoices, payment method, and PAYG credit purchases in parallel
+  // 4. Fetch subscription invoices, payment method, and PAYG credit purchases in parallel.
+  // PAYG credit_transactions rows are gateway-agnostic (RazorPay PAYG purchases
+  // land there too, via add_purchased_credits_razorpay), so that query runs
+  // unconditionally -- only the subscription-invoice + payment-method half differs.
+  const paygQuery = db
+    .from("credit_transactions")
+    .select("amount, description, created_at, metadata, type")
+    .eq("user_id", user.id)
+    .in("type", ["purchase_credit", "auto_topup_credit"])
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (isRazorpay) {
+    const [razorpayInvoices, paygResult] = await Promise.all([
+      subscription.razorpay_subscription_id
+        ? listSubscriptionInvoices(subscription.razorpay_subscription_id, 20).catch((err) => {
+            console.error("Failed to list RazorPay invoices:", err);
+            return [];
+          })
+        : Promise.resolve([]),
+      paygQuery,
+    ]);
+
+    const subscriptionInvoices = razorpayInvoices.map((inv) => ({
+      date: new Date(inv.date * 1000).toISOString(),
+      amount_paid: (inv.amount_paid ?? 0) / 100, // paise -> rupees
+      currency: (inv.currency ?? "inr").toLowerCase(),
+      status: inv.status ?? "unknown",
+      invoice_url: inv.short_url ?? null,
+      description: inv.description ?? "Subscription",
+      credits: null as number | null,
+    }));
+
+    type CreditTxRow = {
+      amount: number;
+      description: string | null;
+      created_at: string;
+      metadata: Record<string, unknown> | null;
+      type: string;
+    };
+    const paygInvoices = ((paygResult.data ?? []) as CreditTxRow[]).map((tx) => {
+      const isAuto = tx.type === "auto_topup_credit";
+      return {
+        date: tx.created_at,
+        amount_paid: tx.amount / 100,
+        currency: "usd",
+        status: "paid",
+        invoice_url: null,
+        description:
+          tx.description ??
+          `${isAuto ? "Auto-recharge" : "Credit purchase"}: +${tx.amount.toLocaleString()} credits`,
+        credits: tx.amount,
+      };
+    });
+
+    const invoices = [...subscriptionInvoices, ...paygInvoices].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    );
+
+    // RazorPay has no direct equivalent of Stripe's saved default payment
+    // method surfaced via the Customer object -- out of scope for this
+    // pass (see billing-history parity scoping); cancel-subscription still
+    // works without it.
+    return corsRes({ invoices, payment_method: null });
+  }
+
+  const stripe = getStripe();
+  const customerId = subscription.stripe_customer_id as string;
+
   const [invoicesResult, customerResult, paygResult] = await Promise.all([
     stripe.invoices.list({ customer: customerId, limit: 20 }),
     stripe.customers.retrieve(customerId, {
       expand: ["invoice_settings.default_payment_method"],
     }),
-    db
-      .from("credit_transactions")
-      .select("amount, description, created_at, metadata, type")
-      .eq("user_id", user.id)
-      .in("type", ["purchase_credit", "auto_topup_credit"])
-      .order("created_at", { ascending: false })
-      .limit(50),
+    paygQuery,
   ]);
 
   // 5. Map subscription invoices to safe response shape

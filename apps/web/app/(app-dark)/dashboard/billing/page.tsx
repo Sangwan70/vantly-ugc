@@ -28,6 +28,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Check, Crown, Loader2, Sparkles } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { invokeFn } from '@/lib/supabase/fn-proxy';
+import { openCheckoutResponse, type CheckoutResponse } from '@/lib/billing/open-checkout';
+import { useCurrencyDisplay, formatPlanPrice, formatInvoiceAmount } from '@/lib/billing/currency-display';
+import { useVariables } from '@/components/variable-context';
 
 interface CreditPack {
   amountUsd: number;
@@ -88,6 +91,7 @@ interface HistoryRow {
   description: string | null;
   credits: number | null;
   amount_paid: number | null;
+  currency?: string | null;
   date: string;
   invoice_url?: string | null;
 }
@@ -97,6 +101,8 @@ interface HistoryResp {
 }
 
 export default function BillingPage() {
+  const currency = useCurrencyDisplay();
+  const { paymentGateway } = useVariables();
   const [credits, setCredits] = useState<CreditsResp['credits']>(null);
   const [planTier, setPlanTier] = useState<string | null>(null);
   const [autoEnabled, setAutoEnabled] = useState(false);
@@ -160,13 +166,13 @@ export default function BillingPage() {
         const d = data as FnData | null;
         throw new Error(d?.error_description ?? fnError.message ?? 'Checkout failed');
       }
-      const d = data as { checkout_url?: string; error?: string; error_description?: string } | null;
+      const d = data as CheckoutResponse | null;
       if (d?.error) throw new Error(d.error_description ?? d.error);
-      if (d?.checkout_url) {
-        window.location.href = d.checkout_url;
+      const opened = await openCheckoutResponse(d);
+      if (opened) {
         return;
       }
-      throw new Error('Checkout URL missing');
+      throw new Error('Checkout did not return a valid payment session');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Checkout failed');
       setBuying(false);
@@ -187,10 +193,10 @@ export default function BillingPage() {
         const d = data as FnData | null;
         throw new Error(d?.error_description ?? fnError.message ?? 'Checkout failed');
       }
-      const d = data as { checkout_url?: string; upgraded?: boolean; error?: string; error_description?: string } | null;
+      const d = data as CheckoutResponse | null;
       if (d?.error) throw new Error(d.error_description ?? d.error);
-      if (d?.checkout_url) {
-        window.location.href = d.checkout_url;
+      const opened = await openCheckoutResponse(d);
+      if (opened) {
         return;
       }
       if (d?.upgraded) {
@@ -360,7 +366,7 @@ export default function BillingPage() {
                     className="text-xl font-bold"
                     style={{ color: '#E9E9F0', letterSpacing: '-0.02em' }}
                   >
-                    ${pack.amountUsd}
+                    {formatPlanPrice(pack.amountUsd, currency)}
                   </span>
                   <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.5)' }}>
                     {pack.credits.toLocaleString()} credits
@@ -375,7 +381,7 @@ export default function BillingPage() {
             style={{ borderColor: 'rgba(255,255,255,0.06)' }}
           >
             <span className="text-xs" style={{ color: 'rgba(255,255,255,0.5)' }}>
-              Payment via Stripe • Secure checkout
+              Payment via {paymentGateway === 'razorpay' ? 'Razorpay' : 'Stripe'} • Secure checkout
             </span>
             <button
               type="button"
@@ -519,7 +525,7 @@ export default function BillingPage() {
                       lineHeight: 1,
                     }}
                   >
-                    ${plan.priceMonthly}
+                    {formatPlanPrice(plan.priceMonthly, currency)}
                   </span>
                   <span className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>/mo</span>
                 </div>
@@ -611,7 +617,7 @@ export default function BillingPage() {
                   {row.credits ? `+${row.credits.toLocaleString()} Credits` : '—'}
                 </span>
                 <span className="text-right" style={{ color: 'rgba(255,255,255,0.7)' }}>
-                  {row.amount_paid != null ? `$${row.amount_paid.toFixed(2)}` : '—'}
+                  {row.amount_paid != null ? formatInvoiceAmount(row.amount_paid, row.currency) : '—'}
                 </span>
                 <span className="text-right" style={{ color: 'rgba(255,255,255,0.5)' }}>
                   {new Date(row.date).toLocaleDateString(undefined, {
@@ -793,6 +799,7 @@ function AutoRechargeCard({
   const [enabled, setEnabled] = useState(initialEnabled);
   const [threshold, setThreshold] = useState(initialThreshold);
   const [amountUsd, setAmountUsd] = useState(initialAmountUsd);
+  const currency = useCurrencyDisplay();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedTick, setSavedTick] = useState(false);
@@ -909,7 +916,7 @@ function AutoRechargeCard({
           }}
         />
         <span className="text-xs" style={{ color: 'rgba(255,255,255,0.65)' }}>
-          credits → buy 3,900 ($39)
+          credits → buy 3,900 ({formatPlanPrice(39, currency)})
         </span>
       </div>
 

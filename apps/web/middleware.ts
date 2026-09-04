@@ -124,7 +124,7 @@ const SUPABASE_PUBLIC_URL = process.env.SUPABASE_PUBLIC_URL ?? '';
 const SECURITY_HEADERS: Record<string, string> = {
   'Content-Security-Policy': [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://plausible.io https://www.dubcdn.com",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://checkout.razorpay.com https://plausible.io https://www.dubcdn.com",
     "style-src 'self' 'unsafe-inline'",
     [
       "img-src 'self' data: blob: *.supabase.co *.fal.media fal.media *.r2.dev vantly.social *.vantly.social *.licdn.com *.pbs.twimg.com *.cdninstagram.com *.fbcdn.net *.googleusercontent.com *.ytimg.com *.tiktokcdn.com *.tiktokcdn-us.com *.bsky.social",
@@ -139,13 +139,16 @@ const SECURITY_HEADERS: Record<string, string> = {
       .filter(Boolean)
       .join(' '),
     [
-      "connect-src 'self' *.supabase.co *.supabase.in wss://*.supabase.co https://api.stripe.com https://plausible.io https://api.dub.co",
+      "connect-src 'self' *.supabase.co *.supabase.in wss://*.supabase.co https://api.stripe.com https://api.razorpay.com https://lumberjack.razorpay.com https://plausible.io https://api.dub.co",
       SUPABASE_PUBLIC_URL,
       SUPABASE_PUBLIC_URL.replace(/^http/, 'ws'),
     ]
       .filter(Boolean)
       .join(' '),
-    "frame-src 'self' https://js.stripe.com https://hooks.stripe.com",
+    // RazorPay Checkout.js opens its payment form in an iframe from
+    // api.razorpay.com; checkout.razorpay.com hosts the script itself and
+    // a couple of its own auxiliary frames (see script-src above too).
+    "frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://api.razorpay.com https://checkout.razorpay.com",
     "frame-ancestors 'none'",
   ].join('; '),
   'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',

@@ -34,6 +34,9 @@ import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/supabase/client';
 import { invokeFn } from '@/lib/supabase/fn-proxy';
 import { analytics } from '@/lib/analytics';
+import { openCheckoutResponse } from '@/lib/billing/open-checkout';
+import { useCurrencyDisplay, formatPlanPrice, formatInvoiceAmount } from '@/lib/billing/currency-display';
+import { useVariables } from '@/components/variable-context';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -217,6 +220,8 @@ function statusBadgeLabel(status: string, cancelAtPeriodEnd: boolean): string {
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function BillingPage() {
+  const currency = useCurrencyDisplay();
+  const { paymentGateway } = useVariables();
   const [billing, setBilling] = useState<BillingState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -482,11 +487,11 @@ export default function BillingPage() {
       if (data?.error) {
         throw new Error(data.error_description ?? data.error);
       }
-      if (data?.checkout_url) {
-        window.location.href = data.checkout_url;
+      const opened = await openCheckoutResponse(data);
+      if (opened) {
         return;
       }
-      throw new Error('Checkout URL missing from response');
+      throw new Error('Checkout did not return a valid payment session');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Checkout failed';
       setError(message);
@@ -527,12 +532,15 @@ export default function BillingPage() {
         throw new Error(data.error_description ?? data.error);
       }
 
-      if (data?.checkout_url) {
-        window.location.href = data.checkout_url;
-      } else if (data?.upgraded) {
-        // Plan was upgraded in-place via Stripe API (no redirect needed)
-        setError(null);
-        fetchBillingData();
+      const opened = await openCheckoutResponse(data);
+      if (!opened) {
+        if (data?.upgraded) {
+          // Plan was upgraded in-place via Stripe API (no redirect needed)
+          setError(null);
+          fetchBillingData();
+        } else {
+          throw new Error('Checkout did not return a valid payment session');
+        }
       }
     } catch (err) {
       const message =
@@ -694,7 +702,7 @@ export default function BillingPage() {
                       </div>
                     )}
                     <p className="font-sans text-3xl font-bold text-text">
-                      ${preset.usd}
+                      {formatPlanPrice(preset.usd, currency)}
                     </p>
                     <p className="mt-1.5 text-[13px] font-medium text-text-muted">
                       Get {preset.credits.toLocaleString()} Credits
@@ -708,7 +716,7 @@ export default function BillingPage() {
               <div className="flex flex-col gap-1">
                 <span className="text-xs font-medium text-text-muted">Payment Method</span>
                 <span className="inline-flex w-fit items-center rounded-md border border-border bg-background px-2.5 py-1 text-xs font-semibold text-text">
-                  stripe
+                  {paymentGateway}
                 </span>
               </div>
               <Button
@@ -805,7 +813,7 @@ export default function BillingPage() {
                 <p className="mt-1.5 text-base font-bold text-text">{billing.plan.name}</p>
                 {currentPlan && currentPlan.priceMonthly > 0 && (
                   <p className="mt-0.5 text-xs text-text-muted">
-                    ${currentPlan.priceMonthly}/mo
+                    {formatPlanPrice(currentPlan.priceMonthly, currency)}/mo
                   </p>
                 )}
               </div>
@@ -849,7 +857,7 @@ export default function BillingPage() {
               <span className="text-border">·</span>
               <span>Below {autoRechargeThreshold.toLocaleString()} credits</span>
               <span className="text-border">·</span>
-              <span>Recharge ${autoRechargeAmountUsd}</span>
+              <span>Recharge {formatPlanPrice(autoRechargeAmountUsd, currency)}</span>
             </>
           ) : (
             <>
@@ -899,7 +907,7 @@ export default function BillingPage() {
 
                 <div className="mt-3 flex items-baseline gap-1">
                   <span className="text-3xl font-bold text-text">
-                    ${plan.priceMonthly}
+                    {formatPlanPrice(plan.priceMonthly, currency)}
                   </span>
                   <span className="font-mono text-xs text-text-muted">
                     /mo
@@ -1009,7 +1017,7 @@ export default function BillingPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-sm text-text">
-                        ${inv.amount_paid.toFixed(2)}
+                        {formatInvoiceAmount(inv.amount_paid, inv.currency)}
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-text-muted">
                         {formatDate(inv.date)}
@@ -1123,7 +1131,7 @@ export default function BillingPage() {
                   >
                     {CREDIT_PRESETS.map((p) => (
                       <option key={p.usd} value={p.usd}>
-                        ${p.usd} ({p.credits.toLocaleString()} credits)
+                        {formatPlanPrice(p.usd, currency)} ({p.credits.toLocaleString()} credits)
                       </option>
                     ))}
                   </select>

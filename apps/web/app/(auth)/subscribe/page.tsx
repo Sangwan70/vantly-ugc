@@ -28,6 +28,8 @@ import { ChevronRight, Loader2, Plus } from 'lucide-react';
 import { invokeFn } from '@/lib/supabase/fn-proxy';
 import { createClient } from '@/lib/supabase/client';
 import { analytics } from '@/lib/analytics';
+import { openCheckoutResponse } from '@/lib/billing/open-checkout';
+import { useCurrencyDisplay, formatPlanPrice } from '@/lib/billing/currency-display';
 
 interface PlanOption {
   /** Plan tier id sent to the Supabase `checkout` function. */
@@ -110,6 +112,7 @@ const PLANS: PlanOption[] = [
 
 export default function SubscribePage() {
   const router = useRouter();
+  const currency = useCurrencyDisplay();
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -167,7 +170,10 @@ export default function SubscribePage() {
       });
 
       if (fnError) throw new Error(fnError.message || 'Checkout failed');
-      if (data?.checkout_url) window.location.href = data.checkout_url;
+      const opened = await openCheckoutResponse(data);
+      if (!opened) {
+        throw new Error(data?.error_description || 'Checkout did not return a valid payment session');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Checkout failed');
     } finally {
@@ -218,7 +224,7 @@ export default function SubscribePage() {
               </div>
 
               <div className="mt-1 text-[50px]/[108%] font-bold tracking-[-0.05em] text-white">
-                ${price} <span className="text-[16px]/[150%] tracking-normal">/mo</span>
+                {formatPlanPrice(price, currency)} <span className="text-[16px]/[150%] tracking-normal">/mo</span>
               </div>
 
               <div className="mt-3 text-pretty text-[16px]/[150%] font-medium tracking-[-0.02em] text-white/85 lg:text-[20px]/[140%]">
@@ -251,7 +257,7 @@ export default function SubscribePage() {
                   type="button"
                   disabled={!!loading}
                   onClick={() => handleSubscribe(tier)}
-                  aria-label={`Subscribe to ${title} at $${price} per month`}
+                  aria-label={`Subscribe to ${title} at ${formatPlanPrice(price, currency)} per month`}
                   className={`inline-flex h-[52px] w-full items-center justify-center gap-2 rounded-full text-[16px] font-bold transition-opacity hover:opacity-90 disabled:opacity-50 ${
                     index % 2
                       ? 'bg-white text-black'

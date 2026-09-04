@@ -23,6 +23,14 @@ import { verifyAuth } from "../_shared/auth.ts";
 import { checkRateLimit, getRateLimitHeaders } from "../_shared/rate-limit.ts";
 import { getCorsHeaders, getSecurityHeaders } from "../_shared/security-headers.ts";
 import Stripe from "https://esm.sh/stripe@17?target=deno";
+import {
+  getActivePaymentGateway,
+  getRazorpayCredentials,
+  createSubscription as createRazorpaySubscription,
+  createOrder as createRazorpayOrder,
+} from "../_shared/razorpay.ts";
+import { getRazorpayPlanId } from "../_shared/plans.ts";
+import { getInrToUsdRate, creditsToPaise } from "../_shared/currency.ts";
 
 // ── Env Validation ──────────────────────────────────────────────────────────
 
@@ -33,9 +41,21 @@ const REQUIRED_ENV_VARS = [
   "STRIPE_PRICE_PRO_PLUS",
 ] as const;
 
+/**
+ * RazorPay's per-tier Plan IDs are deliberately NOT required here (unlike
+ * Stripe's price ids above, which block ALL checkout -- even PAYG -- if any
+ * one plan's price id is missing). They're checked at the point of use in
+ * createRazorpaySubscriptionCheckoutSession() instead, via getRazorpayPlanId(),
+ * so a deployment missing e.g. the Business tier's Plan ID doesn't block
+ * Starter/Creator/Pro Plus checkout or PAYG top-ups.
+ */
+const REQUIRED_RAZORPAY_ENV_VARS = ["RAZORPAY_API_KEY", "RAZORPAY_API_SECRET"] as const;
+
+/** Only the active gateway's own credentials are required at request time. */
 function validateEnv(): string[] {
   const missing: string[] = [];
-  for (const key of REQUIRED_ENV_VARS) {
+  const vars = getActivePaymentGateway() === "razorpay" ? REQUIRED_RAZORPAY_ENV_VARS : REQUIRED_ENV_VARS;
+  for (const key of vars) {
     if (!Deno.env.get(key)) missing.push(key);
   }
   return missing;
@@ -189,6 +209,249 @@ function validateRequest(body: CheckoutRequestBody): ValidationResult {
     amount_cents: body.amount_cents,
     credits: body.amount_cents * CREDITS_PER_CENT,
   };
+}
+
+// ── RazorPay Checkout ────────────────────────────────────────────────────────
+//
+// Entirely separate from the Stripe flow below -- no Stripe client or
+// customer needed. Only reached when PAYMENT_GATEWAY=razorpay, which is
+// the default (see handleCheckout's gateway branch and
+// getActivePaymentGateway() in _shared/razorpay.ts); a deployment that
+// explicitly sets PAYMENT_GATEWAY=stripe falls through to the Stripe
+// flow below untouched.
+
+/**
+ * Read-then-write helper for the subscriptions row, used instead of
+ * `.upsert(..., { onConflict: "user_id" })` (the pattern
+ * getOrCreateStripeCustomer uses below) because there is no unique
+ * constraint on subscriptions.user_id in this schema -- only on
+ * stripe_customer_id/stripe_subscription_id/razorpay_subscription_id.
+ * Works correctly regardless of whether a row already exists for the user.
+ */
+async function upsertSubscriptionRowForUser(
+  db: ReturnType<typeof supabaseAdmin>,
+  userId: string,
+  fields: Record<string, unknown>,
+): Promise<{ id: string }> {
+  const { data: existing, error: selectError } = await db
+    .from("subscriptions")
+    .select("id")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (selectError) {
+    throw new Error(`Failed to look up subscription row: ${selectError.message}`);
+  }
+
+  if (existing) {
+    const { error } = await db.from("subscriptions").update(fields).eq("id", existing.id);
+    if (error) throw new Error(`Failed to update subscription row: ${error.message}`);
+    return { id: existing.id };
+  }
+
+  const { data: inserted, error } = await db
+    .from("subscriptions")
+    .insert({ user_id: userId, ...fields })
+    .select("id")
+    .single();
+  if (error) throw new Error(`Failed to insert subscription row: ${error.message}`);
+  return inserted as { id: string };
+}
+
+/**
+ * Create a RazorPay subscription checkout for a tier.
+ *
+ * Response shape differs from the Stripe path on purpose: there is no
+ * hosted checkout_url to redirect to (RazorPay Subscriptions' own
+ * short_url strands the user on api.razorpay.com with no way back -- the
+ * same issue AutoGPT's platform documents). The frontend instead opens
+ * RazorPay Standard Checkout (Checkout.js) client-side using
+ * razorpay_subscription_id + razorpay_key_id; the actual tier/credit grant
+ * is driven exclusively by webhook-razorpay's subscription.activated /
+ * .charged handlers, never by this response.
+ *
+ * Unlike the Stripe path's handleSubscriptionUpdate, this does NOT support
+ * in-place plan changes via the API -- RazorPay's proration model doesn't
+ * map cleanly onto Stripe's. A user with an existing active RazorPay
+ * subscription must cancel it (cancel-subscription/index.ts) before
+ * subscribing to a different tier.
+ */
+async function createRazorpaySubscriptionCheckoutSession(
+  userId: string,
+  userEmail: string,
+  planTier: string,
+  origin: string,
+): Promise<Response> {
+  const corsRes = (body: unknown, init?: ResponseInit) => corsResponse(body, init, origin);
+  const db = supabaseAdmin();
+
+  const planId = getRazorpayPlanId(planTier);
+  if (!planId) {
+    return corsRes(
+      {
+        error: "configuration_error",
+        error_description: `RazorPay Plan ID not configured for plan: ${planTier}`,
+      },
+      { status: 500 },
+    );
+  }
+
+  const { data: existingSub, error: existingError } = await db
+    .from("subscriptions")
+    .select("status")
+    .eq("user_id", userId)
+    .eq("payment_gateway", "razorpay")
+    .not("razorpay_subscription_id", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError) {
+    console.error("Error checking existing RazorPay subscription:", existingError.message);
+    // Fall through -- better to risk a duplicate-subscription 409 from
+    // RazorPay/webhook reconciliation than to block checkout on a read error.
+  } else if (existingSub && (existingSub.status === "active" || existingSub.status === "trialing")) {
+    return corsRes(
+      {
+        error: "subscription_pending",
+        error_description:
+          "You already have an active subscription. Cancel it before subscribing to a different plan.",
+      },
+      { status: 409 },
+    );
+  }
+
+  let subscription;
+  try {
+    subscription = await createRazorpaySubscription({
+      planId,
+      notes: { user_id: userId, plan_tier: planTier, user_email: userEmail },
+    });
+  } catch (err) {
+    console.error("Failed to create RazorPay subscription:", err);
+    const message = err instanceof Error ? err.message : "Failed to create subscription";
+    return corsRes({ error: "razorpay_error", error_description: message }, { status: 502 });
+  }
+
+  try {
+    await upsertSubscriptionRowForUser(db, userId, {
+      payment_gateway: "razorpay",
+      razorpay_subscription_id: subscription.id,
+      razorpay_plan_id: planId,
+      // plan_slug/status become real once subscription.activated/.charged
+      // fires (webhook-razorpay) -- this row exists mainly so that webhook
+      // has something to resolve razorpay_subscription_id onto immediately,
+      // rather than relying solely on its notes.user_id fallback.
+      status: "unpaid",
+    });
+  } catch (err) {
+    // Not fatal to checkout itself -- webhook-razorpay's notes.user_id
+    // fallback can still resolve this subscription if this write failed.
+    console.error("Failed to record RazorPay subscription row:", err);
+  }
+
+  return corsRes({
+    payment_gateway: "razorpay",
+    razorpay_subscription_id: subscription.id,
+    razorpay_key_id: getRazorpayCredentials().keyId,
+    plan_tier: planTier,
+    short_url: subscription.short_url,
+  });
+}
+
+/**
+ * Create a RazorPay Order for a PAYG credit top-up (fixed pack or dynamic
+ * amount). The order's `notes.credits` is the credited amount, computed
+ * HERE (at request time, from the admin-configured INR rate) so that
+ * webhook-razorpay's handlePaygOrderPaid never has to re-derive it from a
+ * rate that may have since changed -- mirrors how the Stripe dynamic-PAYG
+ * path already stores `credits` directly in PaymentIntent metadata.
+ */
+async function createRazorpayPaygOrder(
+  userId: string,
+  credits: number,
+  packId: string | null,
+  origin: string,
+): Promise<Response> {
+  const corsRes = (body: unknown, init?: ResponseInit) => corsResponse(body, init, origin);
+  const db = supabaseAdmin();
+
+  let inrRate: number;
+  try {
+    inrRate = await getInrToUsdRate(db);
+  } catch (err) {
+    console.error("RazorPay PAYG: failed to read INR exchange rate:", err);
+    return corsRes(
+      {
+        error: "configuration_error",
+        error_description:
+          "INR is not configured for charging yet -- set/activate its exchange rate in Settings -> Currency.",
+      },
+      { status: 500 },
+    );
+  }
+
+  const amountPaise = creditsToPaise(credits, inrRate);
+
+  let order;
+  try {
+    order = await createRazorpayOrder({
+      amountPaise,
+      currency: "INR",
+      receipt: `payg_${userId.slice(0, 8)}_${Date.now()}`,
+      notes: {
+        user_id: userId,
+        credits: String(credits),
+        ...(packId ? { pack_id: packId } : {}),
+      },
+    });
+  } catch (err) {
+    console.error("Failed to create RazorPay order:", err);
+    const message = err instanceof Error ? err.message : "Failed to create order";
+    return corsRes({ error: "razorpay_error", error_description: message }, { status: 502 });
+  }
+
+  return corsRes({
+    payment_gateway: "razorpay",
+    razorpay_order_id: order.id,
+    razorpay_key_id: getRazorpayCredentials().keyId,
+    amount_paise: amountPaise,
+    currency: "INR",
+    credits,
+  });
+}
+
+/** Dispatch a validated request to the right RazorPay checkout path. */
+async function handleRazorpayCheckout(
+  validation: ValidationResult,
+  userId: string,
+  userEmail: string,
+  origin: string,
+): Promise<Response> {
+  const corsRes = (body: unknown, init?: ResponseInit) => corsResponse(body, init, origin);
+
+  if ("error" in validation) {
+    return corsRes({ error: "invalid_request", error_description: validation.error }, { status: 400 });
+  }
+
+  if (validation.type === "subscription") {
+    return await createRazorpaySubscriptionCheckoutSession(userId, userEmail, validation.plan_tier, origin);
+  }
+
+  if (validation.type === "payg_dynamic") {
+    return await createRazorpayPaygOrder(userId, validation.credits, null, origin);
+  }
+
+  const pack = getPaygPacks()[validation.pack_id];
+  if (!pack) {
+    return corsRes(
+      { error: "invalid_pack", error_description: `Unknown PAYG pack: ${validation.pack_id}` },
+      { status: 400 },
+    );
+  }
+  return await createRazorpayPaygOrder(userId, pack.credits, validation.pack_id, origin);
 }
 
 // ── Stripe Customer Management ───────────────────────────────────────────────
@@ -765,6 +1028,15 @@ async function handleCheckout(req: Request): Promise<Response> {
       { error: "invalid_request", error_description: validation.error },
       { status: 400 },
     );
+  }
+
+  // 2b. RazorPay branch -- entirely separate from the Stripe flow below (no
+  // Stripe client/customer needed at all). RazorPay is the default gateway
+  // (see getActivePaymentGateway()); every existing Stripe code path
+  // (steps 3-6) remains available, untouched, for deployments that
+  // explicitly set PAYMENT_GATEWAY=stripe.
+  if (getActivePaymentGateway() === "razorpay") {
+    return await handleRazorpayCheckout(validation, user.id, user.email ?? "", origin);
   }
 
   // 3. Initialize Stripe

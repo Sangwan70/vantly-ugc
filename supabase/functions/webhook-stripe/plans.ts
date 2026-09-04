@@ -32,104 +32,18 @@
  *   but no longer shown on the pricing page or offered to new users.
  */
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// ─── Types & tier metadata ──────────────────────────────────────────────────
+//
+// PlanDefinition/PaygPackDefinition/PLANS/PAYG_PACKS moved to
+// ../_shared/plans.ts (2026-09) so checkout, webhook-stripe, and
+// webhook-razorpay all read the SAME plan metadata instead of each keeping
+// its own copy. Re-exported here unchanged so every existing import in this
+// file (and anywhere importing from webhook-stripe/plans.ts) keeps working.
 
-export interface PlanDefinition {
-  /** Slug stored in subscriptions.plan_slug */
-  readonly slug: string;
-  /** Monthly credit allowance (0 for free — one-time allocation handled separately) */
-  readonly monthlyCredits: number;
-  /** Maximum video resolution tier */
-  readonly maxResolution: string;
-  /** Whether generated media has a watermark */
-  readonly hasWatermark: boolean;
-  /** Whether the user gets priority queue placement */
-  readonly hasPriority: boolean;
-  /** Whether API key access is enabled (Pro+) */
-  readonly hasApiAccess: boolean;
-  /** Maximum concurrent generation jobs */
-  readonly maxConcurrentJobs: number;
-}
-
-export interface PaygPackDefinition {
-  /** Unique pack identifier stored in payment intent metadata */
-  readonly packId: string;
-  /** Number of credits included in the pack */
-  readonly credits: number;
-  /** Price in USD (used for display / reconciliation) */
-  readonly priceUsd: number;
-}
-
-// ─── Plan Definitions ───────────────────────────────────────────────────────
-
-/**
- * Map of plan slug -> plan definition.
- *
- * To resolve a Stripe price ID to a plan, use `planByPriceId()`.
- */
-export const PLANS: Record<string, PlanDefinition> = {
-  free: {
-    slug: "free",
-    monthlyCredits: 0,
-    maxResolution: "720p",
-    hasWatermark: true,
-    hasPriority: false,
-    hasApiAccess: false,
-    maxConcurrentJobs: 1,
-  },
-  newby: {
-    slug: "newby",
-    monthlyCredits: 1300,
-    maxResolution: "1080p",
-    hasWatermark: false,
-    hasPriority: false,
-    hasApiAccess: false,
-    maxConcurrentJobs: 2,
-  },
-  starter: {
-    slug: "starter",
-    monthlyCredits: 3900,
-    maxResolution: "1080p",
-    hasWatermark: false,
-    hasPriority: false,
-    hasApiAccess: false,
-    maxConcurrentJobs: 3,
-  },
-  creator: {
-    slug: "creator",
-    monthlyCredits: 6900,
-    maxResolution: "2k",
-    hasWatermark: false,
-    hasPriority: true,
-    hasApiAccess: false,
-    maxConcurrentJobs: 5,
-  },
-  pro_plus: {
-    slug: "pro_plus",
-    monthlyCredits: 12900,
-    maxResolution: "2k",
-    hasWatermark: false,
-    hasPriority: true,
-    hasApiAccess: true,
-    maxConcurrentJobs: 10,
-  },
-};
-
-// ─── PAYG Credit Packs ──────────────────────────────────────────────────────
-
-/**
- * Available pay-as-you-go credit packs.
- *
- * pack_id is placed in the Stripe PaymentIntent metadata so the webhook
- * can resolve the correct credit amount without trusting the client.
- */
-export const PAYG_PACKS: Record<string, PaygPackDefinition> = {
-  pack_3900: {
-    packId: "pack_3900",
-    credits: 3900,
-    priceUsd: 39,
-  },
-};
+export type { PlanDefinition, PaygPackDefinition } from "../_shared/plans.ts";
+import type { PlanDefinition } from "../_shared/plans.ts";
+export { PLANS, PAYG_PACKS } from "../_shared/plans.ts";
+import { PLANS } from "../_shared/plans.ts";
 
 // ─── Stripe Price ID -> Plan Resolver ───────────────────────────────────────
 

@@ -31,6 +31,8 @@ import { createClient } from '@/lib/supabase/client';
 import { goToMarketingSite } from '@/lib/marketing';
 import { invokeFn } from '@/lib/supabase/fn-proxy';
 import { useOnboardingEvent, logOnboardingEvent } from '@/components/onboarding/use-onboarding-event';
+import { openCheckoutResponse } from '@/lib/billing/open-checkout';
+import { useCurrencyDisplay, formatPlanPrice } from '@/lib/billing/currency-display';
 
 interface Plan {
   tier: string;             // stripe-side identifier passed to checkout
@@ -117,11 +119,11 @@ export default function OnboardingPlanPage() {
       if (fnError) {
         throw new Error(fnError.message || 'Checkout failed');
       }
-      if (data?.checkout_url) {
-        window.location.href = data.checkout_url;
-        return; // stay in loading until the redirect lands
+      const opened = await openCheckoutResponse(data);
+      if (opened) {
+        return; // stay in loading until the redirect/RazorPay modal lands
       }
-      throw new Error('Checkout returned no URL');
+      throw new Error(data?.error_description || 'Checkout did not return a valid payment session');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Checkout failed');
       setLoadingTier(null);
@@ -217,6 +219,7 @@ function PlanCard({
   anyLoading: boolean;
   onSelect: () => void;
 }) {
+  const currency = useCurrencyDisplay();
   const disabled = anyLoading && !loading;
   return (
     <div
@@ -269,7 +272,7 @@ function PlanCard({
             lineHeight: 1,
           }}
         >
-          ${plan.priceMonthly}
+          {formatPlanPrice(plan.priceMonthly, currency)}
         </span>
         <span className="text-sm" style={{ color: 'rgba(0,0,0,0.5)' }}>/mo</span>
       </div>

@@ -9,6 +9,14 @@ const PLAN_CREDITS: Record<string, number> = {
   pro_plus: 12900,
 };
 
+/** 'free' is handled separately below (see the downgrade branch) -- it's
+ * not a purchasable tier with a credit allowance the way the paid ones
+ * are, so it's deliberately excluded from PLAN_CREDITS rather than mapped
+ * to 0 there (that would let it silently pass the paid-plan branch's
+ * upsert/reset_monthly_credits flow with a 0 allowance, which is a
+ * different, wronger operation than an actual downgrade). */
+const DOWNGRADE_SLUG = 'free';
+
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const {
@@ -29,9 +37,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (!PLAN_CREDITS[plan_slug]) {
+  if (plan_slug !== DOWNGRADE_SLUG && !PLAN_CREDITS[plan_slug]) {
     return NextResponse.json(
-      { error: `Invalid plan_slug. Must be one of: ${Object.keys(PLAN_CREDITS).join(', ')}` },
+      { error: `Invalid plan_slug. Must be one of: ${[...Object.keys(PLAN_CREDITS), DOWNGRADE_SLUG].join(', ')}` },
       { status: 400 },
     );
   }
@@ -40,6 +48,40 @@ export async function POST(req: NextRequest) {
     (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
+
+  // Downgrade to free: cancel the subscription row and zero the monthly
+  // allowance, but never touch purchased_balance -- credits a user already
+  // paid for (PAYG top-ups) are never clawed back on a plan change, same
+  // rule webhook-stripe/webhook-razorpay's own downgrade handlers follow.
+  if (plan_slug === DOWNGRADE_SLUG) {
+    const { error: cancelError } = await admin
+      .from('subscriptions')
+      .update({ plan_slug: 'free', status: 'canceled', cancel_at_period_end: false })
+      .eq('user_id', user_id);
+    if (cancelError) {
+      return NextResponse.json(
+        { error: 'Failed to downgrade subscription', details: cancelError.message },
+        { status: 500 },
+      );
+    }
+    const { error: creditsError } = await admin
+      .from('user_credits')
+      .update({ monthly_credits_remaining: 0 })
+      .eq('user_id', user_id);
+    if (creditsError) {
+      return NextResponse.json(
+        { error: 'Downgraded subscription, but failed to zero monthly credits', details: creditsError.message },
+        { status: 500 },
+      );
+    }
+    await admin.from('admin_actions').insert({
+      admin_email: user.email,
+      action: 'downgrade_to_free',
+      target_user_id: user_id,
+    }).then(({ error }) => { if (error) console.error('Failed to record admin_actions row for downgrade_to_free:', error.message); });
+
+    return NextResponse.json({ success: true, user_id, plan_slug: DOWNGRADE_SLUG, monthly_credits: 0 });
+  }
 
   // Upsert subscription record
   const now = new Date();

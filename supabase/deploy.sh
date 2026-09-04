@@ -17,6 +17,8 @@ PROJECT_REF="ppwvarkmpffljlqxkjux"
 FUNCTIONS=(
   apikey-manage
   auto-topup
+  billing-history
+  cancel-subscription
   checkout
   credits-check
   device-token
@@ -34,8 +36,15 @@ FUNCTIONS=(
   upload-url
   usage-stats
   webhook-provider
+  webhook-razorpay
   webhook-stripe
 )
+# NOTE (2026-09): billing-history and cancel-subscription were missing from
+# this list before the RazorPay work landed -- pre-existing, not introduced
+# here. They (and every other function) DO already get deployed via
+# .github/workflows/deploy.yml, which globs every supabase/functions/*/
+# directory instead of hardcoding names -- this script is the manual/local
+# convenience path, kept in sync here for anyone running it directly.
 
 DRY_RUN=false
 TARGET=""

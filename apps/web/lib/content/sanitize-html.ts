@@ -65,10 +65,27 @@
  *    event-handler attributes inside its XML, so allowing it here would
  *    reopen exactly the hole this function exists to close. `javascript:`,
  *    `vbscript:`, and every other scheme are rejected outright.
- *  - `style` is allowed only on span/div, and only a `font-size: <n><unit>`
- *    declaration survives (matching the plan document's own scoping) --
- *    every other CSS property is stripped from the value.
+ *  - `style` is allowed on span/div/a, validated declaration-by-declaration
+ *    against STYLE_VALIDATORS below (added for the drag-and-drop Content
+ *    Builder -- see lib/content/builder/ -- which needs layout/color
+ *    styling, not just font-size). Every declaration is matched against a
+ *    property-specific, fully-anchored (`^...$`) regex; a value that
+ *    doesn't match is dropped, the rest of the style string is unaffected.
+ *    None of these regexes ever allow `(` except inside the tightly-scoped
+ *    `rgba(...)` / `border: Npx solid rgba(...)` patterns (digits, commas,
+ *    dots, spaces only inside those parens) -- so `url(...)`,
+ *    `expression(...)`, `javascript:`, `-moz-binding`, `behavior:`, and
+ *    `@import` can never appear in surviving output. Unknown properties
+ *    (anything not in STYLE_VALIDATORS) are dropped outright, same as an
+ *    unknown attribute.
  */
+
+// See the `<!--` branch of sanitizeStaticPageHtml's scan loop -- the one
+// narrow exception to "all HTML comments are stripped": the Content
+// Builder's own leading state marker (lib/content/builder/serialize.ts),
+// matched only at input position 0, only against this fixed
+// prefix+base64-alphabet shape.
+const CONTENT_BUILDER_MARKER_RE = /^CONTENT_BUILDER_STATE:[A-Za-z0-9+/=]*$/;
 
 const ALLOWED_TAGS = new Set([
   'p', 'br', 'strong', 'em', 'a', 'ul', 'ol', 'li',
@@ -80,8 +97,15 @@ const ALLOWED_TAGS = new Set([
 const VOID_TAGS = new Set(['br', 'img']);
 
 const ATTRS_BY_TAG: Record<string, string[]> = {
-  a: ['href', 'title', 'target'],
-  img: ['src', 'alt', 'width', 'height'],
+  a: ['href', 'title', 'target', 'style'],
+  // 'style' added for the Content Builder's full-width images (an <img>
+  // has no CSS of its own without a stylesheet, so "fill the column"
+  // needs an inline `width: 100%` -- the plain `width` attribute below is
+  // numeric-pixels-only, see filterAttributes, so it can't express a
+  // percentage). Goes through the same STYLE_VALIDATORS allowlist as
+  // span/div/a -- only width/max-width/height (among others) can ever
+  // apply here in practice.
+  img: ['src', 'alt', 'width', 'height', 'style'],
   span: ['style'],
   div: ['style'],
 };
@@ -117,11 +141,82 @@ function sanitizeSrcValue(value: string): string | null {
   return isSafeNonDataUrl(trimmed) ? trimmed : null;
 }
 
+// Fully-anchored color pattern shared by color/background-color/border-*:
+// hex (#abc / #abcd / #aabbcc / #aabbccdd), a numeric-only rgb()/rgba(), or
+// the two safe keywords. No other characters (no `url(`, no letters beyond
+// hex digits) can appear inside, including inside the rgba() parens.
+const COLOR_PATTERN =
+  '(#[0-9a-fA-F]{3,4}|#[0-9a-fA-F]{6}|#[0-9a-fA-F]{8}|rgba?\\(\\s*\\d{1,3}\\s*,\\s*\\d{1,3}\\s*,\\s*\\d{1,3}\\s*(,\\s*(0|1|0?\\.\\d{1,3}))?\\s*\\)|transparent|inherit)';
+const COLOR_RE = new RegExp(`^${COLOR_PATTERN}$`);
+const BORDER_RE = new RegExp(`^\\d{1,2}(\\.\\d+)?px solid ${COLOR_PATTERN}$`);
+const LENGTH_PX_PT_EM_PCT = /^\d{1,3}(\.\d+)?(px|pt|em|rem|%)$/;
+const LENGTH_PX_PCT_UP_TO_4 = /^\d{1,4}(\.\d+)?(px|%)$/;
+const LENGTH_PX = /^\d{1,3}(\.\d+)?px$/;
+const SPACING_PX = /^\d{1,3}(\.\d+)?px(\s+\d{1,3}(\.\d+)?px){0,3}$/;
+
+/** Property-by-property allowlist for the `style` attribute on span/div/a.
+ * Each regex is fully anchored (`^...$`) against the WHOLE trimmed
+ * declaration value -- there is no substring matching anywhere here, so a
+ * value like "10px; background:url(javascript:evil)" can never partially
+ * match and leak the dangerous half through, since the whole string
+ * (including everything after the first `;`, which the caller already
+ * splits out before calling this) must match exactly. Widened from the
+ * original font-size-only allowlist to support the drag-and-drop Content
+ * Builder's rows/columns/blocks (see lib/content/builder/serialize.ts),
+ * which lays pages out with flexbox + these color/spacing properties
+ * instead of the `<table>` layout an email-oriented builder would need
+ * (table/tbody/tr/td are deliberately NOT in ALLOWED_TAGS here). */
+const STYLE_VALIDATORS: Record<string, RegExp> = {
+  'font-size': LENGTH_PX_PT_EM_PCT,
+  color: COLOR_RE,
+  'background-color': COLOR_RE,
+  'text-align': /^(left|center|right|justify)$/,
+  'text-decoration': /^(none|underline)$/,
+  'font-weight': /^(normal|bold|[1-9]00)$/,
+  'line-height': /^\d(\.\d+)?$/,
+  border: BORDER_RE,
+  'border-top': BORDER_RE,
+  'border-bottom': BORDER_RE,
+  'border-left': BORDER_RE,
+  'border-right': BORDER_RE,
+  'border-radius': LENGTH_PX_PT_EM_PCT,
+  display: /^(flex|block|inline-block|inline)$/,
+  'flex-direction': /^(row|column)$/,
+  'flex-wrap': /^(wrap|nowrap)$/,
+  'justify-content': /^(flex-start|center|flex-end|space-between|space-around)$/,
+  'align-items': /^(flex-start|center|flex-end|stretch)$/,
+  gap: LENGTH_PX,
+  width: LENGTH_PX_PT_EM_PCT,
+  'max-width': LENGTH_PX_PCT_UP_TO_4,
+  height: LENGTH_PX_PCT_UP_TO_4,
+  padding: SPACING_PX,
+  'padding-top': LENGTH_PX,
+  'padding-bottom': LENGTH_PX,
+  'padding-left': LENGTH_PX,
+  'padding-right': LENGTH_PX,
+  margin: SPACING_PX,
+  'margin-top': LENGTH_PX,
+  'margin-bottom': LENGTH_PX,
+  'margin-left': LENGTH_PX,
+  'margin-right': LENGTH_PX,
+  'box-sizing': /^border-box$/,
+};
+
 function sanitizeStyleValue(value: string): string | null {
   const kept = value
     .split(';')
     .map((decl) => decl.trim())
-    .filter((decl) => /^font-size\s*:\s*\d{1,3}(px|pt|em|%)$/i.test(decl));
+    .filter(Boolean)
+    .map((decl) => {
+      const idx = decl.indexOf(':');
+      if (idx === -1) return null;
+      const prop = decl.slice(0, idx).trim().toLowerCase();
+      const val = decl.slice(idx + 1).trim();
+      const validator = STYLE_VALIDATORS[prop];
+      if (!validator || !validator.test(val)) return null;
+      return `${prop}: ${val}`;
+    })
+    .filter((decl): decl is string => decl !== null);
   return kept.length ? kept.join('; ') : null;
 }
 
@@ -199,6 +294,14 @@ export function sanitizeStaticPageHtml(input: string): string {
 
     if (input.startsWith('<!--', i)) {
       const end = input.indexOf('-->', i + 4);
+      if (end !== -1 && i === 0) {
+        const commentBody = input.slice(i + 4, end);
+        if (CONTENT_BUILDER_MARKER_RE.test(commentBody)) {
+          out += input.slice(i, end + 3);
+          i = end + 3;
+          continue;
+        }
+      }
       i = end === -1 ? n : end + 3;
       continue;
     }

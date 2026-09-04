@@ -13,10 +13,11 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
-import { Loader2, ShieldAlert, Save, Upload, RotateCcw } from 'lucide-react';
+import { Loader2, ShieldAlert, Save, RotateCcw } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { isAdminEmailIn } from '@/lib/admin-allowlist';
 import { useVariables } from '@/components/variable-context';
+import { ContentBuilder } from '@/components/admin/content-builder/ContentBuilder';
 
 type Slug = 'pricing' | 'blog' | 'privacy' | 'terms';
 const SLUGS: { slug: Slug; label: string; hasHero: boolean; hasBody: boolean }[] = [
@@ -57,7 +58,6 @@ export default function AdminContentPage() {
   const [form, setForm] = useState<Form>(blankForm());
   const [loadingRow, setLoadingRow] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -129,23 +129,6 @@ export default function AdminContentPage() {
     } finally { setSaving(false); }
   }
 
-  async function uploadImage(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    setUploading(true);
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const r = await fetch('/api/admin/content/media', { method: 'POST', credentials: 'include', body: fd });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) { alert(`Upload failed: ${j.error ?? r.status}`); return; }
-      const tag = `<img src="${j.url}" alt="" />`;
-      setForm((f) => ({ ...f, content_html: f.content_html + '\n' + tag }));
-      alert('Image uploaded and inserted into content below.');
-    } finally { setUploading(false); }
-  }
-
   if (!authChecked) {
     return <div className="flex h-[60vh] items-center justify-center"><Loader2 className="h-5 w-5 animate-spin" style={{ color: 'rgba(255,255,255,0.5)' }} /></div>;
   }
@@ -203,7 +186,7 @@ export default function AdminContentPage() {
       {editingSlug ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center px-4 py-8" role="dialog" aria-modal="true" aria-label={`Edit ${editingSlug}`}>
           <div className="absolute inset-0" style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }} onClick={() => !saving && setEditingSlug(null)} aria-hidden />
-          <div className="relative max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-3xl p-6" style={{ backgroundColor: '#191A22', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 30px 80px rgba(0,0,0,0.5)' }}>
+          <div className="relative max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl p-6" style={{ backgroundColor: '#191A22', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 30px 80px rgba(0,0,0,0.5)' }}>
             <h2 className="text-base font-semibold" style={{ color: '#E9E9F0' }}>Edit {meta?.label ?? editingSlug}</h2>
             {loadingRow ? (
               <div className="mt-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin" style={{ color: 'rgba(255,255,255,0.5)' }} /></div>
@@ -215,16 +198,11 @@ export default function AdminContentPage() {
                 </label>
                 {meta?.hasBody ? (
                   <>
-                    <div className="flex items-center justify-between">
-                      <label className="text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>Body HTML</label>
-                      <label className="flex cursor-pointer items-center gap-1 text-[11px]" style={{ color: '#C4B5FD' }}>
-                        <Upload className="h-3 w-3" /> {uploading ? 'Uploading…' : 'Insert image'}
-                        <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" onChange={uploadImage} disabled={uploading} className="hidden" />
-                      </label>
-                    </div>
-                    <textarea value={form.content_html} onChange={(e) => setForm({ ...form, content_html: e.target.value })} rows={14} className="w-full rounded-lg px-2.5 py-1.5 font-mono text-[12px]" style={INPUT} />
+                    <label className="text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>Body content</label>
+                    <ContentBuilder value={form.content_html} onChange={(content_html) => setForm((f) => ({ ...f, content_html }))} />
                     <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
-                      Supports {'{{site_url}}'} and {'{{support_contact}}'} placeholders. Sanitized on save -- allowed tags: p, br, strong, em, a, ul/ol/li, h1-h6, blockquote, code, pre, img, figure/figcaption, span/div (font-size only).
+                      Supports {'{{site_url}}'} and {'{{support_contact}}'} placeholders (Text block &quot;Variable&quot; menu, or type them
+                      directly). Sanitized again on save regardless of what the builder produces.
                     </p>
                   </>
                 ) : (

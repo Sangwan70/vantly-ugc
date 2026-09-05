@@ -52,7 +52,7 @@ export default async function TermsPage() {
           &larr; Back
         </Link>
 
-        <h1 className="mt-8 text-3xl font-semibold">Terms of Use</h1>
+        <h1 className="mt-8 text-3xl font-semibold">{page?.title || 'Terms of Use'}</h1>
         <p className="mt-2 text-sm text-text-muted">Last updated: fill in when you adapt this page.</p>
 
         {customHtml ? (

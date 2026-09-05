@@ -18,7 +18,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Settings as SettingsIcon, CreditCard, Ticket, Mail, FileText } from 'lucide-react';
+import { LayoutDashboard, Settings as SettingsIcon, CreditCard, Ticket, Mail, FileText, Newspaper } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { isAdminEmailIn } from '@/lib/admin-allowlist';
 import { useVariables } from '@/components/variable-context';
@@ -28,6 +28,7 @@ const ADMIN_NAV = [
   { href: '/dashboard/admin/plans', label: 'Plans', icon: CreditCard },
   { href: '/dashboard/admin/coupons', label: 'Coupons', icon: Ticket },
   { href: '/dashboard/admin/content', label: 'Content', icon: FileText },
+  { href: '/dashboard/admin/blog', label: 'Blog Posts', icon: Newspaper },
   { href: '/dashboard/admin/mailer', label: 'Mailer', icon: Mail },
   { href: '/dashboard/admin/settings', label: 'Settings', icon: SettingsIcon },
 ] as const;

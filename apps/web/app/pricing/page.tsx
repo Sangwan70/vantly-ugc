@@ -35,7 +35,10 @@ export default async function PricingPage() {
       <PageHero
         eyebrow="Pricing"
         title={page?.title || 'Simple, transparent pricing'}
-        lede="Pick a plan, generate videos, upgrade or cancel anytime."
+        lede={page?.content_html?.trim() || 'Pick a plan, generate videos, upgrade or cancel anytime.'}
+        imageUrl={page?.hero_image_url}
+        videoUrl={page?.hero_video_url}
+        overlayOpacity={page?.hero_overlay_opacity ?? 45}
       />
 
       <section className="mx-auto w-full max-w-6xl px-6 pb-16">
@@ -61,7 +64,7 @@ export default async function PricingPage() {
         </div>
       </section>
 
-      <CtaSection />
+      <CtaSection primaryText={page?.cta_primary_text} secondaryText={page?.cta_secondary_text} />
     </MarketingShell>
   );
 }

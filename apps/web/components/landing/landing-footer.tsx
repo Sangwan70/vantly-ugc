@@ -113,6 +113,15 @@ export function LandingFooter() {
                 Terms of Service
               </Link>
             </li>
+            <li>
+              <Link
+                href="/contact"
+                className="text-sm"
+                style={{ color: 'var(--cryptix-text-muted)', opacity: 0.85 }}
+              >
+                Contact
+              </Link>
+            </li>
           </ul>
         </div>
       </div>

@@ -18,13 +18,23 @@ import { createClient } from '@/lib/supabase/client';
 import { isAdminEmailIn } from '@/lib/admin-allowlist';
 import { useVariables } from '@/components/variable-context';
 import { ContentBuilder } from '@/components/admin/content-builder/ContentBuilder';
+import { HeroMediaUploader } from '@/components/admin/content-builder/HeroMediaUploader';
 
-type Slug = 'pricing' | 'blog' | 'privacy' | 'terms';
+type Slug = 'home' | 'pricing' | 'blog' | 'docs' | 'privacy' | 'terms' | 'contact';
+// hasHero: renders the plain-text subtitle field + HeroMediaUploader
+// (image crop/zoom, video URL, overlay darkness). hasBody: renders the
+// rich drag-drop ContentBuilder instead. The two are mutually exclusive
+// today (matching AutoGPT's StaticPageEditor contentMode='plain' vs
+// 'rich' split) -- a hero-only page's "content_html" column stores its
+// plain-text subtitle, not rich HTML; a body page's stores rich HTML.
 const SLUGS: { slug: Slug; label: string; hasHero: boolean; hasBody: boolean }[] = [
-  { slug: 'pricing', label: 'Pricing hero', hasHero: false, hasBody: false },
-  { slug: 'blog', label: 'Blog hero', hasHero: false, hasBody: false },
+  { slug: 'home', label: 'Home hero', hasHero: true, hasBody: false },
+  { slug: 'pricing', label: 'Pricing hero', hasHero: true, hasBody: false },
+  { slug: 'blog', label: 'Blog hero', hasHero: true, hasBody: false },
+  { slug: 'docs', label: 'Docs hero', hasHero: true, hasBody: false },
   { slug: 'privacy', label: 'Privacy Policy', hasHero: false, hasBody: true },
   { slug: 'terms', label: 'Terms of Use', hasHero: false, hasBody: true },
+  { slug: 'contact', label: 'Contact Us', hasHero: false, hasBody: true },
 ];
 
 interface PageListItem { slug: Slug; title: string | null; updated_at: string | null; edited: boolean }
@@ -42,10 +52,16 @@ interface Form {
   content_html: string;
   cta_primary_text: string;
   cta_secondary_text: string;
+  hero_image_url: string;
+  hero_video_url: string;
+  hero_overlay_opacity: number;
 }
 
 function blankForm(): Form {
-  return { title: '', content_html: '', cta_primary_text: '', cta_secondary_text: '' };
+  return {
+    title: '', content_html: '', cta_primary_text: '', cta_secondary_text: '',
+    hero_image_url: '', hero_video_url: '', hero_overlay_opacity: 45,
+  };
 }
 
 export default function AdminContentPage() {
@@ -92,6 +108,9 @@ export default function AdminContentPage() {
         content_html: row?.content_html ?? '',
         cta_primary_text: row?.cta_primary_text ?? '',
         cta_secondary_text: row?.cta_secondary_text ?? '',
+        hero_image_url: row?.hero_image_url ?? '',
+        hero_video_url: row?.hero_video_url ?? '',
+        hero_overlay_opacity: row?.hero_overlay_opacity ?? 45,
       });
     } finally { setLoadingRow(false); }
   }
@@ -108,6 +127,9 @@ export default function AdminContentPage() {
           content_html: form.content_html,
           cta_primary_text: form.cta_primary_text.trim() || undefined,
           cta_secondary_text: form.cta_secondary_text.trim() || undefined,
+          hero_image_url: form.hero_image_url.trim() || undefined,
+          hero_video_url: form.hero_video_url.trim() || undefined,
+          hero_overlay_opacity: form.hero_overlay_opacity,
         }),
       });
       const j = await r.json().catch(() => ({}));
@@ -148,7 +170,7 @@ export default function AdminContentPage() {
       <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'rgba(255,255,255,0.4)' }}>Internal</p>
       <h1 className="mt-1 font-normal" style={{ color: '#E9E9F0', fontSize: 'clamp(28px,2.6vw,36px)', letterSpacing: '-0.03em' }}>Content</h1>
       <p className="mt-3 text-[12px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
-        A fixed set of pages -- no row means the page still uses its hardcoded default copy. The home page&apos;s hero isn&apos;t here: it&apos;s a bespoke animated component, not something a simple title/body edit fits.
+        A fixed set of pages -- no row means the page still uses its hardcoded default copy. The home hero is a bespoke animated component: setting a title/subtitle here replaces the animated headline with static text, and setting a hero image replaces the animated background.
       </p>
 
       {error ? <p className="mt-4 text-sm" style={{ color: '#F87171' }}>{error}</p> : null}
@@ -208,6 +230,16 @@ export default function AdminContentPage() {
                 ) : (
                   <>
                     <label className="block text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                      Subtitle (plain text, shown under the hero title)
+                      <textarea
+                        value={form.content_html}
+                        onChange={(e) => setForm({ ...form, content_html: e.target.value })}
+                        rows={2}
+                        className="mt-1 w-full rounded-lg px-2.5 py-1.5 text-[13px]"
+                        style={INPUT}
+                      />
+                    </label>
+                    <label className="block text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
                       Primary CTA text (optional)
                       <input value={form.cta_primary_text} onChange={(e) => setForm({ ...form, cta_primary_text: e.target.value })} className="mt-1 w-full rounded-lg px-2.5 py-1.5 text-[13px]" style={INPUT} />
                     </label>
@@ -215,6 +247,16 @@ export default function AdminContentPage() {
                       Secondary CTA text (optional)
                       <input value={form.cta_secondary_text} onChange={(e) => setForm({ ...form, cta_secondary_text: e.target.value })} className="mt-1 w-full rounded-lg px-2.5 py-1.5 text-[13px]" style={INPUT} />
                     </label>
+                    <div className="pt-1">
+                      <HeroMediaUploader
+                        value={{
+                          hero_image_url: form.hero_image_url,
+                          hero_video_url: form.hero_video_url,
+                          hero_overlay_opacity: form.hero_overlay_opacity,
+                        }}
+                        onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
+                      />
+                    </div>
                   </>
                 )}
               </div>

@@ -12,7 +12,7 @@
 
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 
-export const FIXED_SLUGS = ['pricing', 'blog', 'privacy', 'terms'] as const;
+export const FIXED_SLUGS = ['pricing', 'blog', 'privacy', 'terms', 'docs', 'home', 'contact'] as const;
 export type StaticPageSlug = (typeof FIXED_SLUGS)[number];
 
 export interface StaticPageRow {

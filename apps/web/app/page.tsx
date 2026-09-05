@@ -23,18 +23,21 @@ import { PricingCards } from '@/components/pricing-cards';
 import { FaqSection } from '@/components/landing/faq-section';
 import { CtaSection } from '@/components/landing/cta-section';
 import { LandingFooter } from '@/components/landing/landing-footer';
+import { getStaticPage } from '@/lib/content/get-page';
 
-export default function RootPage() {
+export default async function RootPage() {
+  const page = await getStaticPage('home');
+
   return (
     <LoginProvider>
       <div className="theme-cryptix relative min-h-screen overflow-x-hidden">
-        <HeroBackground />
+        <HeroBackground imageUrl={page?.hero_image_url} overlayOpacity={page?.hero_overlay_opacity} />
 
         <div className="relative z-10">
           <LandingHeader />
 
           <main>
-            <HeroSection />
+            <HeroSection title={page?.title} subtitle={page?.content_html} />
             <Home2Flow />
             <StatsRow />
             <FeatureGrid />

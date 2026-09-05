@@ -171,7 +171,33 @@ async function createMessageRaw(
       } else {
         // Body read happens here — "Premature close" surfaces on this await.
         console.warn(`[anthropic][${label}] attempt ${attempt + 1}/4 OK after ${Date.now() - attemptStart}ms, resolvedIp=${resolvedIp}, ${ctx}`);
-        return (await resp.json()) as { content: Array<{ type: string; text?: string }> };
+        const json = (await resp.json()) as { content?: Array<{ type: string; text?: string }>; error?: { type?: string; message?: string } };
+        // HTTP 200 does NOT guarantee an Anthropic Messages-shaped body: a
+        // proxy in the request path (this repo supports routing through
+        // OpenRouter's Anthropic-compatible endpoint via MODEL_PROVIDER, see
+        // anthropicEndpoint() above) can pass an upstream provider error
+        // through with a 200 status and an `{"error": {...}}` envelope
+        // instead of Anthropic's own `content` array. Every caller below
+        // does `resp.content.find(...)` trusting this function's return
+        // shape -- an unguarded malformed body here surfaced downstream as
+        // a bare, undiagnosable "TypeError: Cannot read properties of
+        // undefined (reading 'find')" with no indication of what actually
+        // came back from the API (2026-09-05 incident: make_character_sheet
+        // failed 3/3 retries this way with the true cause invisible until
+        // this response was actually logged). Treat it as a retryable
+        // failure with the real body attached, same as a 5xx.
+        if (!json || !Array.isArray(json.content)) {
+          const detail = json?.error
+            ? `error.type=${json.error.type ?? 'unknown'} error.message=${json.error.message ?? ''}`
+            : JSON.stringify(json).slice(0, 300);
+          const err = new Error(`anthropic 200 response missing 'content' array (${label}): ${detail}`);
+          console.warn(
+            `[anthropic][${label}] attempt ${attempt + 1}/4 malformed 200 body after ${Date.now() - attemptStart}ms, resolvedIp=${resolvedIp}, ${detail}, ${ctx}`,
+          );
+          lastErr = err;
+        } else {
+          return json as { content: Array<{ type: string; text?: string }> };
+        }
       }
     } catch (e) {
       const err = e as { status?: number; name?: string; message?: string; code?: string; errno?: number; cause?: unknown };

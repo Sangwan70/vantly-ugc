@@ -10,6 +10,12 @@
  * every save regardless of what's typed here -- the preview below is a
  * best-effort client-side approximation to show what will actually render,
  * not the security boundary itself.
+ *
+ * Horizontally tabbed (one tab per fixed page, Home open by default) --
+ * previously a vertical list of rows each opening a modal dialog to edit.
+ * Switching tabs re-fetches that page's row the same way the old "Edit"
+ * button did; there's no separate closed state anymore, so there's always
+ * exactly one page's editor showing.
  */
 
 import { useEffect, useState, useCallback } from 'react';
@@ -43,6 +49,9 @@ const SLUGS: { slug: Slug; label: string; hasHero: boolean; hasBody: boolean }[]
   { slug: 'terms', label: 'Terms of Use', hasHero: false, hasBody: true },
   { slug: 'contact', label: 'Contact Us', hasHero: false, hasBody: true },
 ];
+
+// The tab that's open on first load, before the admin picks anything else.
+const DEFAULT_SLUG: Slug = 'home';
 
 // Pre-fills the admin editor with the page's real hardcoded default copy
 // (see app/privacy/page.tsx / app/terms/page.tsx) when no static_pages row
@@ -88,7 +97,7 @@ export default function AdminContentPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [pages, setPages] = useState<PageListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [editingSlug, setEditingSlug] = useState<Slug | null>(null);
+  const [activeSlug, setActiveSlug] = useState<Slug>(DEFAULT_SLUG);
   const [form, setForm] = useState<Form>(blankForm());
   const [loadingRow, setLoadingRow] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -110,16 +119,15 @@ export default function AdminContentPage() {
       setPages(j.pages ?? []);
     } catch (e) { setError((e as Error).message); setPages([]); }
   }, []);
-  useEffect(() => { if (isAdmin) void load(); }, [isAdmin, load]);
 
-  async function openEdit(slug: Slug) {
-    setEditingSlug(slug);
+  const openTab = useCallback(async (slug: Slug) => {
+    setActiveSlug(slug);
     setLoadingRow(true);
     setForm(blankForm());
     try {
       const r = await fetch(`/api/admin/content/${slug}`, { credentials: 'include' });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) { alert(`Failed: ${j.error ?? r.status}`); setEditingSlug(null); return; }
+      if (!r.ok) { alert(`Failed: ${j.error ?? r.status}`); return; }
       const row: PageRow | null = j.page;
       const fallback = row ? null : DEFAULT_BODY_CONTENT[slug];
       setForm({
@@ -132,14 +140,23 @@ export default function AdminContentPage() {
         hero_overlay_opacity: row?.hero_overlay_opacity ?? 45,
       });
     } finally { setLoadingRow(false); }
-  }
+  }, []);
+
+  // Load the page list (for the Customized/Default badges) and open the
+  // default tab's editor as soon as the admin check passes -- the Home
+  // tab is showing, populated, and ready to edit without any extra click.
+  useEffect(() => {
+    if (!isAdmin) return;
+    void load();
+    void openTab(DEFAULT_SLUG);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
 
   async function save() {
-    if (!editingSlug) return;
     if (!form.title.trim()) { alert('Title is required'); return; }
     setSaving(true);
     try {
-      const r = await fetch(`/api/admin/content/${editingSlug}`, {
+      const r = await fetch(`/api/admin/content/${activeSlug}`, {
         method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: form.title.trim(),
@@ -153,20 +170,18 @@ export default function AdminContentPage() {
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) { alert(`Failed: ${j.error ?? r.status}`); return; }
-      setEditingSlug(null);
       await load();
     } finally { setSaving(false); }
   }
 
   async function revertToDefault() {
-    if (!editingSlug) return;
     if (!window.confirm('Revert this page back to the hardcoded default? This deletes the saved override.')) return;
     setSaving(true);
     try {
-      const r = await fetch(`/api/admin/content/${editingSlug}`, { method: 'DELETE', credentials: 'include' });
+      const r = await fetch(`/api/admin/content/${activeSlug}`, { method: 'DELETE', credentials: 'include' });
       if (!r.ok) { const j = await r.json().catch(() => ({})); alert(`Failed: ${j.error ?? r.status}`); return; }
-      setEditingSlug(null);
       await load();
+      await openTab(activeSlug);
     } finally { setSaving(false); }
   }
 
@@ -182,7 +197,8 @@ export default function AdminContentPage() {
     );
   }
 
-  const meta = editingSlug ? SLUGS.find((s) => s.slug === editingSlug) : null;
+  const meta = SLUGS.find((s) => s.slug === activeSlug) ?? SLUGS[0];
+  const activeListItem = pages?.find((p) => p.slug === activeSlug);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-8 py-10">
@@ -194,106 +210,106 @@ export default function AdminContentPage() {
 
       {error ? <p className="mt-4 text-sm" style={{ color: '#F87171' }}>{error}</p> : null}
 
-      {pages === null ? (
-        <div className="mt-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin" style={{ color: 'rgba(255,255,255,0.5)' }} /></div>
-      ) : (
-        <div className="mt-6 overflow-hidden rounded-2xl" style={CARD}>
-          <ul>
-            {SLUGS.map(({ slug, label }) => {
-              const item = pages.find((p) => p.slug === slug);
-              return (
-                <li key={slug} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                  <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium" style={{ color: '#E9E9F0' }}>{label}</span>
-                        <span className="rounded-full px-2 py-0.5 text-[10px]" style={{ background: item?.edited ? 'rgba(52,211,153,0.12)' : 'rgba(255,255,255,0.08)', color: item?.edited ? '#34D399' : 'rgba(255,255,255,0.5)' }}>
-                          {item?.edited ? 'Customized' : 'Default'}
-                        </span>
-                      </div>
-                      <div className="mt-0.5 text-[12px]" style={{ color: 'rgba(255,255,255,0.5)' }}>/{slug}</div>
-                    </div>
-                    <button type="button" onClick={() => openEdit(slug)} className="rounded-lg px-2.5 py-1.5 text-[12px]" style={{ background: '#1B1C2A', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }}>
-                      Edit
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
+      {/* Horizontal page tabs -- click one to open it for editing below. */}
+      <div className="mt-6 flex gap-1 overflow-x-auto" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }} role="tablist" aria-label="Content pages">
+        {SLUGS.map(({ slug, label }) => {
+          const item = pages?.find((p) => p.slug === slug);
+          const active = slug === activeSlug;
+          return (
+            <button
+              key={slug}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              disabled={saving}
+              onClick={() => { if (slug !== activeSlug) void openTab(slug); }}
+              className="flex shrink-0 items-center gap-2 whitespace-nowrap px-4 py-2.5 text-[13px]"
+              style={{
+                color: active ? '#E9E9F0' : 'rgba(255,255,255,0.5)',
+                fontWeight: active ? 600 : 500,
+                borderBottom: active ? '2px solid #A78BFA' : '2px solid transparent',
+                marginBottom: '-1px',
+              }}
+            >
+              {label}
+              {item?.edited ? (
+                <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#34D399' }} aria-label="Customized" title="Customized" />
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
 
-      {editingSlug ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center px-4 py-8" role="dialog" aria-modal="true" aria-label={`Edit ${editingSlug}`}>
-          <div className="absolute inset-0" style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }} onClick={() => !saving && setEditingSlug(null)} aria-hidden />
-          <div className="relative max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl p-6" style={{ backgroundColor: '#191A22', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 30px 80px rgba(0,0,0,0.5)' }}>
-            <h2 className="text-base font-semibold" style={{ color: '#E9E9F0' }}>Edit {meta?.label ?? editingSlug}</h2>
-            {loadingRow ? (
-              <div className="mt-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin" style={{ color: 'rgba(255,255,255,0.5)' }} /></div>
+      <div className="mt-4 flex items-center gap-2 text-[12px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
+        <span>/{activeSlug}</span>
+        <span className="rounded-full px-2 py-0.5 text-[10px]" style={{ background: activeListItem?.edited ? 'rgba(52,211,153,0.12)' : 'rgba(255,255,255,0.08)', color: activeListItem?.edited ? '#34D399' : 'rgba(255,255,255,0.5)' }}>
+          {activeListItem?.edited ? 'Customized' : 'Default'}
+        </span>
+      </div>
+
+      <div className="mt-3 rounded-2xl p-6" style={CARD}>
+        {loadingRow ? (
+          <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin" style={{ color: 'rgba(255,255,255,0.5)' }} /></div>
+        ) : (
+          <div className="space-y-3">
+            <label className="block text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
+              Title {meta.hasBody ? '' : '(hero H1)'}
+              <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="mt-1 w-full rounded-lg px-2.5 py-1.5 text-[13px]" style={INPUT} />
+            </label>
+            {meta.hasBody ? (
+              <>
+                <label className="text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>Body content</label>
+                <WysiwygEditor value={form.content_html} onChange={(content_html) => setForm((f) => ({ ...f, content_html }))} />
+                <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                  Supports {'{{site_url}}'} and {'{{support_contact}}'} placeholders (Text block &quot;Variable&quot; menu, or type them
+                  directly). Sanitized again on save regardless of what the builder produces. Drag the bottom-right corner of the
+                  editor to resize it.
+                </p>
+              </>
             ) : (
-              <div className="mt-4 space-y-3">
+              <>
                 <label className="block text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                  Title {meta?.hasBody ? '' : '(hero H1)'}
-                  <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="mt-1 w-full rounded-lg px-2.5 py-1.5 text-[13px]" style={INPUT} />
+                  Subtitle (plain text, shown under the hero title)
+                  <textarea
+                    value={form.content_html}
+                    onChange={(e) => setForm({ ...form, content_html: e.target.value })}
+                    rows={2}
+                    className="mt-1 w-full rounded-lg px-2.5 py-1.5 text-[13px]"
+                    style={INPUT}
+                  />
                 </label>
-                {meta?.hasBody ? (
-                  <>
-                    <label className="text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>Body content</label>
-                    <WysiwygEditor value={form.content_html} onChange={(content_html) => setForm((f) => ({ ...f, content_html }))} />
-                    <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
-                      Supports {'{{site_url}}'} and {'{{support_contact}}'} placeholders (Text block &quot;Variable&quot; menu, or type them
-                      directly). Sanitized again on save regardless of what the builder produces.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <label className="block text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                      Subtitle (plain text, shown under the hero title)
-                      <textarea
-                        value={form.content_html}
-                        onChange={(e) => setForm({ ...form, content_html: e.target.value })}
-                        rows={2}
-                        className="mt-1 w-full rounded-lg px-2.5 py-1.5 text-[13px]"
-                        style={INPUT}
-                      />
-                    </label>
-                    <label className="block text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                      Primary CTA text (optional)
-                      <input value={form.cta_primary_text} onChange={(e) => setForm({ ...form, cta_primary_text: e.target.value })} className="mt-1 w-full rounded-lg px-2.5 py-1.5 text-[13px]" style={INPUT} />
-                    </label>
-                    <label className="block text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                      Secondary CTA text (optional)
-                      <input value={form.cta_secondary_text} onChange={(e) => setForm({ ...form, cta_secondary_text: e.target.value })} className="mt-1 w-full rounded-lg px-2.5 py-1.5 text-[13px]" style={INPUT} />
-                    </label>
-                    <div className="pt-1">
-                      <HeroMediaUploader
-                        value={{
-                          hero_image_url: form.hero_image_url,
-                          hero_video_url: form.hero_video_url,
-                          hero_overlay_opacity: form.hero_overlay_opacity,
-                        }}
-                        onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
+                <label className="block text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                  Primary CTA text (optional)
+                  <input value={form.cta_primary_text} onChange={(e) => setForm({ ...form, cta_primary_text: e.target.value })} className="mt-1 w-full rounded-lg px-2.5 py-1.5 text-[13px]" style={INPUT} />
+                </label>
+                <label className="block text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                  Secondary CTA text (optional)
+                  <input value={form.cta_secondary_text} onChange={(e) => setForm({ ...form, cta_secondary_text: e.target.value })} className="mt-1 w-full rounded-lg px-2.5 py-1.5 text-[13px]" style={INPUT} />
+                </label>
+                <div className="pt-1">
+                  <HeroMediaUploader
+                    value={{
+                      hero_image_url: form.hero_image_url,
+                      hero_video_url: form.hero_video_url,
+                      hero_overlay_opacity: form.hero_overlay_opacity,
+                    }}
+                    onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
+                  />
+                </div>
+              </>
             )}
+
             <div className="mt-5 flex items-center justify-between gap-2">
               <button type="button" disabled={saving} onClick={revertToDefault} className="flex items-center gap-1 rounded-lg px-3 py-2 text-[13px]" style={{ background: 'rgba(248,113,113,0.08)', color: '#FCA5A5', border: '1px solid rgba(248,113,113,0.2)' }}>
                 <RotateCcw className="h-3.5 w-3.5" /> Revert to default
               </button>
-              <div className="flex items-center gap-2">
-                <button type="button" disabled={saving} onClick={() => setEditingSlug(null)} className="rounded-lg px-3 py-2 text-[13px]" style={{ background: '#1B1C2A', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }}>Cancel</button>
-                <button type="button" disabled={saving || loadingRow} onClick={save} className="flex items-center gap-1 rounded-lg px-3 py-2 text-[13px] font-medium" style={{ background: '#A78BFA', color: '#191A22' }}>
-                  <Save className="h-3.5 w-3.5" /> {saving ? 'Saving…' : 'Save'}
-                </button>
-              </div>
+              <button type="button" disabled={saving || loadingRow} onClick={save} className="flex items-center gap-1 rounded-lg px-3 py-2 text-[13px] font-medium" style={{ background: '#A78BFA', color: '#191A22' }}>
+                <Save className="h-3.5 w-3.5" /> {saving ? 'Saving…' : 'Save'}
+              </button>
             </div>
           </div>
-        </div>
-      ) : null}
+        )}
+      </div>
     </div>
   );
 }

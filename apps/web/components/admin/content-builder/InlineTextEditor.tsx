@@ -91,7 +91,7 @@ export function InlineTextEditor({
         // elements directly via Tailwind v4 arbitrary-descendant
         // selectors instead of the usual `prose` class.
         class:
-          'min-h-[48px] p-2 text-sm leading-relaxed focus:outline-none ' +
+          'min-h-[280px] resize-y overflow-auto p-2 text-sm leading-relaxed focus:outline-none ' +
           '[&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 ' +
           '[&_h2]:text-lg [&_h2]:font-bold [&_h3]:text-base [&_h3]:font-semibold ' +
           '[&_h4]:text-sm [&_h4]:font-semibold ' +
@@ -132,7 +132,7 @@ export function InlineTextEditor({
 
   if (!editor) {
     return (
-      <div className="min-h-[48px] p-2 text-xs" style={{ color: DARK.textMuted }}>
+      <div className="min-h-[280px] p-2 text-xs" style={{ color: DARK.textMuted }}>
         Loading editor…
       </div>
     );

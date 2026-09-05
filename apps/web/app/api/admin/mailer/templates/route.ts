@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { isAdminEmail } from '@/lib/admin-allowlist';
+import { sanitizeMailerTemplateHtml } from '@/lib/content/sanitize-html';
 
 function adminClient() {
   return createAdminClient(
@@ -44,10 +45,20 @@ export async function POST(req: NextRequest) {
 
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   const subject = typeof body.subject === 'string' ? body.subject.trim() : '';
-  const htmlContent = typeof body.html_content === 'string' ? body.html_content : '';
-  if (!name || !subject || !htmlContent) {
+  // Same hand-rolled tokenizer Content Management's sanitizer uses, but
+  // through the table-inclusive Mailer allowlist (see
+  // lib/content/sanitize-html.ts's sanitizeMailerTemplateHtml) --
+  // templates are composed with the drag-drop ContentBuilder, which
+  // renders `<table>` layout for real email-client compatibility. This
+  // route previously stored html_content completely unsanitized (a real
+  // gap: a template is later emailed to arbitrary recipients via
+  // campaigns and also rendered with dangerouslySetInnerHTML in the
+  // admin's own preview/send-test flows).
+  const htmlContentRaw = typeof body.html_content === 'string' ? body.html_content : '';
+  if (!name || !subject || !htmlContentRaw) {
     return NextResponse.json({ error: 'name, subject, and html_content are required' }, { status: 400 });
   }
+  const htmlContent = sanitizeMailerTemplateHtml(htmlContentRaw);
 
   const insertRow = {
     name,

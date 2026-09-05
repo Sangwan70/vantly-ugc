@@ -11,7 +11,8 @@
  */
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Loader2, Search, Coins, ExternalLink, ChevronDown, ChevronRight, ShieldAlert } from 'lucide-react';
+import Link from 'next/link';
+import { Loader2, Search, Coins, ExternalLink, ChevronDown, ChevronRight, ShieldAlert, CreditCard, Ticket, FileText, Newspaper, Mail, Settings as SettingsIcon } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { isAdminEmailIn } from '@/lib/admin-allowlist';
 import { useVariables } from '@/components/variable-context';
@@ -62,6 +63,17 @@ interface Growth {
 
 const CARD = { backgroundColor: '#14151F', border: '1px solid rgba(255,255,255,0.06)' } as const;
 const PLANS = ['starter', 'creator', 'pro_plus'];
+
+// Every other admin section, now that the global sidebar (formerly in
+// layout.tsx) is gone -- this index page is the sole hub linking to them.
+const ADMIN_SECTIONS = [
+  { href: '/dashboard/admin/plans', label: 'Plans', description: 'Pricing tiers and billing plans', icon: CreditCard },
+  { href: '/dashboard/admin/coupons', label: 'Coupons', description: 'Discount codes', icon: Ticket },
+  { href: '/dashboard/admin/content', label: 'Content', description: 'Marketing pages copy', icon: FileText },
+  { href: '/dashboard/admin/blog', label: 'Blog Posts', description: 'Blog CMS', icon: Newspaper },
+  { href: '/dashboard/admin/mailer', label: 'Mailer', description: 'Templates, campaigns, groups, landing pages, automation', icon: Mail },
+  { href: '/dashboard/admin/settings', label: 'Settings', description: 'Site + mailer configuration', icon: SettingsIcon },
+] as const;
 
 export default function AdminPage() {
   const { adminEmails } = useVariables();
@@ -264,6 +276,22 @@ export default function AdminPage() {
     <div className="mx-auto w-full max-w-6xl px-8 py-10">
       <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'rgba(255,255,255,0.4)' }}>Internal</p>
       <h1 className="mt-1 font-normal" style={{ color: '#E9E9F0', fontSize: 'clamp(28px,2.6vw,36px)', letterSpacing: '-0.03em' }}>Admin</h1>
+
+      {/* Sections -- replaces the old persistent left sidebar nav */}
+      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {ADMIN_SECTIONS.map((s) => (
+          <Link
+            key={s.href}
+            href={s.href}
+            className="group rounded-2xl px-3.5 py-3 transition-colors hover:bg-white/[0.03]"
+            style={CARD}
+          >
+            <s.icon className="h-4 w-4" style={{ color: '#A78BFA' }} />
+            <div className="mt-2 text-[13px] font-medium" style={{ color: '#E9E9F0' }}>{s.label}</div>
+            <div className="mt-0.5 text-[11px] leading-snug" style={{ color: 'rgba(255,255,255,0.4)' }}>{s.description}</div>
+          </Link>
+        ))}
+      </div>
 
       {/* Stats */}
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">

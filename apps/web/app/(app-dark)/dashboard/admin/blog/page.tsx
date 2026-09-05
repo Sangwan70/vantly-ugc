@@ -17,7 +17,7 @@ import { Loader2, ShieldAlert, Save, Plus, Trash2, ImagePlus, X } from 'lucide-r
 import { createClient } from '@/lib/supabase/client';
 import { isAdminEmailIn } from '@/lib/admin-allowlist';
 import { useVariables } from '@/components/variable-context';
-import { ContentBuilder } from '@/components/admin/content-builder/ContentBuilder';
+import { WysiwygEditor } from '@/components/admin/content-builder/WysiwygEditor';
 
 type Status = 'draft' | 'published' | 'archived';
 
@@ -341,7 +341,7 @@ export default function AdminBlogPage() {
                 </div>
 
                 <label className="text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>Body content</label>
-                <ContentBuilder value={form.content_html} onChange={(content_html) => setForm((f) => ({ ...f, content_html }))} />
+                <WysiwygEditor value={form.content_html} onChange={(content_html) => setForm((f) => ({ ...f, content_html }))} />
               </div>
             )}
             <div className="mt-5 flex items-center justify-end gap-2">

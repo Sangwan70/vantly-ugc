@@ -44,7 +44,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const { data: existing, error: fetchError } = await adminClient().from('email_campaigns').select('status').eq('id', id).maybeSingle();
   if (fetchError) return NextResponse.json({ error: fetchError.message }, { status: 500 });
   if (!existing) return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
-  if (existing.status !== 'draft') {
+  if (existing.status !== 'draft' && existing.status !== 'scheduled') {
     return NextResponse.json({ error: `Cannot edit a campaign with status '${existing.status}'` }, { status: 409 });
   }
 
@@ -57,6 +57,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (typeof body.name === 'string' && body.name.trim()) updateRow.name = body.name.trim();
   if (typeof body.template_id === 'string' && body.template_id) updateRow.template_id = body.template_id;
   if (body.group_id === null || typeof body.group_id === 'string') updateRow.group_id = body.group_id || null;
+  if (body.featured_coupon_id === null || typeof body.featured_coupon_id === 'string') updateRow.featured_coupon_id = body.featured_coupon_id || null;
   if (Array.isArray(body.recipient_emails)) {
     updateRow.recipient_emails = Array.from(new Set(
       body.recipient_emails.filter((e: unknown): e is string => typeof e === 'string' && isValidEmail(e.trim())).map((e: string) => e.trim().toLowerCase()),
@@ -78,7 +79,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const { data: existing, error: fetchError } = await adminClient().from('email_campaigns').select('status').eq('id', id).maybeSingle();
   if (fetchError) return NextResponse.json({ error: fetchError.message }, { status: 500 });
   if (!existing) return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
-  if (existing.status !== 'draft') {
+  if (existing.status !== 'draft' && existing.status !== 'cancelled') {
     return NextResponse.json({ error: `Cannot delete a campaign with status '${existing.status}' -- it's kept as a send record` }, { status: 409 });
   }
 

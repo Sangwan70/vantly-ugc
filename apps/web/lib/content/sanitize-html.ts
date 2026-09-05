@@ -65,10 +65,11 @@
  *    event-handler attributes inside its XML, so allowing it here would
  *    reopen exactly the hole this function exists to close. `javascript:`,
  *    `vbscript:`, and every other scheme are rejected outright.
- *  - `style` is allowed on span/div/a, validated declaration-by-declaration
- *    against STYLE_VALIDATORS below (added for the drag-and-drop Content
- *    Builder -- see lib/content/builder/ -- which needs layout/color
- *    styling, not just font-size). Every declaration is matched against a
+ *  - `style` is allowed on span/div/a (plus table/tr/td/th for the Mailer
+ *    variant below), validated declaration-by-declaration against
+ *    STYLE_VALIDATORS below (added for the drag-and-drop Content Builder --
+ *    see lib/content/builder/ -- which needs layout/color styling, not
+ *    just font-size). Every declaration is matched against a
  *    property-specific, fully-anchored (`^...$`) regex; a value that
  *    doesn't match is dropped, the rest of the style string is unaffected.
  *    None of these regexes ever allow `(` except inside the tightly-scoped
@@ -78,6 +79,14 @@
  *    `@import` can never appear in surviving output. Unknown properties
  *    (anything not in STYLE_VALIDATORS) are dropped outright, same as an
  *    unknown attribute.
+ *
+ * TWO entry points share the tokenizer below (see sanitizeHtml): the
+ * original sanitizeStaticPageHtml (ALLOWED_TAGS -- no table tags, static
+ * pages/blog posts render as a normal browser page) and
+ * sanitizeMailerTemplateHtml (MAILER_ALLOWED_TAGS -- adds table/tbody/tr/
+ * td/th, because the Mailer Template builder needs real `<table>` layout
+ * to survive actual email clients). Everything else in this doc comment
+ * applies equally to both.
  */
 
 // See the `<!--` branch of sanitizeStaticPageHtml's scan loop -- the one
@@ -108,6 +117,31 @@ const ATTRS_BY_TAG: Record<string, string[]> = {
   img: ['src', 'alt', 'width', 'height', 'style'],
   span: ['style'],
   div: ['style'],
+};
+
+/**
+ * Mailer Template HTML (email_templates.html_content) -- a SEPARATE,
+ * wider allowlist used only by sanitizeMailerTemplateHtml below, never by
+ * sanitizeStaticPageHtml. The Mailer Template builder (ContentBuilder --
+ * moved here from Content Management, see that component's own doc
+ * comment) renders its rows/columns/blocks as `<table>` layout, not
+ * flexbox, because that's what actually survives real email clients
+ * (Outlook desktop's Word rendering engine and many webmail clients
+ * either ignore or badly mis-render `display:flex`) -- the same reason
+ * AutoGPT's own Mailer template builder uses `<table>` while its
+ * Content-Management builder doesn't. Static pages keep the narrower
+ * table-free ALLOWED_TAGS/ATTRS_BY_TAG above unchanged; nothing here
+ * affects that path.
+ */
+const MAILER_ALLOWED_TAGS = new Set([...ALLOWED_TAGS, 'table', 'tbody', 'tr', 'td', 'th']);
+
+const MAILER_ATTRS_BY_TAG: Record<string, string[]> = {
+  ...ATTRS_BY_TAG,
+  table: ['role', 'width', 'cellpadding', 'cellspacing', 'border', 'align', 'style'],
+  tbody: [],
+  tr: ['style'],
+  td: ['width', 'align', 'valign', 'colspan', 'rowspan', 'style'],
+  th: ['width', 'align', 'valign', 'colspan', 'rowspan', 'style'],
 };
 
 const SAFE_HREF_SCHEMES = new Set(['http:', 'https:', 'mailto:', 'tel:']);
@@ -200,6 +234,10 @@ const STYLE_VALIDATORS: Record<string, RegExp> = {
   'margin-left': LENGTH_PX,
   'margin-right': LENGTH_PX,
   'box-sizing': /^border-box$/,
+  // Added for the Mailer Template builder's Stats block (uppercase,
+  // letter-spaced labels) -- see lib/content/builder/serialize.ts.
+  'letter-spacing': LENGTH_PX,
+  'text-transform': /^(uppercase|lowercase|capitalize|none)$/,
 };
 
 function sanitizeStyleValue(value: string): string | null {
@@ -238,15 +276,16 @@ function parseAttributes(raw: string): ParsedAttr[] {
   return attrs;
 }
 
-function filterAttributes(tagName: string, attrs: ParsedAttr[]): string {
-  const allowed = ATTRS_BY_TAG[tagName];
+function filterAttributes(tagName: string, attrs: ParsedAttr[], attrsByTag: Record<string, string[]>): string {
+  const allowed = attrsByTag[tagName];
   if (!allowed) return '';
 
   const out: string[] = [];
   for (const { name, value } of attrs) {
     if (!allowed.includes(name)) continue;
     // Belt-and-suspenders: never emit an event-handler attribute even if a
-    // future edit to ATTRS_BY_TAG accidentally allowlists one.
+    // future edit to ATTRS_BY_TAG/MAILER_ATTRS_BY_TAG accidentally
+    // allowlists one.
     if (name.startsWith('on')) continue;
 
     let finalValue: string | null = value;
@@ -259,7 +298,24 @@ function filterAttributes(tagName: string, attrs: ParsedAttr[]): string {
     } else if (name === 'target') {
       finalValue = value === '_blank' ? '_blank' : null;
     } else if (name === 'width' || name === 'height') {
-      finalValue = /^\d{1,4}$/.test(value) ? value : null;
+      // Percent form (e.g. a <td width="50%">) added for the Mailer
+      // Template builder's table columns -- a plain numeric-pixels string
+      // (the only shape img width/height ever uses) still matches too.
+      finalValue = /^\d{1,4}(\.\d+)?%?$/.test(value) ? value : null;
+    } else if (name === 'role') {
+      // Only ever emitted by the Mailer builder as role="presentation" on
+      // layout tables (an accessibility hint, not a security-relevant
+      // value) -- reject anything else outright rather than allowlist
+      // ARIA roles generally.
+      finalValue = value === 'presentation' ? value : null;
+    } else if (name === 'cellpadding' || name === 'cellspacing' || name === 'border') {
+      finalValue = /^\d{1,2}$/.test(value) ? value : null;
+    } else if (name === 'align') {
+      finalValue = /^(left|center|right)$/.test(value) ? value : null;
+    } else if (name === 'valign') {
+      finalValue = /^(top|middle|bottom)$/.test(value) ? value : null;
+    } else if (name === 'colspan' || name === 'rowspan') {
+      finalValue = /^\d{1,2}$/.test(value) ? value : null;
     }
 
     if (finalValue === null) continue;
@@ -276,7 +332,17 @@ function filterAttributes(tagName: string, attrs: ParsedAttr[]): string {
   return out.length ? ' ' + out.join(' ') : '';
 }
 
-export function sanitizeStaticPageHtml(input: string): string {
+/**
+ * Shared tokenizer core for both sanitizeStaticPageHtml and
+ * sanitizeMailerTemplateHtml -- identical scanning/escaping logic, only
+ * the tag/attribute allowlists differ (see MAILER_ALLOWED_TAGS's doc
+ * comment for why Mailer Templates need a wider, table-inclusive one).
+ * Keeping one tokenizer instead of two copies means every hardening fix
+ * made here (quote handling, comment stripping, entity non-decoding)
+ * automatically applies to both callers -- exactly the property the rest
+ * of this file's doc comment above relies on.
+ */
+function sanitizeHtml(input: string, allowedTags: ReadonlySet<string>, attrsByTag: Record<string, string[]>): string {
   if (typeof input !== 'string' || input.length === 0) return '';
 
   let out = '';
@@ -351,13 +417,13 @@ export function sanitizeStaticPageHtml(input: string): string {
     i = j + 1;
 
     if (isClosing) {
-      if (ALLOWED_TAGS.has(tagName) && !VOID_TAGS.has(tagName)) {
+      if (allowedTags.has(tagName) && !VOID_TAGS.has(tagName)) {
         out += `</${tagName}>`;
       }
       continue;
     }
 
-    if (!ALLOWED_TAGS.has(tagName)) {
+    if (!allowedTags.has(tagName)) {
       // Dropped entirely -- text between this and its (also-dropped)
       // closing tag is kept as inert text by the rest of the scan, never
       // executed.
@@ -365,7 +431,7 @@ export function sanitizeStaticPageHtml(input: string): string {
     }
 
     const attrs = parseAttributes(attrsRaw);
-    const filtered = filterAttributes(tagName, attrs);
+    const filtered = filterAttributes(tagName, attrs, attrsByTag);
     if (VOID_TAGS.has(tagName)) {
       out += `<${tagName}${filtered} />`;
     } else {
@@ -374,4 +440,20 @@ export function sanitizeStaticPageHtml(input: string): string {
   }
 
   return out;
+}
+
+export function sanitizeStaticPageHtml(input: string): string {
+  return sanitizeHtml(input, ALLOWED_TAGS, ATTRS_BY_TAG);
+}
+
+/**
+ * Mailer Template HTML (email_templates.html_content) -- the Mailer
+ * Template builder's table-based output, see MAILER_ALLOWED_TAGS's doc
+ * comment above. Used by app/api/admin/mailer/templates/route.ts and
+ * .../[id]/route.ts on every create/update, same "sanitize again on the
+ * server regardless of what the client-side builder already produced"
+ * posture as sanitizeStaticPageHtml.
+ */
+export function sanitizeMailerTemplateHtml(input: string): string {
+  return sanitizeHtml(input, MAILER_ALLOWED_TAGS, MAILER_ATTRS_BY_TAG);
 }

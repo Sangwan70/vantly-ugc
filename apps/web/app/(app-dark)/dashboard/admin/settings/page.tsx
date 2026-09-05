@@ -11,7 +11,8 @@
  * is a one-line addition to TABS plus one new _*-tab.tsx component.
  */
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Loader2, ShieldAlert } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { isAdminEmailIn } from '@/lib/admin-allowlist';
@@ -27,11 +28,18 @@ const TABS = [
 ] as const;
 type TabKey = (typeof TABS)[number]['key'];
 
-export default function AdminSettingsPage() {
+function isTabKey(v: string | null): v is TabKey {
+  return TABS.some((t) => t.key === v);
+}
+
+/** Wrapped in Suspense below -- useSearchParams requires it to avoid de-opting the whole page from static rendering. Only used to let links like MailerNav's "Sender & Branding" open straight to a tab via ?tab=. */
+function AdminSettingsPageInner() {
   const { adminEmails } = useVariables();
+  const searchParams = useSearchParams();
   const [authChecked, setAuthChecked] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [tab, setTab] = useState<TabKey>('general');
+  const initialTab = searchParams.get('tab');
+  const [tab, setTab] = useState<TabKey>(isTabKey(initialTab) ? initialTab : 'general');
 
   useEffect(() => {
     (async () => {
@@ -89,5 +97,13 @@ export default function AdminSettingsPage() {
         {tab === 'mailer' ? <MailerTab /> : null}
       </div>
     </div>
+  );
+}
+
+export default function AdminSettingsPage() {
+  return (
+    <Suspense fallback={<div className="flex h-[60vh] items-center justify-center"><Loader2 className="h-5 w-5 animate-spin" style={{ color: 'rgba(255,255,255,0.5)' }} /></div>}>
+      <AdminSettingsPageInner />
+    </Suspense>
   );
 }

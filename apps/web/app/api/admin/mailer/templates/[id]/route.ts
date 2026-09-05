@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { isAdminEmail } from '@/lib/admin-allowlist';
+import { sanitizeMailerTemplateHtml } from '@/lib/content/sanitize-html';
 
 function adminClient() {
   return createAdminClient(
@@ -45,6 +46,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const updateRow: Record<string, unknown> = {};
   for (const field of EDITABLE_FIELDS) {
     if (body[field] !== undefined) updateRow[field] = body[field];
+  }
+  // Same sanitizer POST / (new template) runs -- an edit must not be able
+  // to smuggle in anything the create path already blocks.
+  if (typeof updateRow.html_content === 'string') {
+    updateRow.html_content = sanitizeMailerTemplateHtml(updateRow.html_content);
   }
   if (Object.keys(updateRow).length === 0) {
     return NextResponse.json({ error: 'No editable fields provided' }, { status: 400 });

@@ -5,16 +5,21 @@
 /**
  * /dashboard/admin/mailer -- Templates (the Mailer milestone's landing
  * page; Groups and Campaigns are separate sub-pages linked below). CRUD +
- * preview + send-test, no visual builder -- raw HTML + live preview, per
- * the plan document's own verdict on this feature.
+ * preview + send-test, body composed with the same drag-drop Canvas
+ * builder (rows/columns/8 block types, Visual/Source Code toggle) that was
+ * originally built for Content Management -- moved here instead, since
+ * this rich multi-column layout builder is what AutoGPT's own Mailer
+ * Template builder actually is; Content Management uses a simpler
+ * single-flow WYSIWYG (see components/admin/content-builder/WysiwygEditor.tsx).
  */
 
 import { useEffect, useState, useCallback } from 'react';
-import Link from 'next/link';
-import { Loader2, ShieldAlert, Plus, Eye, Send, Users2, Megaphone } from 'lucide-react';
+import { MailerNav } from '@/components/admin/mailer-nav';
+import { Loader2, ShieldAlert, Plus, Eye, Send } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { isAdminEmailIn } from '@/lib/admin-allowlist';
 import { useVariables } from '@/components/variable-context';
+import { ContentBuilder } from '@/components/admin/content-builder/ContentBuilder';
 
 interface Template {
   id: string;
@@ -159,18 +164,13 @@ export default function AdminMailerTemplatesPage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-8 py-10">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <MailerNav />
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'rgba(255,255,255,0.4)' }}>Internal</p>
           <h1 className="mt-1 font-normal" style={{ color: '#E9E9F0', fontSize: 'clamp(28px,2.6vw,36px)', letterSpacing: '-0.03em' }}>Mailer — Templates</h1>
         </div>
         <div className="flex items-center gap-2">
-          <Link href="/dashboard/admin/mailer/groups" className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px]" style={{ background: '#1B1C2A', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }}>
-            <Users2 className="h-3.5 w-3.5" /> Groups
-          </Link>
-          <Link href="/dashboard/admin/mailer/campaigns" className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px]" style={{ background: '#1B1C2A', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }}>
-            <Megaphone className="h-3.5 w-3.5" /> Campaigns
-          </Link>
           <button type="button" onClick={openCreate} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium" style={{ background: '#A78BFA', color: '#191A22' }}>
             <Plus className="h-3.5 w-3.5" /> New template
           </button>
@@ -226,7 +226,8 @@ export default function AdminMailerTemplatesPage() {
       {editing ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center px-4 py-8" role="dialog" aria-modal="true" aria-label={editing === 'new' ? 'New template' : 'Edit template'}>
           <div className="absolute inset-0" style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }} onClick={() => !saving && setEditing(null)} aria-hidden />
-          <div className="relative max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-3xl p-6" style={{ backgroundColor: '#191A22', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 30px 80px rgba(0,0,0,0.5)' }}>
+          {/* Wider than the other mailer dialogs -- the Canvas body builder (rows/columns/inspector) needs real width, same max-w-5xl as Content Management's own editor dialog. */}
+          <div className="relative max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl p-6" style={{ backgroundColor: '#191A22', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 30px 80px rgba(0,0,0,0.5)' }}>
             <h2 className="text-base font-semibold" style={{ color: '#E9E9F0' }}>{editing === 'new' ? 'New template' : `Edit ${form.name}`}</h2>
             <div className="mt-4 grid grid-cols-2 gap-3">
               <label className="col-span-2 text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
@@ -241,10 +242,12 @@ export default function AdminMailerTemplatesPage() {
                 Documented variables (comma-separated, informational)
                 <input value={form.variables} onChange={(e) => setForm({ ...form, variables: e.target.value })} placeholder="name, plan_name" className="mt-1 w-full rounded-lg px-2.5 py-1.5 text-[13px]" style={INPUT} />
               </label>
-              <label className="col-span-2 text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                HTML content
-                <textarea value={form.html_content} onChange={(e) => setForm({ ...form, html_content: e.target.value })} rows={10} className="mt-1 w-full rounded-lg px-2.5 py-1.5 font-mono text-[12px]" style={INPUT} />
-              </label>
+              <div className="col-span-2">
+                <label className="text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>Body content</label>
+                <div className="mt-1">
+                  <ContentBuilder value={form.html_content} onChange={(html_content) => setForm((f) => ({ ...f, html_content }))} />
+                </div>
+              </div>
               <label className="col-span-2 text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
                 Plain-text content (optional)
                 <textarea value={form.text_content} onChange={(e) => setForm({ ...form, text_content: e.target.value })} rows={4} className="mt-1 w-full rounded-lg px-2.5 py-1.5 font-mono text-[12px]" style={INPUT} />

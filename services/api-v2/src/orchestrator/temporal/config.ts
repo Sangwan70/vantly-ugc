@@ -33,6 +33,14 @@ export interface ReconcilerConfig {
   processingThresholdMinutes: number;
 }
 
+export interface PrimitiveReconcilerConfig {
+  enabled: boolean;
+  /** How often to sweep primitive_runs from inside api-v2. */
+  intervalMs: number;
+  /** Threshold (minutes) a primitive_runs row may sit on submitted/running before being force-failed + refunded. */
+  thresholdMinutes: number;
+}
+
 export function getOrchestratorEngine(): OrchestratorEngine {
   const raw = (process.env.ORCHESTRATOR_ENGINE ?? 'http').toLowerCase().trim();
   return raw === 'temporal' ? 'temporal' : 'http';
@@ -98,6 +106,36 @@ export function getReconcilerConfig(): ReconcilerConfig {
     processingThresholdMinutes: readPositiveInt(
       'ORCHESTRATOR_RECONCILER_PROCESSING_THRESHOLD_MINUTES',
       20,
+    ),
+  };
+}
+
+/**
+ * Covers primitive_runs (vNext), a completely separate table/failure mode
+ * from generation_jobs' reconciler above -- see primitive-reconciler.ts's
+ * doc comment for the 2026-09-05 incident this closes.
+ *
+ * thresholdMinutes defaults to workflowExecutionTimeoutMs + 5 minutes: it
+ * must stay ABOVE the Temporal-enforced workflow execution timeout so this
+ * sweep only ever claims a run Temporal itself has already given up on,
+ * never one still legitimately inside its own budget (e.g.
+ * character_sheet_gpt2's up-to-3-attempts-at-6-minutes-each retry policy).
+ */
+export function getPrimitiveReconcilerConfig(): PrimitiveReconcilerConfig {
+  const rawEnabled = process.env.ORCHESTRATOR_PRIMITIVE_RECONCILER_ENABLED?.toLowerCase().trim();
+  const defaultEnabled = getOrchestratorEngine() === 'temporal';
+  const enabled = rawEnabled === undefined || rawEnabled === ''
+    ? defaultEnabled
+    : !(rawEnabled === 'false' || rawEnabled === '0' || rawEnabled === 'no');
+  const workflowExecutionTimeoutMinutes = Math.ceil(
+    readPositiveInt('TEMPORAL_WORKFLOW_EXECUTION_TIMEOUT_MS', 20 * 60_000) / 60_000,
+  );
+  return {
+    enabled,
+    intervalMs: readPositiveInt('ORCHESTRATOR_PRIMITIVE_RECONCILER_INTERVAL_MS', 60_000),
+    thresholdMinutes: readPositiveInt(
+      'ORCHESTRATOR_PRIMITIVE_RECONCILER_THRESHOLD_MINUTES',
+      workflowExecutionTimeoutMinutes + 5,
     ),
   };
 }

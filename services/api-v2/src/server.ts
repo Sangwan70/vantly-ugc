@@ -44,6 +44,7 @@ import { subtitleRoute } from './routes/v2/subtitle.js';
 import { jobStreamRoute } from './routes/v2/job-stream.js';
 import { mcpRoute } from './routes/mcp.js';
 import { startReconciler } from './orchestrator/reconciler.js';
+import { startPrimitiveReconciler } from './orchestrator/primitive-reconciler.js';
 import {
   toolingContractsRoute,
   createToolingRunRoute,
@@ -1026,4 +1027,8 @@ app.listen(PORT, () => {
   // (same one pg_cron uses) but at a sub-pg-cron cadence so a Temporal
   // handoff failure resolves within ~6 minutes instead of ~60.
   startReconciler({ supabase });
+  // Separate sweep for the vNext primitive_runs table (not covered by the
+  // legacy reconciler above) -- see primitive-reconciler.ts's doc comment
+  // for the stuck-forever-on-submitted incident this closes.
+  startPrimitiveReconciler({ supabase });
 });

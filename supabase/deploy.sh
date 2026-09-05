@@ -28,6 +28,7 @@ FUNCTIONS=(
   health-status
   invite-redeem
   job-status
+  mailer-automation-runner
   poll-provider
   presigned-url
   pricing

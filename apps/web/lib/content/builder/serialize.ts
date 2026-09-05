@@ -16,16 +16,20 @@ import {
 /**
  * BuilderState <-> HTML string, ported from AutoGPT's Mailer template
  * builder (see that repo's admin/mailer/templates/components/builder/
- * serialize.ts) with one structural difference: that builder targets
- * email clients and lays out with `<table>` (table/tbody/tr/td); this one
- * targets a normal browser page and `lib/content/sanitize-html.ts`'s
- * ALLOWED_TAGS has no table tags at all (see that file's own doc comment
- * for why -- it's a hand-rolled stopgap sanitizer, deliberately narrow).
- * So every block here renders with flexbox (div/span + a restricted
- * `style` allowlist -- see STYLE_VALIDATORS in sanitize-html.ts) instead.
- * The rendered HTML is sanitized AGAIN server-side on every save
- * regardless of what this function produces -- this is a UX nicety, not
- * the security boundary.
+ * serialize.ts), now used for exactly the same purpose here: this
+ * component moved from Content Management to the Mailer Templates editor
+ * (see components/admin/content-builder/ContentBuilder.tsx's own doc
+ * comment for why -- Content Management uses a simpler WYSIWYG instead,
+ * see WysiwygEditor.tsx). Every block renders as `<table>` layout
+ * (table/tbody/tr/td), matching AutoGPT's own implementation exactly,
+ * because that's what actually survives real email clients -- Outlook
+ * desktop's Word rendering engine and many webmail clients either ignore
+ * or badly mis-render `display:flex`/`display:grid`. The rendered HTML
+ * is sanitized AGAIN server-side on every save (sanitizeMailerTemplateHtml
+ * in lib/content/sanitize-html.ts, which extends the static-page
+ * sanitizer's allowlist with table/tbody/tr/td/th specifically for this
+ * builder's output) regardless of what this function produces -- this is
+ * a UX nicety, not the security boundary.
  */
 
 const PLATFORM_LABELS: Record<SocialPlatform, string> = {
@@ -72,12 +76,18 @@ function escapeAttr(value: string): string {
     .replace(/>/g, '&gt;');
 }
 
-function alignToJustify(align: BlockAlign): string {
-  if (align === 'center') return 'center';
-  if (align === 'right') return 'flex-end';
-  return 'flex-start';
+function alignToImageStyle(align: BlockAlign): string {
+  if (align === 'center') return 'display:block;margin-left:auto;margin-right:auto;';
+  if (align === 'right') return 'display:block;margin-left:auto;margin-right:0;';
+  return 'display:block;margin-right:auto;';
 }
 
+// Table-based rendering, line-for-line matching AutoGPT's actual Mailer
+// template builder (see this file's own doc comment for why) -- role=
+// "presentation" + cellpadding/cellspacing/border="0" on every layout
+// table is the standard email-HTML convention for "this table is layout,
+// not tabular data", recognized by every major email client and screen
+// reader.
 function renderBlock(block: Block): string {
   switch (block.type) {
     case 'text': {
@@ -86,19 +96,25 @@ function renderBlock(block: Block): string {
     }
     case 'image': {
       if (!block.src) return '';
+      const widthStyle = block.width ? `width:${block.width}px;max-width:100%;` : 'width:100%;';
+      const style = `${widthStyle}${alignToImageStyle(block.align)}border:0;`;
       const widthAttr = block.width ? ` width="${block.width}"` : '';
-      const styleAttr = block.width ? '' : ' style="width:100%;"';
-      const imgTag = `<img src="${escapeAttr(block.src)}" alt="${escapeAttr(block.alt)}"${widthAttr}${styleAttr} />`;
-      const inner = block.link ? `<a href="${escapeAttr(block.link)}">${imgTag}</a>` : imgTag;
-      return `<div style="display:flex;justify-content:${alignToJustify(block.align)};">${inner}</div>`;
+      let img = `<img src="${escapeAttr(block.src)}" alt="${escapeAttr(block.alt)}"${widthAttr} style="${style}" />`;
+      if (block.link) {
+        img = `<a href="${escapeAttr(block.link)}">${img}</a>`;
+      }
+      return img;
     }
     case 'button': {
+      const margin =
+        block.align === 'center' ? 'margin:0 auto;' : block.align === 'right' ? 'margin:0 0 0 auto;' : 'margin:0 auto 0 0;';
       return (
-        `<div style="display:flex;justify-content:${alignToJustify(block.align)};">` +
-        `<a href="${escapeAttr(block.url)}" style="display:inline-block;background-color:${block.bgColor};` +
-        `color:${block.textColor};border-radius:${block.borderRadius}px;padding:12px 28px;` +
-        `text-decoration:none;font-weight:bold;text-align:center;">${escapeAttr(block.label)}</a>` +
-        `</div>`
+        `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0;">` +
+        `<tbody><tr><td align="${block.align}" style="text-align:${block.align};padding:0;">` +
+        `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="${margin}">` +
+        `<tbody><tr><td style="background-color:${block.bgColor};border-radius:${block.borderRadius}px;text-align:center;">` +
+        `<a href="${escapeAttr(block.url)}" style="display:block;padding:12px 28px;color:${block.textColor};text-decoration:none;font-weight:bold;">${escapeAttr(block.label)}</a>` +
+        `</td></tr></tbody></table></td></tr></tbody></table>`
       );
     }
     case 'divider':
@@ -111,10 +127,11 @@ function renderBlock(block: Block): string {
         .map((line) => escapeAttr(line))
         .join('<br />');
       return (
-        `<div style="text-align:${block.align};padding-left:16px;border-left:4px solid ${block.accentColor};">` +
+        `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0;">` +
+        `<tbody><tr><td style="text-align:${block.align};padding:4px 0 4px 16px;border-left:4px solid ${block.accentColor};">` +
         `<div style="font-size:1.1rem;line-height:1.6;"><em>${lines}</em></div>` +
         `<div style="margin-top:8px;font-size:0.9rem;font-weight:bold;">&mdash; ${escapeAttr(block.attribution)}</div>` +
-        `</div>`
+        `</td></tr></tbody></table>`
       );
     }
     case 'social': {
@@ -122,14 +139,17 @@ function renderBlock(block: Block): string {
         .map((link) => {
           const label = PLATFORM_LABELS[link.platform] || '•';
           return (
-            `<a href="${escapeAttr(link.url)}" style="display:flex;width:32px;height:32px;border-radius:16px;` +
-            `background-color:${block.badgeColor};align-items:center;justify-content:center;` +
-            `color:#ffffff;text-decoration:none;font-size:0.8rem;font-weight:bold;">${escapeAttr(label)}</a>`
+            `<td style="padding:0 6px;">` +
+            `<a href="${escapeAttr(link.url)}" style="display:block;width:32px;height:32px;line-height:32px;border-radius:16px;background-color:${block.badgeColor};color:#ffffff;text-align:center;font-size:0.8rem;font-weight:bold;text-decoration:none;">${escapeAttr(label)}</a>` +
+            `</td>`
           );
         })
         .join('');
       return (
-        `<div style="display:flex;justify-content:${alignToJustify(block.align)};gap:8px;">${badges}</div>`
+        `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0;">` +
+        `<tbody><tr><td align="${block.align}" style="text-align:${block.align};padding:0;">` +
+        `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0;"><tbody><tr>${badges}</tr></tbody></table>` +
+        `</td></tr></tbody></table>`
       );
     }
     case 'stats': {
@@ -138,13 +158,16 @@ function renderBlock(block: Block): string {
       const cells = block.items
         .map(
           (item) =>
-            `<div style="width:${widthPercent}%;text-align:center;padding:8px 4px;">` +
+            `<td width="${widthPercent}%" style="text-align:center;padding:8px 4px;">` +
             `<div style="font-size:1.75rem;font-weight:bold;line-height:1.2;color:${block.accentColor};">${escapeAttr(item.value)}</div>` +
-            `<div style="font-size:0.75rem;color:${block.accentColor};margin-top:4px;">${escapeAttr(item.label)}</div>` +
-            `</div>`,
+            `<div style="font-size:0.75rem;letter-spacing:0.5px;text-transform:uppercase;color:${block.accentColor};margin-top:4px;">${escapeAttr(item.label)}</div>` +
+            `</td>`,
         )
         .join('');
-      return `<div style="display:flex;">${cells}</div>`;
+      return (
+        `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0;">` +
+        `<tbody><tr>${cells}</tr></tbody></table>`
+      );
     }
     case 'raw':
       return block.html;
@@ -155,19 +178,23 @@ function renderBlock(block: Block): string {
 
 function renderColumn(col: Column, paddingY: number): string {
   const content = col.blocks.map(renderBlock).join('');
-  return `<div style="width:${col.widthPercent}%;padding:${paddingY}px 10px;">${content}</div>`;
+  return `<td width="${col.widthPercent}%" valign="top" style="padding:${paddingY}px 10px;">${content}</td>`;
 }
 
 function renderRow(row: Row): string {
   const bg = row.bgColor ? `background-color:${row.bgColor};` : '';
   const cols = row.columns.map((c) => renderColumn(c, row.paddingY)).join('');
-  return `<div style="display:flex;${bg}">${cols}</div>`;
+  return (
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="${bg}margin:0;">` +
+    `<tbody><tr>${cols}</tr></tbody></table>`
+  );
 }
 
 /** state -> HTML string, the value actually saved as
- * `static_pages.content_html` and later rendered raw on public pages
- * (see lib/content/get-page.ts) -- this builder is only a friendlier way
- * to produce that same string, nothing downstream needed to change.
+ * `email_templates.html_content` and later rendered by mail clients when
+ * a campaign sends it (and in the admin's own preview/send-test flows) --
+ * this builder is only a friendlier way to produce that same string,
+ * nothing downstream needed to change.
  *
  * The JSON state is base64-encoded before being embedded in the leading
  * `<!--CONTENT_BUILDER_STATE:...-->` marker comment. Raw JSON text can

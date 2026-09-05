@@ -22,7 +22,7 @@ export async function GET() {
 
   const { data: campaigns, error } = await adminClient()
     .from('email_campaigns')
-    .select('*, email_templates(name), email_groups(name)')
+    .select('*, email_templates(name), email_groups(name), coupons:featured_coupon_id(code)')
     .order('created_at', { ascending: false });
 
   if (error) return NextResponse.json({ error: 'Failed to list campaigns', details: error.message }, { status: 500 });
@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
     name,
     template_id: templateId,
     group_id: typeof body?.group_id === 'string' && body.group_id ? body.group_id : null,
+    featured_coupon_id: typeof body?.featured_coupon_id === 'string' && body.featured_coupon_id ? body.featured_coupon_id : null,
     recipient_emails: recipientEmails,
     template_vars: body?.template_vars && typeof body.template_vars === 'object' ? body.template_vars : {},
     created_by: user.id,

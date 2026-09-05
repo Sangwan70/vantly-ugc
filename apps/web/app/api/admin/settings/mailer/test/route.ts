@@ -8,10 +8,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { Resend } from 'resend';
 import { createClient } from '@/lib/supabase/server';
 import { isAdminEmail } from '@/lib/admin-allowlist';
 import { getEffectiveSenderConfig } from '@/lib/mailer/sender-config';
+import { getProviderSender } from '@/lib/mailer/providers';
+import { logMailerAudit } from '@/lib/mailer/audit-log';
 
 interface Body {
   test_email?: unknown;
@@ -36,32 +37,46 @@ export async function POST(req: NextRequest) {
   }
 
   const sender = await getEffectiveSenderConfig();
-  if (!sender.apiKey) {
-    return NextResponse.json({ error: 'No Resend API key configured (neither in Settings → Mailer nor RESEND_API_KEY)' }, { status: 503 });
+  if (!sender.configured) {
+    return NextResponse.json(
+      { error: `${sender.provider} is selected in Settings → Mailer but isn't fully configured yet.` },
+      { status: 503 },
+    );
   }
 
-  const resend = new Resend(sender.apiKey);
+  let provider;
   try {
-    const { error } = await resend.emails.send({
+    provider = getProviderSender(sender);
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Mailer provider is misconfigured' }, { status: 503 });
+  }
+
+  const [result] = await provider.sendBatch([
+    {
       from: sender.from,
       to: testEmail,
-      ...(sender.replyTo ? { replyTo: sender.replyTo } : {}),
+      replyTo: sender.replyTo,
       subject: 'Vantly UGC — test email',
+      html: [
+        '<p>This is a test email from Vantly UGC admin settings.</p>',
+        `<p>Provider: ${sender.provider}<br>Sent from: ${sender.from}${sender.replyTo ? `<br>Reply-to: ${sender.replyTo}` : ''}<br>Credential source: ${sender.credentialFromDb ? 'Settings → Mailer' : 'environment variable'}<br>Sent by: ${user.email}</p>`,
+      ].join('\n'),
       text: [
         'This is a test email from Vantly UGC admin settings.',
         '',
+        `Provider: ${sender.provider}`,
         `Sent from: ${sender.from}`,
         sender.replyTo ? `Reply-to: ${sender.replyTo}` : null,
-        `API key source: ${sender.apiKeyFromDb ? 'Settings → Mailer' : 'RESEND_API_KEY env var'}`,
+        `Credential source: ${sender.credentialFromDb ? 'Settings → Mailer' : 'environment variable'}`,
         `Sent by: ${user.email}`,
       ].filter(Boolean).join('\n'),
-    });
-    if (error) {
-      return NextResponse.json({ error: error.message ?? 'Email send failed' }, { status: 502 });
-    }
-  } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'Email send failed' }, { status: 502 });
-  }
+    },
+  ]);
 
+  await logMailerAudit({ actorId: user.id, actorEmail: user.email, action: 'sender.test_send', targetType: 'sender_config', metadata: { provider: sender.provider, success: result.success } });
+
+  if (!result.success) {
+    return NextResponse.json({ error: result.error ?? 'Email send failed' }, { status: 502 });
+  }
   return NextResponse.json({ ok: true });
 }

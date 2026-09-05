@@ -199,6 +199,44 @@ would go unreported.
 
 ---
 
+## Stuck-job reconciliation: `primitive_runs` had none (fixed 2026-09-05)
+
+`generation_jobs` (legacy pipeline) has had a stuck-job reconciler since
+before this doc existed: `services/api-v2/src/orchestrator/reconciler.ts`
+sweeps rows past a threshold, refunds credits via the `refund_credits` RPC,
+and marks them failed. The vNext primitive pipeline's `primitive_runs` table
+never got the equivalent. A workflow that never completes is caught by
+Temporal's own `workflowExecutionTimeoutMs` (default 20 minutes), but nothing
+observed that termination back into the `primitive_runs` row or refunded the
+user — the row stayed `submitted`/`running` forever, which is what a user
+report described as "generation has gone into an infinite loop."
+
+Fixed by adding `services/api-v2/src/orchestrator/primitive-reconciler.ts`,
+following the same pattern as the `generation_jobs` reconciler: a
+self-re-entrancy-guarded `setInterval` sweep (default every 5 minutes) that
+claims `primitive_runs` rows stuck in `submitted`/`running` past a threshold
+(default 25 minutes — intentionally above `workflowExecutionTimeoutMs` so
+Temporal's own timeout always has first chance to resolve the workflow
+cleanly), marks them `failed` with `error_code = 'DISPATCH_TIMEOUT'`, and
+calls the same generic `refund_credits(p_job_id)` RPC used by the legacy
+reconciler (safe to reuse — it's keyed only by
+`credit_transactions.reference_id`, with no coupling to a specific table).
+Wired into `server.ts` alongside the existing `startReconciler`. Config via
+`ORCHESTRATOR_PRIMITIVE_RECONCILER_ENABLED` /
+`_INTERVAL_MS` / `_THRESHOLD_MINUTES` env vars, mirroring the legacy
+reconciler's own env-var names.
+
+This closes the same class of "nothing crashed, nothing errored, but nothing
+is actually recovering" gap this doc's Railway git-integration incident
+(2026-08-02, above) described for deploys — here it's a background sweep that
+was simply never built for this table, not a deploy pipeline issue. Requires
+a deploy of `api-v2` to take effect; does not retroactively touch runs that
+are already stuck (those need a one-off manual `refund_credits` call or will
+clear on the reconciler's first sweep once deployed, since they are already
+well past any reasonable threshold).
+
+---
+
 ## Still open
 
 - **Sentry projects.** `api-v2`, `primitive-worker-vnext` and the dashboard all

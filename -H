@@ -1,0 +1,9 @@
+HTTP/1.1 404 Not Found
+Server: nginx
+Date: Mon, 31 Aug 2026 08:35:03 GMT
+Content-Type: application/json
+Content-Length: 95
+Connection: keep-alive
+Strict-Transport-Security: max-age=300; includeSubDomains; preload
+
+{"error":"not_found","message":"This gateway only serves /auth/v1, /rest/v1, and /storage/v1."}

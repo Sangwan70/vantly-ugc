@@ -5,6 +5,23 @@ import { createClient } from '@/lib/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { isAdminEmail } from '@/lib/admin-allowlist';
 import { isValidEmail } from '@/lib/mailer/render-template';
+import type { SmartRules } from '@/lib/mailer/resolve-recipients';
+
+function parseSmartRules(input: unknown): SmartRules | null {
+  if (!input || typeof input !== 'object') return null;
+  const obj = input as Record<string, unknown>;
+  const match = obj.match === 'any' ? 'any' : 'all';
+  const conditions = Array.isArray(obj.conditions)
+    ? obj.conditions
+        .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')
+        .map((c) => ({
+          field: (['plan_slug', 'subscription_status', 'signup_days_ago'].includes(c.field as string) ? c.field : 'plan_slug') as SmartRules['conditions'][number]['field'],
+          op: (['eq', 'ne', 'in', 'gte', 'lte'].includes(c.op as string) ? c.op : 'eq') as SmartRules['conditions'][number]['op'],
+          value: (Array.isArray(c.value) ? c.value.map(String) : typeof c.value === 'number' ? c.value : String(c.value ?? '')) as SmartRules['conditions'][number]['value'],
+        }))
+    : [];
+  return { match, conditions };
+}
 
 function adminClient() {
   return createAdminClient(
@@ -50,6 +67,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     ));
     updateRow.members = members;
     updateRow.member_count = members.length;
+  }
+  if (body.smart_rules !== undefined) {
+    const smartRules = parseSmartRules(body.smart_rules);
+    if (!smartRules || smartRules.conditions.length === 0) {
+      return NextResponse.json({ error: 'smart_rules must include at least one condition' }, { status: 400 });
+    }
+    updateRow.smart_rules = smartRules;
   }
   if (Object.keys(updateRow).length === 0) {
     return NextResponse.json({ error: 'No editable fields provided' }, { status: 400 });

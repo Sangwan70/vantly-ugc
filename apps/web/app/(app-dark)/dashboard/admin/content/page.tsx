@@ -17,13 +17,20 @@ import { Loader2, ShieldAlert, Save, RotateCcw } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { isAdminEmailIn } from '@/lib/admin-allowlist';
 import { useVariables } from '@/components/variable-context';
-import { ContentBuilder } from '@/components/admin/content-builder/ContentBuilder';
+import { WysiwygEditor } from '@/components/admin/content-builder/WysiwygEditor';
 import { HeroMediaUploader } from '@/components/admin/content-builder/HeroMediaUploader';
+import {
+  DEFAULT_PRIVACY_TITLE,
+  DEFAULT_PRIVACY_HTML,
+  DEFAULT_TERMS_TITLE,
+  DEFAULT_TERMS_HTML,
+} from '@/lib/content/default-static-page-content';
 
 type Slug = 'home' | 'pricing' | 'blog' | 'docs' | 'privacy' | 'terms' | 'contact';
 // hasHero: renders the plain-text subtitle field + HeroMediaUploader
 // (image crop/zoom, video URL, overlay darkness). hasBody: renders the
-// rich drag-drop ContentBuilder instead. The two are mutually exclusive
+// simple WYSIWYG editor (rich text + inline image upload/resize, with a
+// Visual/Source Code toggle) instead. The two are mutually exclusive
 // today (matching AutoGPT's StaticPageEditor contentMode='plain' vs
 // 'rich' split) -- a hero-only page's "content_html" column stores its
 // plain-text subtitle, not rich HTML; a body page's stores rich HTML.
@@ -36,6 +43,17 @@ const SLUGS: { slug: Slug; label: string; hasHero: boolean; hasBody: boolean }[]
   { slug: 'terms', label: 'Terms of Use', hasHero: false, hasBody: true },
   { slug: 'contact', label: 'Contact Us', hasHero: false, hasBody: true },
 ];
+
+// Pre-fills the admin editor with the page's real hardcoded default copy
+// (see app/privacy/page.tsx / app/terms/page.tsx) when no static_pages row
+// exists yet, so editing starts from actual current content instead of a
+// blank form. Purely a client-side form default -- saving still requires
+// hitting Save like any other edit, and slugs with no entry here (or a
+// row that already exists) behave exactly as before.
+const DEFAULT_BODY_CONTENT: Partial<Record<Slug, { title: string; content_html: string }>> = {
+  privacy: { title: DEFAULT_PRIVACY_TITLE, content_html: DEFAULT_PRIVACY_HTML },
+  terms: { title: DEFAULT_TERMS_TITLE, content_html: DEFAULT_TERMS_HTML },
+};
 
 interface PageListItem { slug: Slug; title: string | null; updated_at: string | null; edited: boolean }
 interface PageRow {
@@ -103,9 +121,10 @@ export default function AdminContentPage() {
       const j = await r.json().catch(() => ({}));
       if (!r.ok) { alert(`Failed: ${j.error ?? r.status}`); setEditingSlug(null); return; }
       const row: PageRow | null = j.page;
+      const fallback = row ? null : DEFAULT_BODY_CONTENT[slug];
       setForm({
-        title: row?.title ?? '',
-        content_html: row?.content_html ?? '',
+        title: row?.title ?? fallback?.title ?? '',
+        content_html: row?.content_html ?? fallback?.content_html ?? '',
         cta_primary_text: row?.cta_primary_text ?? '',
         cta_secondary_text: row?.cta_secondary_text ?? '',
         hero_image_url: row?.hero_image_url ?? '',
@@ -221,7 +240,7 @@ export default function AdminContentPage() {
                 {meta?.hasBody ? (
                   <>
                     <label className="text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>Body content</label>
-                    <ContentBuilder value={form.content_html} onChange={(content_html) => setForm((f) => ({ ...f, content_html }))} />
+                    <WysiwygEditor value={form.content_html} onChange={(content_html) => setForm((f) => ({ ...f, content_html }))} />
                     <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
                       Supports {'{{site_url}}'} and {'{{support_contact}}'} placeholders (Text block &quot;Variable&quot; menu, or type them
                       directly). Sanitized again on save regardless of what the builder produces.

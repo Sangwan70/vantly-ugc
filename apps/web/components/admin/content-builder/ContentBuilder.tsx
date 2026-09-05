@@ -15,18 +15,22 @@ import { MiniButton, MiniDropdown, MiniDropdownItem, MiniTextarea, DARK } from '
 const DEVICE_WIDTH = { desktop: 720, mobile: 375 } as const;
 
 /**
- * Drag-and-drop visual page builder for admin Content Management --
- * ported from AutoGPT's Mailer template visual builder (rows -> columns
- * -> Text/Image/Button/Divider/Spacer/Quote/Social/Stats blocks, drag
- * reordering, column resize, themes, reusable saved blocks, Source Code
- * fallback). Same drop-in contract as the textarea it replaces
- * (`value`/`onChange` of the final HTML string) -- nothing downstream
- * (the public pricing/privacy/terms pages, the sanitizer) needed to
- * change: this is purely a friendlier way to produce the same
- * `static_pages.content_html` string that a raw-HTML textarea always
+ * Drag-and-drop visual body builder for the admin Mailer Templates editor
+ * (rows -> columns -> Text/Image/Button/Divider/Spacer/Quote/Social/Stats
+ * blocks, drag reordering, column resize, themes, reusable saved blocks,
+ * Source Code fallback) -- ported from, and now living in the same place
+ * as, AutoGPT's own Mailer template visual builder. Previously used for
+ * Content Management too; moved here per direct correction -- Content
+ * Management's actual editing need is a single flowing document (a
+ * policy, a blog post), served by the simpler WysiwygEditor instead (see
+ * that component's own doc comment), while this multi-column/table-based
+ * Canvas builder is what a real Mailer template composer needs. Same
+ * drop-in contract as the textarea it replaces (`value`/`onChange` of the
+ * final HTML string) -- this is purely a friendlier way to produce the
+ * same `email_templates.html_content` string a raw-HTML textarea always
  * produced. See lib/content/builder/serialize.ts for exactly what HTML
- * shape each block renders as (flexbox, not `<table>` -- this targets a
- * browser page, not an email client).
+ * shape each block renders as (`<table>`-based, matching real email
+ * clients -- see that file's own doc comment for why).
  */
 export function ContentBuilder({
   value,
@@ -145,10 +149,12 @@ export function ContentBuilder({
             placeholder="<p>Write raw HTML here...</p>"
           />
           <p className="mt-1 text-[11px]" style={{ color: DARK.textMuted }}>
-            Supports {'{{site_url}}'} and {'{{support_contact}}'} placeholders. Only tags/attributes
-            lib/content/sanitize-html.ts allows survive an actual save (p, br, strong, em, a, ul/ol/li,
-            h1-h6, blockquote, code, pre, img, figure/figcaption, span/div -- plus a scoped inline-style
-            property list). Switching back to Visual wraps this as a single editable &quot;Raw HTML&quot; block.
+            Supports whatever {'{{variable}}'} placeholders this template documents (see the
+            &quot;Documented variables&quot; field) -- substituted per-recipient when a campaign sends.
+            Only tags/attributes lib/content/sanitize-html.ts&apos;s sanitizeMailerTemplateHtml allows survive
+            an actual save (p, br, strong, em, a, ul/ol/li, h1-h6, blockquote, code, pre, img,
+            figure/figcaption, span/div, table/tbody/tr/td/th -- plus a scoped inline-style property
+            list). Switching back to Visual wraps this as a single editable &quot;Raw HTML&quot; block.
           </p>
         </div>
       ) : (

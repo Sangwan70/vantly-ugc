@@ -3,6 +3,7 @@ import {
   getOrchestratorEngine,
   getTemporalConfig,
   getReconcilerConfig,
+  getPrimitiveReconcilerConfig,
 } from '../orchestrator/temporal/config.js';
 
 const ENV_KEYS = [
@@ -20,6 +21,9 @@ const ENV_KEYS = [
   'ORCHESTRATOR_RECONCILER_INTERVAL_MS',
   'ORCHESTRATOR_RECONCILER_THRESHOLD_MINUTES',
   'ORCHESTRATOR_RECONCILER_PROCESSING_THRESHOLD_MINUTES',
+  'ORCHESTRATOR_PRIMITIVE_RECONCILER_ENABLED',
+  'ORCHESTRATOR_PRIMITIVE_RECONCILER_INTERVAL_MS',
+  'ORCHESTRATOR_PRIMITIVE_RECONCILER_THRESHOLD_MINUTES',
 ] as const;
 
 const originalEnv = new Map<string, string | undefined>();
@@ -143,5 +147,42 @@ describe('temporal config', () => {
     expect(cfg.intervalMs).toBe(15_000);
     expect(cfg.thresholdMinutes).toBe(3);
     expect(cfg.processingThresholdMinutes).toBe(18);
+  });
+
+  it('primitive reconciler defaults: off for http engine, on for temporal engine', () => {
+    expect(getPrimitiveReconcilerConfig().enabled).toBe(false);
+    process.env.ORCHESTRATOR_ENGINE = 'temporal';
+    expect(getPrimitiveReconcilerConfig().enabled).toBe(true);
+  });
+
+  it('primitive reconciler respects explicit enable/disable overrides', () => {
+    process.env.ORCHESTRATOR_ENGINE = 'temporal';
+    process.env.ORCHESTRATOR_PRIMITIVE_RECONCILER_ENABLED = 'false';
+    expect(getPrimitiveReconcilerConfig().enabled).toBe(false);
+
+    process.env.ORCHESTRATOR_ENGINE = 'http';
+    process.env.ORCHESTRATOR_PRIMITIVE_RECONCILER_ENABLED = 'true';
+    expect(getPrimitiveReconcilerConfig().enabled).toBe(true);
+  });
+
+  it('primitive reconciler threshold defaults to workflowExecutionTimeout + 5 minutes, so it never races a still-legitimate run', () => {
+    const cfg = getPrimitiveReconcilerConfig();
+    expect(cfg.intervalMs).toBe(60_000);
+    // default workflowExecutionTimeoutMs is 20 min -> 20 + 5 = 25
+    expect(cfg.thresholdMinutes).toBe(25);
+  });
+
+  it('primitive reconciler threshold tracks a custom TEMPORAL_WORKFLOW_EXECUTION_TIMEOUT_MS', () => {
+    process.env.TEMPORAL_WORKFLOW_EXECUTION_TIMEOUT_MS = String(10 * 60_000);
+    const cfg = getPrimitiveReconcilerConfig();
+    expect(cfg.thresholdMinutes).toBe(15);
+  });
+
+  it('primitive reconciler honors interval and threshold env overrides', () => {
+    process.env.ORCHESTRATOR_PRIMITIVE_RECONCILER_INTERVAL_MS = '30000';
+    process.env.ORCHESTRATOR_PRIMITIVE_RECONCILER_THRESHOLD_MINUTES = '12';
+    const cfg = getPrimitiveReconcilerConfig();
+    expect(cfg.intervalMs).toBe(30_000);
+    expect(cfg.thresholdMinutes).toBe(12);
   });
 });

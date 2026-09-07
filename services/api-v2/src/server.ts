@@ -65,6 +65,7 @@ import {
 import { listSkillsRoute, runSkillRoute, getSkillRunRoute, cancelSkillRunRoute, quoteSkillRoute } from './routes/v1/skills.js';
 import { asyncHandler } from './lib/async-handler.js';
 import { getMyGalleryRoute } from './routes/v1/me-gallery.js';
+import { deleteRunRoute, purgeFailedRunsRoute } from './routes/v1/runs.js';
 import { listApiKeysRoute, createApiKeyRoute, revokeApiKeyRoute } from './routes/v1/me-api-keys.js';
 import { listSocialProvidersRoute, listSocialChannelsRoute, connectSocialRoute, deleteSocialChannelRoute, publishSocialRoute } from './routes/v1/social.js';
 import { videoConcurrencyGate } from './concurrency.js';
@@ -78,6 +79,7 @@ import {
   listChatsRoute,
   patchChatRoute,
   deleteChatRoute,
+  deleteMessageRoute,
   listProjectsRoute,
   createProjectRoute,
   patchProjectRoute,
@@ -660,6 +662,28 @@ function buildOpenApiSpec() {
       responses: { '200': { description: 'Recent generations' } },
     },
   };
+  paths['/v1/runs/{id}'] = {
+    delete: {
+      operationId: 'deleteRun',
+      summary: 'Hard-delete one run (R2 media + DB row); refuses while still in progress',
+      tags: ['vnext-skills'],
+      security: [{ bearerAuth: [] }],
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        { name: 'source', in: 'query', required: true, schema: { type: 'string', enum: ['legacy', 'vnext_skill', 'vnext_primitive'] } },
+      ],
+      responses: { '200': { description: 'Deleted' }, '404': { description: 'Not found' }, '409': { description: 'Run still in progress' } },
+    },
+  };
+  paths['/v1/runs/purge-failed'] = {
+    post: {
+      operationId: 'purgeFailedRuns',
+      summary: "Hard-delete every one of the caller's own runs currently in a failed state",
+      tags: ['vnext-skills'],
+      security: [{ bearerAuth: [] }],
+      responses: { '200': { description: 'Purge counts + R2 cleanup summary' } },
+    },
+  };
   paths['/v1/characters'] = {
     get: {
       operationId: 'listMyCharacters',
@@ -873,6 +897,8 @@ if (isPrimitivesRouteEnabled()) {
   app.get('/v1/skills/runs/:skill_run_id', readLimiter, authMiddleware, asyncHandler(getSkillRunRoute));
   app.post('/v1/skills/runs/:skill_run_id/cancel', generateLimiter, authMiddleware, asyncHandler(cancelSkillRunRoute));
   app.get('/v1/me/gallery', readLimiter, authMiddleware, getMyGalleryRoute);
+  app.delete('/v1/runs/:id', generateLimiter, authMiddleware, asyncHandler(deleteRunRoute));
+  app.post('/v1/runs/purge-failed', generateLimiter, authMiddleware, asyncHandler(purgeFailedRunsRoute));
   app.get('/v1/characters', readLimiter, authMiddleware, listMyCharactersRoute);
   app.get('/v1/me/api-keys', readLimiter, authMiddleware, listApiKeysRoute);
   app.post('/v1/me/api-keys', generateLimiter, authMiddleware, createApiKeyRoute);
@@ -902,6 +928,7 @@ if (isPrimitivesRouteEnabled()) {
   app.patch('/v1/agent/chats/:id', readLimiter, authMiddleware, patchChatRoute);
   app.delete('/v1/agent/chats/:id', readLimiter, authMiddleware, deleteChatRoute);
   app.post('/v1/agent/chats/:id/messages', readLimiter, authMiddleware, appendMessagesRoute);
+  app.delete('/v1/agent/chats/:id/messages/:clientMsgId', readLimiter, authMiddleware, deleteMessageRoute);
   // Projects (Phase 3) — rail groups + pinned context injected into the brain.
   // Same reasoning: record-keeping, not generation.
   app.get('/v1/agent/projects', readLimiter, authMiddleware, listProjectsRoute);

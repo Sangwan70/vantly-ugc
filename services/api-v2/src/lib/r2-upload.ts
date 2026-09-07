@@ -10,7 +10,7 @@
  * services/primitive-worker-vnext/src/client/r2.ts.
  */
 
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'node:crypto';
 import { request as httpsRequest } from 'node:https';
 import { lookup as dnsLookupCb } from 'node:dns';
@@ -84,6 +84,70 @@ function getClient(): S3Client {
 /** Returns the R2 public URL prefix (no trailing slash). */
 export function getR2PublicUrlPrefix(): string {
   return readEnv().publicUrl.replace(/\/+$/, '');
+}
+
+/**
+ * Extracts the R2 object key from a public R2 URL, or returns null if the
+ * URL does not start with our own R2_PUBLIC_URL prefix. Deletion must only
+ * ever touch objects we own — never a third-party URL that happened to be
+ * stored alongside ours (e.g. a provider's own CDN URL before we mirror it).
+ */
+function r2KeyFromUrl(url: string): string | null {
+  const prefix = getR2PublicUrlPrefix();
+  if (!url || !url.startsWith(prefix + '/')) return null;
+  const key = url.slice(prefix.length + 1);
+  return key.length > 0 ? key : null;
+}
+
+/**
+ * Hard-deletes the given R2 objects, identified by their public URLs.
+ * Any URL not under our own R2_PUBLIC_URL prefix is silently skipped
+ * (counted, not deleted) rather than passed to R2 — we must never attempt
+ * to delete storage we don't own. Dedupes keys and batches at S3's
+ * 1000-object-per-request DeleteObjects limit.
+ */
+export async function deleteR2ObjectsByUrl(
+  urls: Array<string | null | undefined>,
+): Promise<{ deleted: number; skipped: number }> {
+  const keys = new Set<string>();
+  let skipped = 0;
+  for (const url of urls) {
+    if (!url) continue;
+    const key = r2KeyFromUrl(url);
+    if (key) {
+      keys.add(key);
+    } else {
+      skipped++;
+    }
+  }
+  if (keys.size === 0) {
+    return { deleted: 0, skipped };
+  }
+  const env = readEnv();
+  const client = getClient();
+  const all = Array.from(keys);
+  let deleted = 0;
+  for (let i = 0; i < all.length; i += 1000) {
+    const batch = all.slice(i, i + 1000);
+    const result = await client.send(
+      new DeleteObjectsCommand({
+        Bucket: env.bucket,
+        Delete: {
+          Objects: batch.map((Key) => ({ Key })),
+          Quiet: true,
+        },
+      }),
+    );
+    const errors = result.Errors ?? [];
+    if (errors.length > 0) {
+      console.warn(
+        `[r2] deleteR2ObjectsByUrl: ${errors.length}/${batch.length} objects failed to delete: ` +
+          errors.map((e) => `${e.Key}: ${e.Code} ${e.Message}`).join('; '),
+      );
+    }
+    deleted += batch.length - errors.length;
+  }
+  return { deleted, skipped };
 }
 
 export interface UploadedImage {

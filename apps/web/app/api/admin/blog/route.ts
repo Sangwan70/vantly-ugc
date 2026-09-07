@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { isAdminEmail } from '@/lib/admin-allowlist';
-import { sanitizeStaticPageHtml } from '@/lib/content/sanitize-html';
+import { sanitizeBlogPostHtml } from '@/lib/content/sanitize-html';
 
 function adminClient() {
   return createAdminClient(
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     title,
     excerpt: typeof body.excerpt === 'string' ? body.excerpt.trim() : '',
     cover_image_url: typeof body.cover_image_url === 'string' ? body.cover_image_url.trim() || null : null,
-    content_html: sanitizeStaticPageHtml(typeof body.content_html === 'string' ? body.content_html : ''),
+    content_html: sanitizeBlogPostHtml(typeof body.content_html === 'string' ? body.content_html : ''),
     status,
     seo_description: typeof body.seo_description === 'string' ? body.seo_description.trim() || null : null,
     published_at: status === 'published' ? new Date().toISOString() : null,

@@ -52,6 +52,13 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
   // picker) — matched against the extracted prompt/primitive below, post-fetch,
   // since the three source tables don't share a single searchable text column.
   const q = req.query.q ? String(req.query.q).trim().toLowerCase() : null;
+  // Media-type filter (currently only 'video') — e.g. the admin blog
+  // editor's picker only wants generations it can embed as a <video>, not
+  // portraits/character sheets/stills, which don't make sense as the
+  // subject of a blog post generated from "the prompt of the video".
+  // Matched by file extension against media_url, same convention
+  // dashboard/social/page.tsx already uses to tell video vs image apart.
+  const mediaFilter = req.query.media ? String(req.query.media).trim().toLowerCase() : null;
   // We fetch limit+offset from each source so we have enough rows to
   // merge, sort, and slice the requested page.
   const fetchCap = Math.min(limit + offset, 200);
@@ -101,6 +108,8 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
     res.status(500).json({ error: 'primitive_runs_lookup_failed', detail: primErr.message });
     return;
   }
+
+  const VIDEO_EXT_RE = /\.(mp4|webm|mov)(\?|$|#)/i;
 
   const items: GalleryItem[] = [];
 
@@ -258,6 +267,9 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
     filtered = filtered.filter(
       (it) => (it.prompt ?? '').toLowerCase().includes(q) || (it.primitive ?? '').toLowerCase().includes(q),
     );
+  }
+  if (mediaFilter === 'video') {
+    filtered = filtered.filter((it) => !!it.media_url && VIDEO_EXT_RE.test(it.media_url));
   }
   if (filter === 'selfies') {
     filtered = items.filter(

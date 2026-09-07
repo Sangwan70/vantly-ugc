@@ -31,6 +31,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (skill) params.set('skill', skill);
   const q = req.nextUrl.searchParams.get('q');
   if (q) params.set('q', q);
+  const media = req.nextUrl.searchParams.get('media');
+  if (media) params.set('media', media);
   try {
     const upstream = await fetch(`${API_V2_URL}/v1/me/gallery?${params.toString()}`, {
       method: 'GET',

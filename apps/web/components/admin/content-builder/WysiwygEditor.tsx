@@ -87,7 +87,9 @@ export function WysiwygEditor({
           <p className="mt-1 text-[11px]" style={{ color: DARK.textMuted }}>
             Supports {'{{site_url}}'} and {'{{support_contact}}'} placeholders. Only tags/attributes
             lib/content/sanitize-html.ts allows survive an actual save (p, br, strong, em, a, ul/ol/li,
-            h2-h4, blockquote, code, pre, img, span -- plus a scoped inline-style property list).
+            h2-h4, blockquote, code, pre, img, span -- plus a scoped inline-style property list). Blog
+            posts additionally keep a video/source tag if one is present (e.g. from &ldquo;Generate
+            from a generated video&rdquo;); other pages don&apos;t.
           </p>
         </div>
       ) : (

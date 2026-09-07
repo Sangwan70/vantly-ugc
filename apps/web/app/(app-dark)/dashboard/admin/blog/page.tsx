@@ -13,7 +13,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Loader2, ShieldAlert, Save, Plus, Trash2, ImagePlus, X, Sparkles, Search } from 'lucide-react';
+import { Loader2, ShieldAlert, Save, Plus, Trash2, ImagePlus, X, Sparkles, Search, Video } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { isAdminEmailIn } from '@/lib/admin-allowlist';
 import { useVariables } from '@/components/variable-context';
@@ -144,7 +144,7 @@ export default function AdminBlogPage() {
     setGenError(null);
     const t = setTimeout(async () => {
       try {
-        const params = new URLSearchParams({ limit: '24' });
+        const params = new URLSearchParams({ limit: '24', media: 'video' });
         if (genQuery.trim()) params.set('q', genQuery.trim());
         const r = await fetch(`/api/v1/me/gallery?${params.toString()}`, { credentials: 'include' });
         const j = await r.json().catch(() => ({}));
@@ -426,7 +426,7 @@ export default function AdminBlogPage() {
                     className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px]"
                     style={{ background: 'rgba(167,139,250,0.12)', color: '#A78BFA', border: '1px solid rgba(167,139,250,0.3)' }}
                   >
-                    <Sparkles className="h-3.5 w-3.5" /> Generate from generated content
+                    <Sparkles className="h-3.5 w-3.5" /> Generate from a generated video
                   </button>
                 </div>
                 <WysiwygEditor value={form.content_html} onChange={(content_html) => setForm((f) => ({ ...f, content_html }))} />
@@ -447,14 +447,14 @@ export default function AdminBlogPage() {
           <div className="absolute inset-0" style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} onClick={() => drafting === null && setGenPickerOpen(false)} aria-hidden />
           <div className="relative flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl p-5" style={{ backgroundColor: '#191A22', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 30px 80px rgba(0,0,0,0.5)' }}>
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-base font-semibold" style={{ color: '#E9E9F0' }}>Generate from generated content</h2>
+              <h2 className="text-base font-semibold" style={{ color: '#E9E9F0' }}>Generate from a generated video</h2>
               <button type="button" onClick={() => setGenPickerOpen(false)} className="rounded-lg p-1.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
                 <X className="h-4 w-4" />
               </button>
             </div>
             <p className="mt-1 text-[12px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
-              Pick one of your generated videos or images. Its prompt, skill, and story details will be used to draft a
-              ~500-word post below &mdash; review and edit before saving.
+              Pick one of your generated videos. Its prompt, skill, and story details will be used to draft a ~500-word
+              post below, with the video embedded at the top &mdash; review and edit before saving.
             </p>
             <div className="relative mt-3">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: 'rgba(255,255,255,0.35)' }} />
@@ -462,7 +462,7 @@ export default function AdminBlogPage() {
                 autoFocus
                 value={genQuery}
                 onChange={(e) => setGenQuery(e.target.value)}
-                placeholder="Search your generations..."
+                placeholder="Search your generated videos..."
                 className="w-full rounded-lg py-1.5 pl-8 pr-2.5 text-[13px]"
                 style={INPUT}
               />
@@ -473,7 +473,7 @@ export default function AdminBlogPage() {
                 <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" style={{ color: 'rgba(255,255,255,0.5)' }} /></div>
               ) : !genItems || genItems.length === 0 ? (
                 <div className="rounded-xl px-4 py-8 text-center text-[13px]" style={{ ...CARD, color: 'rgba(255,255,255,0.4)' }}>
-                  {genQuery.trim() ? 'No generations match that search.' : 'No generations yet.'}
+                  {genQuery.trim() ? 'No videos match that search.' : 'No generated videos yet.'}
                 </div>
               ) : (
                 <ul className="space-y-1.5">
@@ -488,12 +488,16 @@ export default function AdminBlogPage() {
                           className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left disabled:opacity-50"
                           style={CARD}
                         >
-                          <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg" style={{ background: '#0F1015' }}>
-                            {item.thumbnail_url ? <img src={item.thumbnail_url} alt="" className="h-full w-full object-cover" /> : null}
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg" style={{ background: '#0F1015' }}>
+                            {item.thumbnail_url ? (
+                              <img src={item.thumbnail_url} alt="" className="h-full w-full object-cover" />
+                            ) : (
+                              <Video className="h-4 w-4" style={{ color: 'rgba(255,255,255,0.3)' }} />
+                            )}
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-[12.5px] font-medium" style={{ color: '#E9E9F0' }}>
-                              {item.prompt || item.primitive || 'Untitled generation'}
+                              {item.prompt || item.primitive || 'Untitled video'}
                             </div>
                             <div className="mt-0.5 text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
                               {item.primitive ?? item.source} &middot; {new Date(item.created_at).toLocaleDateString()}

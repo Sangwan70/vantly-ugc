@@ -103,7 +103,7 @@ const ALLOWED_TAGS = new Set([
 ]);
 
 /** Void elements never get a matching close tag. */
-const VOID_TAGS = new Set(['br', 'img']);
+const VOID_TAGS = new Set(['br', 'img', 'source']);
 
 const ATTRS_BY_TAG: Record<string, string[]> = {
   a: ['href', 'title', 'target', 'style'],
@@ -117,6 +117,29 @@ const ATTRS_BY_TAG: Record<string, string[]> = {
   img: ['src', 'alt', 'width', 'height', 'style'],
   span: ['style'],
   div: ['style'],
+};
+
+/**
+ * Blog posts (public.blog_posts.content_html) -- a SEPARATE, slightly
+ * wider allowlist used only by sanitizeBlogPostHtml below, never by
+ * sanitizeStaticPageHtml. Adds <video>/<source> so the Blog admin
+ * editor's "Generate from generated content" feature (see
+ * app/(app-dark)/dashboard/admin/blog/page.tsx and
+ * services/api-v2/.../blog-assist.ts) can embed the actual generated
+ * video inline in an AI-drafted post -- static pages have no equivalent
+ * feature and keep the narrower, video-free ALLOWED_TAGS/ATTRS_BY_TAG
+ * above unchanged.
+ */
+const BLOG_ALLOWED_TAGS = new Set([...ALLOWED_TAGS, 'video', 'source']);
+
+const BLOG_ATTRS_BY_TAG: Record<string, string[]> = {
+  ...ATTRS_BY_TAG,
+  // No `src` here beyond what filterAttributes special-cases below --
+  // width/height deliberately omitted (same reasoning as img's own
+  // comment above: a percentage can only survive through `style`, and a
+  // full-bleed embedded video always wants width:100% anyway).
+  video: ['controls', 'preload', 'playsinline', 'poster', 'style'],
+  source: ['src'],
 };
 
 /**
@@ -291,8 +314,16 @@ function filterAttributes(tagName: string, attrs: ParsedAttr[], attrsByTag: Reco
     let finalValue: string | null = value;
     if (tagName === 'a' && name === 'href') {
       finalValue = sanitizeHrefValue(value);
-    } else if (tagName === 'img' && name === 'src') {
+    } else if ((tagName === 'img' || tagName === 'source') && name === 'src') {
       finalValue = sanitizeSrcValue(value);
+    } else if (tagName === 'video' && name === 'poster') {
+      finalValue = sanitizeSrcValue(value);
+    } else if (tagName === 'video' && (name === 'controls' || name === 'playsinline')) {
+      // Boolean attributes -- always emit bare (controls="") regardless of
+      // whatever value, if any, was on the source tag.
+      finalValue = '';
+    } else if (tagName === 'video' && name === 'preload') {
+      finalValue = /^(none|metadata|auto)$/.test(value) ? value : null;
     } else if (name === 'style') {
       finalValue = sanitizeStyleValue(value);
     } else if (name === 'target') {
@@ -444,6 +475,17 @@ function sanitizeHtml(input: string, allowedTags: ReadonlySet<string>, attrsByTa
 
 export function sanitizeStaticPageHtml(input: string): string {
   return sanitizeHtml(input, ALLOWED_TAGS, ATTRS_BY_TAG);
+}
+
+/**
+ * Blog posts (public.blog_posts.content_html) -- see BLOG_ALLOWED_TAGS's
+ * doc comment above. Used by app/api/admin/blog/route.ts and
+ * .../[id]/route.ts on every create/update, same "sanitize again on the
+ * server regardless of what the client-side editor already produced"
+ * posture as sanitizeStaticPageHtml.
+ */
+export function sanitizeBlogPostHtml(input: string): string {
+  return sanitizeHtml(input, BLOG_ALLOWED_TAGS, BLOG_ATTRS_BY_TAG);
 }
 
 /**

@@ -167,8 +167,32 @@ function toServerMessage(m: Msg) {
 // answers re-render. tool_use names come from assistant blocks; results are parsed.
 function rebuildToolRuns(msgs: Msg[]): Record<string, ToolRun> {
   const names: Record<string, string> = {};
-  for (const m of msgs) if (Array.isArray(m.content)) for (const b of m.content) if (b.type === 'tool_use') names[b.id] = b.name;
+  const resolved = new Set<string>();
+  for (const m of msgs) {
+    if (!Array.isArray(m.content)) continue;
+    for (const b of m.content) {
+      if (b.type === 'tool_use') names[b.id] = b.name;
+      else if (b.type === 'tool_result') resolved.add(b.tool_use_id);
+    }
+  }
   const tr: Record<string, ToolRun> = {};
+  // Seed a 'running' entry for any UNRESOLVED tool_use that embedded its own
+  // run linkage in `input` (see [slug]/page.tsx's createRunAgentChat) — the
+  // only way to recover a run's id once the tab that launched it is gone,
+  // since a tool_result (the other place a run id normally lives) doesn't
+  // exist yet for it. Without this, resumeIfNeeded() below has no runId to
+  // resume polling with, and a run that outlives its tab (make_storybook
+  // alone runs 6-25 min) is orphaned forever — stuck showing "generating…"
+  // with nothing ever completing it.
+  for (const m of msgs) {
+    if (!Array.isArray(m.content)) continue;
+    for (const b of m.content) {
+      if (b.type !== 'tool_use' || resolved.has(b.id)) continue;
+      const runId = typeof b.input?.run_id === 'string' ? b.input.run_id : undefined;
+      if (!runId) continue;
+      tr[b.id] = { skill: b.name, status: 'running', runId, composed: b.input?.composed === true };
+    }
+  }
   for (const m of msgs) {
     if (!Array.isArray(m.content)) continue;
     for (const b of m.content) {
@@ -626,6 +650,13 @@ export default function AgentPage() {
     if (!tu) return;
     const run = tr[tu.id];
     if (!run?.runId) return;
+    // A run launched directly from a skill page (see [slug]/page.tsx's
+    // createRunAgentChat) has no brain conversation behind it — just this
+    // one run. Only a brain-driven tool_use should hand its result back
+    // to driveLoop() so the brain can keep reasoning/acting; doing that
+    // for a standalone run would incorrectly invoke the brain on a chat
+    // it never started.
+    const standalone = tu.input?.standalone === true;
     cancelRef.current = false;
     abortRef.current = new AbortController();
     setBusy(true); setError(null);
@@ -636,7 +667,7 @@ export default function AgentPage() {
       const convo: Msg[] = [...msgs, trMsg];
       setMessages(convo);
       persist([trMsg]);
-      await driveLoop(convo);
+      if (!standalone) await driveLoop(convo);
     } catch (e) { if (!cancelRef.current) setError((e as Error).message); }
     finally { setBusy(false); }
   }

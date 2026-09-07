@@ -48,12 +48,27 @@ const TERMINAL = new Set(['succeeded', 'completed', 'success', 'failed', 'cancel
 // just won't see it listed on the agent page. Errors are swallowed rather
 // than surfaced, since this is a background convenience, not the primary
 // action the user asked for.
-async function createRunAgentChat(skill: SkillEntry, toolUseId: string): Promise<string | null> {
+async function createRunAgentChat(skill: SkillEntry, toolUseId: string, run: RunResult): Promise<string | null> {
   try {
     const title = `Run ${skill.name} — ${new Date().toLocaleString()}`;
+    // Embeds the run's real id (+ composed-ness) directly in the tool_use
+    // block's own `input` — the one thing this message carries that
+    // survives regardless of whether THIS tab is still open. Without it,
+    // a run that outlives the tab (make_storybook alone runs 6-25 min,
+    // per _meta.ts) has no way to be resumed later: the agent page's
+    // rebuildToolRuns()/resumeIfNeeded() previously only ever learned a
+    // run's id from its tool_result message, which is exactly the
+    // message this page never gets to post if the user navigates away
+    // first — the run would sit orphaned forever, "generating…" with no
+    // way to finish. `standalone: true` tells the agent page not to hand
+    // the resumed result to the chat brain (driveLoop) once it resumes —
+    // this chat has no brain conversation, only this one run.
     const firstMessage = {
       role: 'assistant' as const,
-      content: [{ type: 'tool_use', id: toolUseId, name: skill.slug, input: {} }],
+      content: [{
+        type: 'tool_use', id: toolUseId, name: skill.slug,
+        input: { run_id: run.id, composed: run.composed, standalone: true },
+      }],
       client_msg_id: toolUseId,
     };
     const r = await fetch('/api/v1/agent/chats', {
@@ -232,7 +247,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ slug: st
             setActiveRun(r);
             void (async () => {
               const toolUseId = (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`);
-              const chatId = await createRunAgentChat(skill, toolUseId);
+              const chatId = await createRunAgentChat(skill, toolUseId, r);
               if (chatId) agentLinkRef.current[r.id] = { chatId, toolUseId };
             })();
           }}

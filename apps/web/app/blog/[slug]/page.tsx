@@ -40,7 +40,7 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
 
   return (
     <MarketingShell>
-      <article className="mx-auto w-full max-w-2xl px-6 pb-24 pt-20 sm:pt-28">
+      <article className="mx-auto w-full max-w-6xl px-6 pb-24 pt-20 sm:pt-28">
         <Link href="/blog" className="text-sm transition-opacity hover:opacity-80" style={{ color: 'var(--cryptix-text-muted)' }}>
           &larr; Back to blog
         </Link>

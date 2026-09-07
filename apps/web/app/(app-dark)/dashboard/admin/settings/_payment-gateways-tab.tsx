@@ -11,7 +11,7 @@ type GatewayId = 'stripe' | 'razorpay' | 'paypal';
 type CredentialSource = 'database' | 'env' | 'none';
 
 interface GatewaySettings {
-  active_gateway: GatewayId;
+  active_gateway: GatewayId | null;
   updated_at: string | null;
   stripe_secret_key_set: boolean;
   stripe_secret_key_source: CredentialSource;
@@ -81,7 +81,7 @@ export function PaymentGatewaysTab() {
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
       const s = j.settings as GatewaySettings;
       setSettings(s);
-      setActiveGateway(s.active_gateway);
+      setActiveGateway(s.active_gateway ?? 'stripe');
       setRazorpayKeyId(s.razorpay_key_id ?? '');
       setPaypalClientId(s.paypal_client_id ?? '');
       setPaypalMode(s.paypal_mode ?? 'live');

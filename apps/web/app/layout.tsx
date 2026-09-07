@@ -4,6 +4,15 @@ import type { Metadata } from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { VariableContextComponent } from '@/components/variable-context';
+import {
+  getPaymentGatewaySettingsRow,
+  resolveActiveGateway,
+  resolveStripeCredentials,
+  resolveRazorpayCredentials,
+  resolvePaypalCredentials,
+  type GatewayId,
+  type PaymentGatewaySettingsRow,
+} from '@/lib/billing/gateway-settings';
 import './globals.css';
 
 /**
@@ -30,15 +39,67 @@ export const metadata: Metadata = {
 };
 
 /**
- * Mirrors supabase/functions/_shared/razorpay.ts's getActivePaymentGateway()
- * exactly (same default, same normalization) so the UI's displayed
- * currency/billing-enabled state never disagrees with what checkout
- * actually does. Kept as a plain, non-NEXT_PUBLIC var for the same
- * build-time-inlining reason as SUPABASE_PUBLIC_URL in middleware.ts.
+ * DB-first, env-fallback gateway resolution -- mirrors
+ * services/api-v2/src/lib/billing/gateway-settings.ts's resolveActiveGateway
+ * (same table, same precedence) so the UI's displayed gateway/currency/
+ * billing-enabled state never disagrees with what live checkout actually
+ * uses. Originally this only read the PAYMENT_GATEWAY env var (matching the
+ * old, now-unreachable Supabase Edge Functions' own getActivePaymentGateway)
+ * -- that env-only path is kept as getActivePaymentGatewayFromEnv() below,
+ * used as a fallback if the payment_gateway_settings table can't be read
+ * (e.g. its migration hasn't been applied yet), same defensive pattern as
+ * getCurrencyDisplay's own try/catch below.
  */
-function getActivePaymentGateway(): 'stripe' | 'razorpay' {
+function getActivePaymentGatewayFromEnv(): GatewayId {
   const raw = (process.env.PAYMENT_GATEWAY ?? 'razorpay').trim().toLowerCase();
   return raw === 'stripe' ? 'stripe' : 'razorpay';
+}
+
+/**
+ * Cached the same way as the INR rate below (this layout wraps the whole
+ * app, so re-querying on every request would add a DB round-trip to every
+ * page load; the admin rarely changes this, and this container is
+ * long-running so a module-level cache persists usefully across requests).
+ */
+const GATEWAY_SETTINGS_CACHE_TTL_MS = 5 * 60 * 1000;
+let gatewaySettingsCache: { row: PaymentGatewaySettingsRow; fetchedAt: number } | null = null;
+
+async function getPaymentGatewaySettingsRowCached(): Promise<PaymentGatewaySettingsRow | null> {
+  if (gatewaySettingsCache && Date.now() - gatewaySettingsCache.fetchedAt < GATEWAY_SETTINGS_CACHE_TTL_MS) {
+    return gatewaySettingsCache.row;
+  }
+  try {
+    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !serviceRoleKey) throw new Error('Missing SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY');
+    const admin = createAdminClient(url, serviceRoleKey, { auth: { persistSession: false } });
+    const row = await getPaymentGatewaySettingsRow(admin);
+    gatewaySettingsCache = { row, fetchedAt: Date.now() };
+    return row;
+  } catch (err) {
+    console.error('Failed to load payment_gateway_settings, falling back to PAYMENT_GATEWAY env var:', err);
+    return null;
+  }
+}
+
+/** Whether the resolved gateway is actually configured with usable credentials (DB-first, env-fallback), mirroring resolveActiveGatewayAndCredentials's per-gateway checks on the api-v2 side. */
+function resolveBillingEnabled(gateway: GatewayId, row: PaymentGatewaySettingsRow | null): boolean {
+  if (gateway === 'razorpay') {
+    if (row) {
+      const creds = resolveRazorpayCredentials(row);
+      return Boolean(creds.keyId && creds.keySecret);
+    }
+    return Boolean(process.env.RAZORPAY_API_KEY && process.env.RAZORPAY_API_SECRET);
+  }
+  if (gateway === 'paypal') {
+    if (row) {
+      const creds = resolvePaypalCredentials(row);
+      return Boolean(creds.clientId && creds.clientSecret);
+    }
+    return Boolean(process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET);
+  }
+  if (row) return Boolean(resolveStripeCredentials(row).secretKey);
+  return Boolean(process.env.STRIPE_SECRET_KEY);
 }
 
 /**
@@ -59,7 +120,7 @@ const INR_RATE_CACHE_TTL_MS = 5 * 60 * 1000;
 let inrRateCache: { symbol: string; rate: number; fetchedAt: number } | null = null;
 
 async function getCurrencyDisplay(
-  gateway: 'stripe' | 'razorpay',
+  gateway: GatewayId,
 ): Promise<{ currencyCode: string; currencySymbol: string; inrToUsdRate: number | null }> {
   if (gateway !== 'razorpay') {
     return { currencyCode: 'USD', currencySymbol: '$', inrToUsdRate: null };
@@ -105,12 +166,12 @@ async function getCurrencyDisplay(
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const paymentGateway = getActivePaymentGateway();
+  const gatewaySettingsRow = await getPaymentGatewaySettingsRowCached();
+  const paymentGateway: GatewayId = gatewaySettingsRow
+    ? resolveActiveGateway(gatewaySettingsRow)
+    : getActivePaymentGatewayFromEnv();
   const { currencyCode, currencySymbol, inrToUsdRate } = await getCurrencyDisplay(paymentGateway);
-  const billingEnabled =
-    paymentGateway === 'razorpay'
-      ? Boolean(process.env.RAZORPAY_API_KEY && process.env.RAZORPAY_API_SECRET)
-      : Boolean(process.env.STRIPE_SECRET_KEY);
+  const billingEnabled = resolveBillingEnabled(paymentGateway, gatewaySettingsRow);
 
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>

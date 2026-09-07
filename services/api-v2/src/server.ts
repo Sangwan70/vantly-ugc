@@ -73,6 +73,14 @@ import { agentRoute } from './routes/v1/agent.js';
 import { draftScriptRoute } from './routes/v1/assist.js';
 import { draftBlogPostRoute } from './routes/v1/blog-assist.js';
 import { creditsCheckRoute } from './routes/v1/credits-check.js';
+import { checkoutRoute } from './routes/v1/billing/checkout.js';
+import { cancelSubscriptionRoute } from './routes/v1/billing/cancel-subscription.js';
+import { stripePortalRoute } from './routes/v1/billing/stripe-portal.js';
+import { billingHistoryRoute } from './routes/v1/billing/billing-history.js';
+import { autoTopupGetConfigRoute, autoTopupPostRoute, autoTopupProcessRoute } from './routes/v1/billing/auto-topup.js';
+import { webhookStripeRoute } from './routes/v1/billing/webhook-stripe.js';
+import { webhookRazorpayRoute } from './routes/v1/billing/webhook-razorpay.js';
+import { webhookPaypalRoute } from './routes/v1/billing/webhook-paypal.js';
 import {
   createChatRoute,
   appendMessagesRoute,
@@ -136,7 +144,21 @@ app.use((req, res, next) => {
 
 // Bumped from default 100kb to support base64 image uploads on
 // /v1/skills/* routes (e.g. portrait_image_base64 for character sheets).
-app.use(express.json({ limit: '12mb' }));
+//
+// `verify` stashes the exact raw request-body bytes onto req.rawBody for
+// every request (cheap -- just a Buffer reference from the bytes express.json
+// already read to parse), because the Stripe/RazorPay/PayPal webhook routes
+// (routes/v1/billing/webhook-stripe.ts, webhook-razorpay.ts, webhook-paypal.ts)
+// MUST verify their signature over the exact bytes the provider sent, not a
+// re-serialized JSON.parse(...) round-trip of it (whitespace/key-order
+// differences would break the signature). Every other route ignores
+// req.rawBody and is unaffected.
+app.use(express.json({
+  limit: '12mb',
+  verify: (req, _res, buf) => {
+    (req as express.Request & { rawBody?: Buffer }).rawBody = buf;
+  },
+}));
 
 // OAuth 2.1 for the MCP connector — serves /.well-known/*, /authorize, /token
 // and /register (dynamic client registration), proxied to Supabase's OAuth
@@ -837,6 +859,25 @@ app.get('/v1/integrations/vantly/accounts', readLimiter, authMiddleware, vantlyL
 // See routes/v1/credits-check.ts's file comment for why this exists as a plain
 // route instead of the Supabase Edge Function of the same name.
 app.get('/v1/credits-check', readLimiter, authMiddleware, creditsCheckRoute);
+
+// ── Billing (ported from Supabase Edge Functions -- see
+// routes/v1/billing/checkout.ts's file comment for why: this self-hosted
+// gateway has no Edge Functions runtime, only /auth/v1, /rest/v1,
+// /storage/v1 proxying) ──────────────────────────────────────────────────
+app.post('/v1/billing/checkout', generateLimiter, authMiddleware, asyncHandler(checkoutRoute));
+app.post('/v1/billing/cancel-subscription', generateLimiter, authMiddleware, asyncHandler(cancelSubscriptionRoute));
+app.post('/v1/billing/stripe-portal', generateLimiter, authMiddleware, asyncHandler(stripePortalRoute));
+app.get('/v1/billing/billing-history', readLimiter, authMiddleware, asyncHandler(billingHistoryRoute));
+app.get('/v1/billing/auto-topup', readLimiter, authMiddleware, asyncHandler(autoTopupGetConfigRoute));
+app.post('/v1/billing/auto-topup', generateLimiter, authMiddleware, asyncHandler(autoTopupPostRoute));
+// Service-role only (no authMiddleware — see auto-topup.ts's file comment).
+app.post('/v1/billing/auto-topup/process', asyncHandler(autoTopupProcessRoute));
+// Called directly by Stripe/RazorPay's servers -- no authMiddleware (the
+// webhook signature IS the auth), no per-user rate limiter (no user yet),
+// but still behind the global ipFloodLimiter like every route.
+app.post('/v1/billing/webhooks/stripe', asyncHandler(webhookStripeRoute));
+app.post('/v1/billing/webhooks/razorpay', asyncHandler(webhookRazorpayRoute));
+app.post('/v1/billing/webhooks/paypal', asyncHandler(webhookPaypalRoute));
 
 // Schedules — recurring auto-publish jobs (powers /jobs dashboard + /integrations/vantly UI).
 app.get('/v1/schedules',           readLimiter,     authMiddleware, listSchedulesRoute);

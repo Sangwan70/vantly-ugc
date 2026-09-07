@@ -53,14 +53,15 @@ export interface VariableContextInterface {
    */
   adminEmails: string;
   /**
-   * Which payment gateway checkout/webhooks are actually using (mirrors
-   * the Supabase Edge Function secret of the same name — see
-   * supabase/functions/_shared/razorpay.ts's getActivePaymentGateway).
+   * Which payment gateway checkout/webhooks are actually using — resolved
+   * DB-first (payment_gateway_settings.active_gateway, set by an admin in
+   * Settings -> Payment Gateways) with env-fallback to PAYMENT_GATEWAY, see
+   * app/layout.tsx and lib/billing/gateway-settings.ts's resolveActiveGateway.
    * Drives which currency symbol/amounts the UI displays. Defaults to
-   * 'razorpay' when PAYMENT_GATEWAY is unset, same as the Edge Functions.
+   * 'razorpay' when neither is set, same as before the admin tab existed.
    */
-  paymentGateway: 'stripe' | 'razorpay';
-  /** ISO 4217 code for the currency prices are displayed in: 'INR' when paymentGateway is 'razorpay', else 'USD'. */
+  paymentGateway: 'stripe' | 'razorpay' | 'paypal';
+  /** ISO 4217 code for the currency prices are displayed in: 'INR' when paymentGateway is 'razorpay', else 'USD' (both 'stripe' and 'paypal' bill in USD). */
   currencyCode: string;
   /** Symbol for currencyCode ('₹' or '$'). */
   currencySymbol: string;
@@ -68,12 +69,13 @@ export interface VariableContextInterface {
    * INR-per-USD rate used to convert the app's USD-cent-denominated base
    * prices into an estimated INR display amount, read from the `currencies`
    * table's INR row (Settings -> Currency) at request time. `null` when
-   * paymentGateway is 'stripe' (no conversion needed). This is a DISPLAY
-   * ESTIMATE only — the amount RazorPay actually charges for a subscription
-   * tier is whatever the RazorPay Plan (RAZORPAY_PLAN_STARTER etc.) was
-   * created with, which this rate does not control and can drift from if
-   * not kept in sync. PAYG top-ups don't have this drift risk: checkout
-   * computes the real charged paise amount from this SAME rate at request time.
+   * paymentGateway is 'stripe' or 'paypal' (no conversion needed — both bill
+   * in USD). This is a DISPLAY ESTIMATE only — the amount RazorPay actually
+   * charges for a subscription tier is whatever the RazorPay Plan
+   * (RAZORPAY_PLAN_STARTER etc.) was created with, which this rate does not
+   * control and can drift from if not kept in sync. PAYG top-ups don't have
+   * this drift risk: checkout computes the real charged paise amount from
+   * this SAME rate at request time.
    */
   inrToUsdRate: number | null;
 }

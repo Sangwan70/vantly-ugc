@@ -10,7 +10,12 @@
  * redirects; a RazorPay response (`razorpay_subscription_id` or
  * `razorpay_order_id`) instead lazy-loads RazorPay's Checkout.js and opens
  * its modal -- nothing else in the calling page needs to know which
- * gateway is active.
+ * gateway is active. PayPal (`approval_url`, from either the Subscriptions
+ * or Orders API) is redirect-based like Stripe -- no SDK/modal needed, the
+ * browser just navigates there and PayPal redirects back to our
+ * return_url/cancel_url (see services/api-v2/src/routes/v1/billing/checkout.ts's
+ * createPaypalSubscriptionCheckoutSession/createPaypalPaygOrder) once the
+ * buyer approves or cancels.
  *
  * SPDX-License-Identifier: Apache-2.0
  * Copyright 2026 Vantly UGC contributors
@@ -21,11 +26,15 @@ export interface CheckoutResponse {
   client_secret?: string;
   session_id?: string;
   upgraded?: boolean;
-  payment_gateway?: "stripe" | "razorpay";
+  payment_gateway?: "stripe" | "razorpay" | "paypal";
   razorpay_subscription_id?: string;
   razorpay_order_id?: string;
   razorpay_key_id?: string;
   amount_paise?: number;
+  /** PayPal approval URL (Subscriptions or Orders API) -- redirect-based, same handling as checkout_url. */
+  approval_url?: string;
+  paypal_subscription_id?: string;
+  paypal_order_id?: string;
   credits?: number;
   plan_tier?: string;
   error?: string;
@@ -119,6 +128,11 @@ export async function openCheckoutResponse(
 
   if (data.checkout_url) {
     window.location.href = data.checkout_url;
+    return true;
+  }
+
+  if (data.approval_url) {
+    window.location.href = data.approval_url;
     return true;
   }
 

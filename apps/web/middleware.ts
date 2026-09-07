@@ -120,6 +120,41 @@ const SUBSCRIPTION_REDIRECT = process.env.SUBSCRIPTION_REDIRECT ?? '/onboarding/
  */
 const SUPABASE_PUBLIC_URL = process.env.SUPABASE_PUBLIC_URL ?? '';
 
+/**
+ * The public-facing host, used for every `host === ...` comparison below
+ * (the marketing/app HOST_SPLIT check and the app-host homepage redirect).
+ *
+ * Same reverse-proxy quirk lib/request-origin.ts's getPublicOrigin()
+ * documents: this deployment's WHM/cPanel .htaccess proxies via
+ * mod_rewrite's [P] flag, which does not forward the original Host header
+ * (ProxyPreserveHost can't be set from .htaccess). Without this fix,
+ * request.headers.get('host') comes back as whatever address the
+ * container is actually bound to internally, never the real public
+ * domain -- so every `host === APP_HOST` check below silently never
+ * matches in production. Concretely, this is why a logged-out visitor
+ * hitting `/` on the app host was falling through to the marketing
+ * homepage (with a stray `?code=...` left over from an OAuth redirect)
+ * instead of being sent to /login: the branch that's supposed to catch
+ * that case never fired.
+ *
+ * Prefer APP_PUBLIC_URL's own host (the same env var getPublicOrigin()
+ * already relies on for this exact reason) when it's set; fall back to
+ * the raw header only when it isn't, so local dev without it configured
+ * is unaffected.
+ */
+function getPublicHost(request: NextRequest): string {
+  const configured = process.env.APP_PUBLIC_URL?.trim();
+  if (configured) {
+    try {
+      return new URL(configured).host.toLowerCase();
+    } catch {
+      // Malformed APP_PUBLIC_URL -- fall through to the raw header below
+      // rather than throwing and taking down every request.
+    }
+  }
+  return (request.headers.get('host') || '').toLowerCase();
+}
+
 /** Security headers applied to every response. */
 const SECURITY_HEADERS: Record<string, string> = {
   'Content-Security-Policy': [
@@ -206,7 +241,7 @@ function applySecurityHeaders(response: NextResponse): NextResponse {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const host = (request.headers.get('host') || '').toLowerCase();
+  const host = getPublicHost(request);
 
   // Hostname split: marketing on the apex, product on app.*. Apply
   // this BEFORE auth so the redirect is fast and identical for every

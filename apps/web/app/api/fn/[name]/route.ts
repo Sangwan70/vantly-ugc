@@ -3,23 +3,41 @@ import { createClient } from '@/lib/supabase/server';
 
 // This self-hosted stack's gateway (supabase/self-host-gateway/nginx.conf)
 // only proxies /auth/v1, /rest/v1, /storage/v1 — there is no Edge Functions
-// runtime behind it, so supabase.functions.invoke('credits-check') below
-// always 404'd here. api-v2 has its own reimplementation of this one
-// function as a plain route (services/api-v2/src/routes/v1/credits-check.ts)
-// — proxy straight to that instead for this name only. Every other function
-// name still goes through the normal Edge Function invoke path below.
+// runtime behind it, so supabase.functions.invoke(...) below always 404'd
+// for every one of these names. api-v2 has its own reimplementation of each
+// as a plain route (services/api-v2/src/routes/v1/credits-check.ts and
+// services/api-v2/src/routes/v1/billing/*.ts) — proxy straight to those
+// instead. Every other function name still goes through the normal Edge
+// Function invoke path below (this self-hosted deployment simply doesn't
+// use those other functions today).
 const API_V2_URL = process.env.API_V2_URL?.replace(/\/+$/, '') ?? 'https://api.vantly-ugc.com';
 
-async function proxyCreditsCheckToApiV2(): Promise<NextResponse> {
+// Map of Edge-Function name -> its api-v2 path, for every name this
+// self-hosted deployment has ported off Edge Functions so far.
+const API_V2_ROUTES: Record<string, string> = {
+  'credits-check': '/v1/credits-check',
+  checkout: '/v1/billing/checkout',
+  'cancel-subscription': '/v1/billing/cancel-subscription',
+  'stripe-portal': '/v1/billing/stripe-portal',
+  'billing-history': '/v1/billing/billing-history',
+  'auto-topup': '/v1/billing/auto-topup',
+};
+
+async function proxyToApiV2(name: string, method: 'GET' | 'POST', body?: unknown): Promise<NextResponse> {
+  const path = API_V2_ROUTES[name];
   const supabase = await createClient();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
   try {
-    const upstream = await fetch(`${API_V2_URL}/v1/credits-check`, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${session.access_token}` },
+    const upstream = await fetch(`${API_V2_URL}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: method === 'POST' ? JSON.stringify(body ?? {}) : undefined,
     });
     const text = await upstream.text();
     let data: unknown;
@@ -126,8 +144,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ name
   if (!ALLOWED_FUNCTIONS.has(name)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
-  if (name === 'credits-check') {
-    return proxyCreditsCheckToApiV2();
+  if (name in API_V2_ROUTES) {
+    return proxyToApiV2(name, 'GET');
   }
   try {
     const supabase = await createClient();
@@ -156,8 +174,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ nam
   if (!ALLOWED_FUNCTIONS.has(name)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
+  const body = await req.json().catch(() => ({}));
+  if (name in API_V2_ROUTES) {
+    return proxyToApiV2(name, 'POST', body);
+  }
   try {
-    const body = await req.json().catch(() => ({}));
     const supabase = await createClient();
     if (AUTH_REQUIRED_FUNCTIONS.has(name)) {
       const { data: { user } } = await supabase.auth.getUser();

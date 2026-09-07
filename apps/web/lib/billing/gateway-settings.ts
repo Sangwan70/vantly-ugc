@@ -23,7 +23,7 @@ export type CredentialSource = 'database' | 'env' | 'none';
 
 export interface PaymentGatewaySettingsRow {
   id: string;
-  active_gateway: GatewayId;
+  active_gateway: GatewayId | null;
   stripe_secret_key: string | null;
   razorpay_key_id: string | null;
   razorpay_key_secret: string | null;
@@ -35,7 +35,7 @@ export interface PaymentGatewaySettingsRow {
 
 const DEFAULT_ROW: PaymentGatewaySettingsRow = {
   id: 'default',
-  active_gateway: 'stripe',
+  active_gateway: null,
   stripe_secret_key: null,
   razorpay_key_id: null,
   razorpay_key_secret: null,
@@ -55,6 +55,22 @@ export async function getPaymentGatewaySettingsRow(
     .maybeSingle();
   if (error) throw new Error(error.message);
   return { ...DEFAULT_ROW, ...(data as Partial<PaymentGatewaySettingsRow> | null ?? {}) };
+}
+
+/**
+ * Resolve which gateway the ADMIN-FACING surfaces (billing/currency display
+ * in app/layout.tsx, Settings -> Payment Gateways) should treat as active.
+ * DB-first, env-fallback -- mirrors
+ * services/api-v2/src/lib/billing/gateway-settings.ts's resolveActiveGateway
+ * exactly (same precedence, same default) so the UI never disagrees with
+ * what live checkout actually uses.
+ */
+export function resolveActiveGateway(row: PaymentGatewaySettingsRow): GatewayId {
+  const dbChoice = row.active_gateway;
+  if (dbChoice === 'stripe' || dbChoice === 'razorpay' || dbChoice === 'paypal') return dbChoice;
+
+  const raw = (process.env.PAYMENT_GATEWAY ?? 'razorpay').trim().toLowerCase();
+  return raw === 'stripe' ? 'stripe' : 'razorpay';
 }
 
 export interface ResolvedStripeCredentials {

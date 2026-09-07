@@ -26,9 +26,15 @@
 CREATE TABLE IF NOT EXISTS public.payment_gateway_settings (
   id                     text PRIMARY KEY DEFAULT 'default',
   -- Which gateway the admin Payment Gateways tab currently has selected.
-  -- Informational for now (see comment above) -- does not itself switch
-  -- live checkout traffic.
-  active_gateway         text NOT NULL DEFAULT 'stripe' CHECK (active_gateway IN ('stripe', 'razorpay', 'paypal')),
+  -- NULL (the default until an admin explicitly saves this tab) means "not
+  -- yet configured" -- live checkout (services/api-v2/src/lib/billing/
+  -- gateway-settings.ts) falls back to the legacy PAYMENT_GATEWAY env var
+  -- (defaulting to 'razorpay') in that case, so a fresh deployment's
+  -- checkout behavior is unchanged until an admin actively picks one here.
+  -- Deliberately NOT defaulted to a real gateway value -- that would
+  -- silently flip which gateway live checkout uses the moment this
+  -- migration runs, before any admin has looked at the new tab.
+  active_gateway         text CHECK (active_gateway IN ('stripe', 'razorpay', 'paypal')),
   stripe_secret_key      text,                                  -- overrides STRIPE_SECRET_KEY when set
   razorpay_key_id        text,                                  -- overrides RAZORPAY_API_KEY when set
   razorpay_key_secret    text,                                  -- overrides RAZORPAY_API_SECRET when set

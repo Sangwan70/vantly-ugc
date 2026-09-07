@@ -381,7 +381,7 @@ export default function BillingPage() {
             style={{ borderColor: 'rgba(255,255,255,0.06)' }}
           >
             <span className="text-xs" style={{ color: 'rgba(255,255,255,0.5)' }}>
-              Payment via {paymentGateway === 'razorpay' ? 'Razorpay' : 'Stripe'} • Secure checkout
+              Payment via {paymentGateway === 'razorpay' ? 'Razorpay' : paymentGateway === 'paypal' ? 'PayPal' : 'Stripe'} • Secure checkout
             </span>
             <button
               type="button"

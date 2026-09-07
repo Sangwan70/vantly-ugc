@@ -48,6 +48,10 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
   const filter = String(req.query.filter ?? 'all').toLowerCase();
   const primitiveFilter = req.query.primitive ? String(req.query.primitive) : null;
   const skillFilter = req.query.skill ? String(req.query.skill) : null;
+  // Free-text AJAX search (e.g. the admin blog editor's "pick a generation"
+  // picker) — matched against the extracted prompt/primitive below, post-fetch,
+  // since the three source tables don't share a single searchable text column.
+  const q = req.query.q ? String(req.query.q).trim().toLowerCase() : null;
   // We fetch limit+offset from each source so we have enough rows to
   // merge, sort, and slice the requested page.
   const fetchCap = Math.min(limit + offset, 200);
@@ -250,6 +254,11 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
 
   // Filter by tab — "selfies" keeps only video-output sources.
   let filtered = items;
+  if (q) {
+    filtered = filtered.filter(
+      (it) => (it.prompt ?? '').toLowerCase().includes(q) || (it.primitive ?? '').toLowerCase().includes(q),
+    );
+  }
   if (filter === 'selfies') {
     filtered = items.filter(
       (it) =>

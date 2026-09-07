@@ -13,7 +13,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Loader2, ShieldAlert, Save, Plus, Trash2, ImagePlus, X } from 'lucide-react';
+import { Loader2, ShieldAlert, Save, Plus, Trash2, ImagePlus, X, Sparkles, Search } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { isAdminEmailIn } from '@/lib/admin-allowlist';
 import { useVariables } from '@/components/variable-context';
@@ -36,6 +36,18 @@ interface PostRow extends PostListItem {
   content_html: string;
   seo_description: string | null;
   created_at: string;
+}
+
+interface GalleryPickItem {
+  id: string;
+  run_id: string;
+  source: 'legacy' | 'vnext_primitive' | 'vnext_skill';
+  primitive: string | null;
+  status: string;
+  created_at: string;
+  media_url: string | null;
+  thumbnail_url: string | null;
+  prompt: string | null;
 }
 
 const CARD = { backgroundColor: '#14151F', border: '1px solid rgba(255,255,255,0.06)' } as const;
@@ -97,6 +109,12 @@ export default function AdminBlogPage() {
   const [deleteTarget, setDeleteTarget] = useState<PostListItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [genPickerOpen, setGenPickerOpen] = useState(false);
+  const [genQuery, setGenQuery] = useState('');
+  const [genItems, setGenItems] = useState<GalleryPickItem[] | null>(null);
+  const [genLoading, setGenLoading] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+  const [drafting, setDrafting] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -116,6 +134,66 @@ export default function AdminBlogPage() {
     } catch (e) { setError((e as Error).message); setPosts([]); }
   }, []);
   useEffect(() => { if (isAdmin) void load(); }, [isAdmin, load]);
+
+  // AJAX search against the merged gallery feed (legacy + vNext), debounced
+  // so it doesn't fire a request per keystroke.
+  useEffect(() => {
+    if (!genPickerOpen) return;
+    let cancelled = false;
+    setGenLoading(true);
+    setGenError(null);
+    const t = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ limit: '24' });
+        if (genQuery.trim()) params.set('q', genQuery.trim());
+        const r = await fetch(`/api/v1/me/gallery?${params.toString()}`, { credentials: 'include' });
+        const j = await r.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!r.ok) { setGenError(j?.error?.message ?? `Failed (${r.status})`); setGenItems([]); return; }
+        setGenItems(j.items ?? []);
+      } catch (e) {
+        if (!cancelled) { setGenError((e as Error).message); setGenItems([]); }
+      } finally {
+        if (!cancelled) setGenLoading(false);
+      }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [genPickerOpen, genQuery]);
+
+  function openGenPicker() {
+    setGenQuery('');
+    setGenItems(null);
+    setGenError(null);
+    setGenPickerOpen(true);
+  }
+
+  async function selectGeneration(item: GalleryPickItem) {
+    setDrafting(item.run_id);
+    setGenError(null);
+    try {
+      const r = await fetch('/api/v1/assist/draft-blog-post', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: item.source, run_id: item.run_id }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setGenError(j?.error?.message ?? `Failed (${r.status})`); return; }
+      const title: string = j.title ?? '';
+      setForm((f) => ({
+        ...f,
+        title: title || f.title,
+        slug: slugTouched || !title ? f.slug : slugify(title),
+        excerpt: j.excerpt ?? f.excerpt,
+        content_html: j.content_html ?? f.content_html,
+      }));
+      setGenPickerOpen(false);
+    } catch (e) {
+      setGenError((e as Error).message);
+    } finally {
+      setDrafting(null);
+    }
+  }
 
   function openNew() {
     setEditingId('new');
@@ -340,7 +418,17 @@ export default function AdminBlogPage() {
                   <input ref={fileInputRef} type="file" accept={ACCEPTED_IMAGE_TYPES} onChange={onCoverFileSelected} className="hidden" />
                 </div>
 
-                <label className="text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>Body content</label>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>Body content</label>
+                  <button
+                    type="button"
+                    onClick={openGenPicker}
+                    className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px]"
+                    style={{ background: 'rgba(167,139,250,0.12)', color: '#A78BFA', border: '1px solid rgba(167,139,250,0.3)' }}
+                  >
+                    <Sparkles className="h-3.5 w-3.5" /> Generate from generated content
+                  </button>
+                </div>
                 <WysiwygEditor value={form.content_html} onChange={(content_html) => setForm((f) => ({ ...f, content_html }))} />
               </div>
             )}
@@ -349,6 +437,75 @@ export default function AdminBlogPage() {
               <button type="button" disabled={saving || loadingRow} onClick={save} className="flex items-center gap-1 rounded-lg px-3 py-2 text-[13px] font-medium" style={{ background: '#A78BFA', color: '#191A22' }}>
                 <Save className="h-3.5 w-3.5" /> {saving ? 'Saving…' : 'Save'}
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {genPickerOpen ? (
+        <div className="fixed inset-0 z-[65] flex items-center justify-center px-4 py-8" role="dialog" aria-modal="true" aria-label="Pick a generation">
+          <div className="absolute inset-0" style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} onClick={() => drafting === null && setGenPickerOpen(false)} aria-hidden />
+          <div className="relative flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl p-5" style={{ backgroundColor: '#191A22', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 30px 80px rgba(0,0,0,0.5)' }}>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold" style={{ color: '#E9E9F0' }}>Generate from generated content</h2>
+              <button type="button" onClick={() => setGenPickerOpen(false)} className="rounded-lg p-1.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="mt-1 text-[12px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
+              Pick one of your generated videos or images. Its prompt, skill, and story details will be used to draft a
+              ~500-word post below &mdash; review and edit before saving.
+            </p>
+            <div className="relative mt-3">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: 'rgba(255,255,255,0.35)' }} />
+              <input
+                autoFocus
+                value={genQuery}
+                onChange={(e) => setGenQuery(e.target.value)}
+                placeholder="Search your generations..."
+                className="w-full rounded-lg py-1.5 pl-8 pr-2.5 text-[13px]"
+                style={INPUT}
+              />
+            </div>
+            {genError ? <p className="mt-2 text-[12px]" style={{ color: '#F87171' }}>{genError}</p> : null}
+            <div className="mt-3 flex-1 overflow-y-auto">
+              {genLoading ? (
+                <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" style={{ color: 'rgba(255,255,255,0.5)' }} /></div>
+              ) : !genItems || genItems.length === 0 ? (
+                <div className="rounded-xl px-4 py-8 text-center text-[13px]" style={{ ...CARD, color: 'rgba(255,255,255,0.4)' }}>
+                  {genQuery.trim() ? 'No generations match that search.' : 'No generations yet.'}
+                </div>
+              ) : (
+                <ul className="space-y-1.5">
+                  {genItems.map((item) => {
+                    const isDrafting = drafting === item.run_id;
+                    return (
+                      <li key={item.id}>
+                        <button
+                          type="button"
+                          disabled={drafting !== null}
+                          onClick={() => selectGeneration(item)}
+                          className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left disabled:opacity-50"
+                          style={CARD}
+                        >
+                          <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg" style={{ background: '#0F1015' }}>
+                            {item.thumbnail_url ? <img src={item.thumbnail_url} alt="" className="h-full w-full object-cover" /> : null}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-[12.5px] font-medium" style={{ color: '#E9E9F0' }}>
+                              {item.prompt || item.primitive || 'Untitled generation'}
+                            </div>
+                            <div className="mt-0.5 text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                              {item.primitive ?? item.source} &middot; {new Date(item.created_at).toLocaleDateString()}
+                            </div>
+                          </div>
+                          {isDrafting ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" style={{ color: '#A78BFA' }} /> : null}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </div>
           </div>
         </div>

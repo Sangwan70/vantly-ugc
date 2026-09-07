@@ -71,6 +71,7 @@ import { listSocialProvidersRoute, listSocialChannelsRoute, connectSocialRoute, 
 import { videoConcurrencyGate } from './concurrency.js';
 import { agentRoute } from './routes/v1/agent.js';
 import { draftScriptRoute } from './routes/v1/assist.js';
+import { draftBlogPostRoute } from './routes/v1/blog-assist.js';
 import { creditsCheckRoute } from './routes/v1/credits-check.js';
 import {
   createChatRoute,
@@ -910,6 +911,7 @@ if (isPrimitivesRouteEnabled()) {
   app.post('/v1/social/publish', generateLimiter, authMiddleware, publishSocialRoute);
   app.post('/v1/agent', generateLimiter, authMiddleware, agentRoute);
   app.post('/v1/assist/draft-script', generateLimiter, authMiddleware, draftScriptRoute);
+  app.post('/v1/assist/draft-blog-post', generateLimiter, authMiddleware, draftBlogPostRoute);
   // Agent chat persistence (Phase 1) — reopenable sessions. Client-driven,
   // additive: the brain + /v1/skills/run are untouched. See agent-chats.ts.
   //

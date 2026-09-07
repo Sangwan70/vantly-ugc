@@ -275,7 +275,8 @@ export async function getChatRoute(req: Request, res: Response): Promise<void> {
     .from('agent_messages')
     .select('seq, role, content, skill_run_id, primitive_run_id, run_kind, client_msg_id, created_at')
     .eq('chat_id', chatId)
-    .eq('user_id', userId);
+    .eq('user_id', userId)
+    .is('deleted_at', null);
   if (Number.isFinite(beforeSeq)) q = q.lt('seq', beforeSeq);
   const { data: rowsDesc, error: msgErr } = await q.order('seq', { ascending: false }).limit(limit);
   if (msgErr) {
@@ -413,6 +414,63 @@ export async function deleteChatRoute(req: Request, res: Response): Promise<void
     res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Chat not found' } });
     return;
   }
+  res.status(200).json({ ok: true, id: data.id });
+}
+
+// DELETE /v1/agent/chats/:id/messages/:clientMsgId
+//
+// Real per-message delete (task: "I need a real 'Delete' option to delete any
+// past message/generation"). SOFT-delete, same convention as deleteChatRoute
+// above — a deleted row (and its skill_run_id/primitive_run_id linkage) stays
+// for audit/credit-reconciliation, it's just excluded from getChatRoute's
+// query (WHERE deleted_at IS NULL) so it disappears from the reopened chat.
+//
+// Addressed by client_msg_id rather than the row's own uuid: the client
+// already knows every message's cmid the instant it's created (genId(), or
+// the paired tool_use block's id for a tool_result — see agent/page.tsx's
+// Msg type) with no need to round-trip a server-assigned id first, and
+// (chat_id, client_msg_id) is already a unique index.
+export async function deleteMessageRoute(req: Request, res: Response): Promise<void> {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+
+  const chatId = req.params.id;
+  const clientMsgId = req.params.clientMsgId;
+  if (!isUuid(chatId)) {
+    res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Invalid chat id' } });
+    return;
+  }
+  if (!clientMsgId) {
+    res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Invalid message id' } });
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from('agent_messages')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('chat_id', chatId)
+    .eq('user_id', userId)
+    .eq('client_msg_id', clientMsgId)
+    .is('deleted_at', null)
+    .select('id')
+    .maybeSingle();
+  if (error) {
+    console.error(`[agent chats delete message] ${error.message}`);
+    res.status(500).json({ error: { code: 'DATABASE_ERROR', message: 'Failed to delete message' } });
+    return;
+  }
+  if (!data) {
+    res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Message not found' } });
+    return;
+  }
+
+  // Best-effort counter upkeep — message_count drives the chat-list "N messages"
+  // display; not worth failing the delete over.
+  const { data: chat } = await supabase.from('agent_chats').select('message_count').eq('id', chatId).maybeSingle();
+  if (chat && typeof chat.message_count === 'number' && chat.message_count > 0) {
+    await supabase.from('agent_chats').update({ message_count: chat.message_count - 1 }).eq('id', chatId).eq('user_id', userId);
+  }
+
   res.status(200).json({ ok: true, id: data.id });
 }
 

@@ -23,6 +23,8 @@ import { Loader2, Send, Square, Sparkles, Wrench, Check, AlertCircle, ArrowDown,
 import { invokeFn } from '@/lib/supabase/fn-proxy';
 
 import { SAMPLE_PROMPTS } from '@/lib/sample-prompts';
+import { RunPanel, type SkillEntry as SkillCatalogEntry, type RunResult as SkillLaunchResult } from '../skills/_run-panel';
+import { FORMS as SKILL_FORMS } from '../skills/_forms';
 
 type Block =
   | { type: 'text'; text: string }
@@ -224,6 +226,17 @@ export default function AgentPage() {
   const [promptPickerOpen, setPromptPickerOpen] = useState(false);
   const [savedPrompts, setSavedPrompts] = useState<AgentSavedPrompt[] | null>(null);
   const [promptsLoadErr, setPromptsLoadErr] = useState<string | null>(null);
+  // "+" menu -> "Run a skill" (task: one interface for both chatting and
+  // running any skill from the Skill Center). skillPickerOpen shows a searchable
+  // list; picking one opens runSkillTarget's form (the SAME RunPanel the
+  // per-skill page uses) inline in a modal, then the launched run is appended
+  // into THIS chat as an ordinary tool_use/tool_result pair so it renders,
+  // polls, and persists exactly like a run the brain triggered itself.
+  const [skillPickerOpen, setSkillPickerOpen] = useState(false);
+  const [skillsCatalog, setSkillsCatalog] = useState<SkillCatalogEntry[] | null>(null);
+  const [skillsLoadErr, setSkillsLoadErr] = useState<string | null>(null);
+  const [skillPickerQuery, setSkillPickerQuery] = useState('');
+  const [runSkillTarget, setRunSkillTarget] = useState<SkillCatalogEntry | null>(null);
   const [pendingAsk, setPendingAsk] = useState<PendingAsk | null>(null);
   const [askHighlight, setAskHighlight] = useState(0);
   const askResolverRef = useRef<((answer: string) => void) | null>(null);
@@ -663,6 +676,45 @@ export default function AgentPage() {
     finally { setBusy(false); }
   }
 
+  /** Real per-message delete. A message row's cmid is its stable server key
+   *  (see Msg's doc comment) — no round-trip needed to learn a server id.
+   *  Deleting a tool_use also removes its paired tool_result (and vice versa)
+   *  so the transcript never shows one half of a run with no matching other
+   *  half: a tool_result's own cmid always equals its tool_use block's id
+   *  (see runSkill/driveLoop above), so that id doubles as the delete key for
+   *  either side of the pair. */
+  async function deleteMessage(m: Msg) {
+    if (!window.confirm('Delete this message? This can\'t be undone.')) return;
+    const cmidsToDelete = new Set<string>();
+    if (m.cmid) cmidsToDelete.add(m.cmid);
+    const toolRunIds = new Set<string>();
+    if (Array.isArray(m.content)) {
+      for (const b of m.content) {
+        if (b.type === 'tool_use') { cmidsToDelete.add(b.id); toolRunIds.add(b.id); }
+        if (b.type === 'tool_result') {
+          toolRunIds.add(b.tool_use_id);
+          const sibling = messages.find((mm) => mm !== m && Array.isArray(mm.content) && mm.content.some((bb) => bb.type === 'tool_use' && bb.id === b.tool_use_id));
+          if (sibling?.cmid) cmidsToDelete.add(sibling.cmid);
+        }
+      }
+    }
+    setMessages((prev) => prev.filter((x) => !x.cmid || !cmidsToDelete.has(x.cmid)));
+    if (toolRunIds.size > 0) {
+      setToolRuns((prev) => {
+        const next = { ...prev };
+        for (const id of toolRunIds) delete next[id];
+        return next;
+      });
+    }
+    const cid = chatIdRef.current;
+    if (!cid) return;
+    for (const cmidToDelete of cmidsToDelete) {
+      try {
+        await fetch(`/api/v1/agent/chats/${cid}/messages/${encodeURIComponent(cmidToDelete)}`, { method: 'DELETE', credentials: 'include' });
+      } catch { /* best-effort — local state is already updated */ }
+    }
+  }
+
   async function stop() {
     cancelRef.current = true;
     setBusy(false);
@@ -875,6 +927,49 @@ export default function AgentPage() {
     textareaRef.current?.focus();
   }
 
+  // "+" menu -> "Run a skill". Loads the same catalog /dashboard/skills lists.
+  const loadSkillsCatalog = useCallback(async () => {
+    setSkillsLoadErr(null);
+    try {
+      const r = await fetch('/api/v1/skills', { credentials: 'include' });
+      const j = r.ok ? ((await r.json()) as { skills?: SkillCatalogEntry[] }) : { skills: [] };
+      setSkillsCatalog(j.skills ?? []);
+      if (!r.ok) setSkillsLoadErr('Could not load the skill catalog.');
+    } catch {
+      setSkillsCatalog([]);
+      setSkillsLoadErr('Could not load the skill catalog.');
+    }
+  }, []);
+  function openSkillPicker() {
+    setComposerMenuOpen(false);
+    setSkillPickerOpen(true);
+    if (skillsCatalog === null) void loadSkillsCatalog();
+  }
+  function pickSkillToRun(s: SkillCatalogEntry) {
+    setSkillPickerOpen(false);
+    setRunSkillTarget(s);
+  }
+  /** RunPanel already POSTed the run and got back {id, composed, status}; wire
+   *  it into THIS chat the same way an agent-triggered tool_use/tool_result
+   *  pair works (see runSkill/pollRun above) so it renders, polls, and
+   *  survives reload identically — the only difference is nothing asked the
+   *  brain to run it, so there's no driveLoop continuation afterward. */
+  async function launchSkillFromPicker(target: SkillCatalogEntry, result: SkillLaunchResult) {
+    setRunSkillTarget(null);
+    const cid = await ensureChat(`Run ${skillLabel(target.slug)} — ${new Date().toLocaleString()}`);
+    if (!cid) { setError('Could not start a chat for this run.'); return; }
+    setRailOpen(true);
+    const toolUseId = genId();
+    const asstMsg: Msg = { role: 'assistant', content: [{ type: 'tool_use', id: toolUseId, name: target.slug, input: {} }], cmid: genId() };
+    setMessages((prev) => [...prev, asstMsg]);
+    persist([asstMsg]);
+    setToolRuns((p) => ({ ...p, [toolUseId]: { skill: target.slug, status: 'running', runId: result.id, composed: result.composed } }));
+    const resultText = await pollRun(toolUseId, result.id, result.composed);
+    const trMsg: Msg = { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUseId, content: resultText }], cmid: toolUseId, skillRunId: result.id, runKind: result.composed ? 'skill' : 'primitive' };
+    setMessages((prev) => [...prev, trMsg]);
+    persist([trMsg]);
+  }
+
   // Upload a product image → Supabase Storage (signed PUT) → a signed read URL.
   async function handlePickImage(file: File) {
     setError(null);
@@ -969,6 +1064,9 @@ export default function AgentPage() {
                 </button>
                 <button type="button" onClick={openPromptPicker} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors hover:bg-white/[0.06]" style={{ color: '#E9E9F0' }}>
                   <Wand2 className="h-4 w-4" style={{ color: 'rgba(255,255,255,0.5)' }} /> Use a saved prompt
+                </button>
+                <button type="button" onClick={openSkillPicker} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors hover:bg-white/[0.06]" style={{ color: '#E9E9F0' }}>
+                  <Wrench className="h-4 w-4" style={{ color: 'rgba(255,255,255,0.5)' }} /> Run a skill
                 </button>
               </div>
             )}
@@ -1254,11 +1352,87 @@ export default function AgentPage() {
     </div>
   ) : null;
 
+  // "+" menu -> "Run a skill", step 1: pick which skill (searchable, same
+  // catalog as /dashboard/skills).
+  const filteredSkillsCatalog = (skillsCatalog ?? []).filter((s) => {
+    const q = skillPickerQuery.trim().toLowerCase();
+    if (!q) return true;
+    return s.name.toLowerCase().includes(q) || s.slug.toLowerCase().includes(q) || s.description.toLowerCase().includes(q);
+  });
+  const skillPicker = skillPickerOpen ? (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={() => setSkillPickerOpen(false)}>
+      <div onClick={(e) => e.stopPropagation()} className="flex max-h-[70vh] w-full max-w-md flex-col rounded-2xl p-5" style={{ background: '#14151F', border: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+        <div className="mb-1 flex items-center gap-2">
+          <Wrench className="h-4 w-4" style={{ color: '#A78BFA' }} />
+          <span className="text-[15px] font-medium" style={{ color: '#E9E9F0' }}>Run a skill</span>
+        </div>
+        <p className="mb-3 text-[12.5px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>Pick any skill from the Skill Center, fill in its form, and the run shows up right here in this chat.</p>
+        <input
+          type="text"
+          value={skillPickerQuery}
+          onChange={(e) => setSkillPickerQuery(e.target.value)}
+          placeholder="Search skills…"
+          autoFocus
+          className="mb-3 w-full rounded-lg px-3 py-2 text-[13px] outline-none"
+          style={{ background: '#0F1015', border: '1px solid rgba(255,255,255,0.1)', color: '#E9E9F0' }}
+        />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {skillsCatalog === null ? (
+            <div className="flex h-16 items-center justify-center"><Loader2 className="h-4 w-4 animate-spin" style={{ color: 'rgba(255,255,255,0.5)' }} /></div>
+          ) : skillsLoadErr ? (
+            <p className="px-1 text-[12.5px]" style={{ color: '#FCA5A5' }}>{skillsLoadErr}</p>
+          ) : filteredSkillsCatalog.length === 0 ? (
+            <div className="px-1 text-[12.5px]" style={{ color: 'rgba(255,255,255,0.5)' }}>No skills match &quot;{skillPickerQuery}&quot;.</div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {filteredSkillsCatalog.map((s) => (
+                <button key={s.slug} type="button" onClick={() => pickSkillToRun(s)} className="flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-white/[0.06]" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#0F1015' }}>
+                  <span className="truncate text-[13px] font-medium" style={{ color: '#E9E9F0' }}>{s.name}</span>
+                  <span className="line-clamp-1 text-[11.5px]" style={{ color: 'rgba(255,255,255,0.45)' }}>{s.description}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button type="button" onClick={() => setSkillPickerOpen(false)} className="rounded-lg px-3 py-1.5 text-[13px]" style={{ color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.12)' }}>Close</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  // "+" menu -> "Run a skill", step 2: the same RunPanel /dashboard/skills/[slug]
+  // uses, embedded in a modal. onLaunched wires the finished submission into
+  // THIS chat (see launchSkillFromPicker above) instead of the per-skill page's
+  // own polling card.
+  const skillRunModal = runSkillTarget ? (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={() => setRunSkillTarget(null)}>
+      <div onClick={(e) => e.stopPropagation()} className="flex max-h-[85vh] w-full max-w-lg flex-col gap-3 overflow-y-auto rounded-2xl p-5" style={{ background: '#14151F', border: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Wrench className="h-4 w-4" style={{ color: '#A78BFA' }} />
+            <span className="text-[15px] font-medium" style={{ color: '#E9E9F0' }}>{runSkillTarget.name}</span>
+          </div>
+          <button type="button" onClick={() => setRunSkillTarget(null)} aria-label="Close" className="opacity-60 hover:opacity-100"><X className="h-4 w-4" style={{ color: '#E9E9F0' }} /></button>
+        </div>
+        <p className="text-[12.5px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>{runSkillTarget.description}</p>
+        <RunPanel
+          skill={runSkillTarget}
+          form={SKILL_FORMS[runSkillTarget.slug]}
+          activeRun={null}
+          onLaunched={(r) => void launchSkillFromPicker(runSkillTarget, r)}
+        />
+      </div>
+    </div>
+  ) : null;
+
   if (empty) {
     return (
       <div className="flex h-screen w-full">
         {projectEditor}
         {promptPicker}
+        {skillPicker}
+        {skillRunModal}
         {historyRail}
         <div className="mx-auto flex h-full min-w-0 flex-1 flex-col items-center justify-center px-6">
         <div className="mb-6 flex items-center gap-3">
@@ -1284,6 +1458,8 @@ export default function AgentPage() {
       <style>{`.am-noscroll::-webkit-scrollbar{display:none}`}</style>
       {projectEditor}
       {promptPicker}
+      {skillPicker}
+      {skillRunModal}
       {historyRail}
 
       {/* ── Conversation column ─────────────────────────────────────────── */}
@@ -1307,7 +1483,10 @@ export default function AgentPage() {
                 const im = m.content.match(/\[product_image_url:\s*(\S+?)\s*\]/);
                 const display = m.content.replace(/\n*\[(?:product_image_url|character_sheet_url):[^\]]*\]/g, '').trim();
                 return (
-                  <div key={i} className="flex justify-end">
+                  <div key={i} className="group flex items-center justify-end gap-1.5">
+                    <button type="button" onClick={() => void deleteMessage(m)} title="Delete message" className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100">
+                      <Trash2 className="h-3.5 w-3.5" style={{ color: 'rgba(255,255,255,0.35)' }} />
+                    </button>
                     <div className="max-w-[80%] rounded-2xl px-4 py-2.5 text-[15px]" style={{ background: '#26222E', color: '#E9E9F0' }}>
                       {im && (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -1320,7 +1499,8 @@ export default function AgentPage() {
               }
               const blocks = Array.isArray(m.content) ? m.content : [{ type: 'text', text: m.content } as Block];
               return (
-                <div key={i} className="flex flex-col gap-2.5">
+                <div key={i} className="group flex items-start gap-1.5">
+                <div className="flex flex-1 flex-col gap-2.5">
                   {blocks.map((b, j) => {
                     if (b.type === 'text' && b.text.trim()) {
                       return <Markdown key={j} text={b.text} />;
@@ -1383,6 +1563,10 @@ export default function AgentPage() {
                     }
                     return null;
                   })}
+                </div>
+                <button type="button" onClick={() => void deleteMessage(m)} title="Delete message" className="mt-1 shrink-0 opacity-0 transition-opacity group-hover:opacity-100">
+                  <Trash2 className="h-3.5 w-3.5" style={{ color: 'rgba(255,255,255,0.35)' }} />
+                </button>
                 </div>
               );
             })}

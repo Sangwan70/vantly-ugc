@@ -303,6 +303,17 @@ export async function createPaypalPlan(params: {
   return paypalFetch<PaypalPlan>(creds, 'POST', '/v1/billing/plans', {
     product_id: product.id,
     name: params.displayName,
+    // Without an explicit `status`, PayPal defaults a newly created Billing
+    // Plan to "CREATED" -- a plan in that state cannot be subscribed to.
+    // Omitting this was a real bug: every minted plan looked fine (had an
+    // id, listed fine, `plans.paypal_plan_id` got populated), but the FIRST
+    // real subscription checkout against it sent the buyer to PayPal's
+    // generic https://www.paypal.com/webapps/billing/error page during
+    // approval, with no earlier signal anything was wrong. Setting this
+    // directly at creation (rather than a separate POST .../activate call
+    // right after) is PayPal's own documented shortcut for the common case
+    // of wanting the plan usable immediately.
+    status: 'ACTIVE',
     billing_cycles: [
       {
         frequency: { interval_unit: 'MONTH', interval_count: 1 },

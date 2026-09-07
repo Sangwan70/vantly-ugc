@@ -88,11 +88,16 @@ export default function AdminPage() {
   const [sort, setSort] = useState<'recent' | 'credits_used' | 'creations'>('recent');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  // Users moderation (block/delete): default view stays subscription-only
-  // (today's behavior, and the common case) -- "Show all" opts into
-  // ?all=1 so free signups who never subscribed become visible and
-  // therefore moderatable, per the admin-replication plan's identified gap.
-  const [showAll, setShowAll] = useState(false);
+  // Users moderation (block/delete) + mailer-audience targeting: default
+  // view stays subscription-only (today's behavior, and the common case).
+  // 'free' and 'all' both fetch ?all=1 (widening to every signed-up auth
+  // user, not just ones with a subscriptions row) so free signups who
+  // never subscribed become visible and therefore moderatable/exportable,
+  // per the admin-replication plan's identified gap; 'free' additionally
+  // filters down to just those with no subscription row at all (see
+  // `filtered` below), since "who do I email a plan pitch to" needs the
+  // free-only set isolated, not mixed in with everyone.
+  const [viewFilter, setViewFilter] = useState<'subscribers' | 'free' | 'all'>('subscribers');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmDeleteIds, setConfirmDeleteIds] = useState<string[] | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -111,7 +116,7 @@ export default function AdminPage() {
       // Users list + growth funnel + ops metrics + signups trend load in
       // parallel; a metrics/signups hiccup must not block the user table,
       // so those failures are swallowed (their panels just hide).
-      const usersUrl = showAll ? '/api/admin/users?all=1' : '/api/admin/users';
+      const usersUrl = viewFilter === 'subscribers' ? '/api/admin/users' : '/api/admin/users?all=1';
       const [r, m, s] = await Promise.all([
         fetch(usersUrl, { credentials: 'include' }),
         fetch('/api/admin/metrics', { credentials: 'include' }).catch(() => null),
@@ -131,7 +136,7 @@ export default function AdminPage() {
         setSignups(sj ?? null);
       }
     } catch (e) { setError((e as Error).message); setUsers([]); }
-  }, [showAll]);
+  }, [viewFilter]);
   useEffect(() => { if (isAdmin) void load(); }, [isAdmin, load]);
 
   const stats = useMemo(() => {
@@ -146,6 +151,11 @@ export default function AdminPage() {
 
   const filtered = useMemo(() => {
     let u = [...(users ?? [])];
+    // Only meaningful when viewFilter === 'free': the API call already
+    // fetched the wider ?all=1 set (everyone), and this narrows it down to
+    // users with no subscriptions row at all. A no-op for 'subscribers'
+    // (the API already returned only subscribed users) and 'all'.
+    if (viewFilter === 'free') u = u.filter((x) => !x.subscription);
     const needle = q.trim().toLowerCase();
     if (needle) u = u.filter((x) => (x.email ?? '').toLowerCase().includes(needle) || (x.display_name ?? '').toLowerCase().includes(needle));
     u.sort((a, b) => {
@@ -154,7 +164,7 @@ export default function AdminPage() {
       return (b.computed?.last_creation_at ?? '').localeCompare(a.computed?.last_creation_at ?? '');
     });
     return u;
-  }, [users, q, sort]);
+  }, [users, q, sort, viewFilter]);
 
   async function giveCredits(u: AdminUser) {
     const raw = window.prompt(`Give credits to ${u.email}\nAmount (1–100000):`, '1000');
@@ -430,10 +440,29 @@ export default function AdminPage() {
           <option value="credits_used">Most credits used</option>
           <option value="creations">Most creations</option>
         </select>
-        <label className="flex h-10 items-center gap-2 rounded-xl px-3 text-[12px]" style={{ background: '#0F1015', color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)' }}>
-          <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />
-          Show all signups (incl. free)
-        </label>
+        <div className="flex h-10 items-center gap-1 rounded-xl p-1" style={{ background: '#0F1015', border: '1px solid rgba(255,255,255,0.1)' }} role="tablist" aria-label="Filter users by subscription">
+          {([
+            { key: 'subscribers', label: 'Subscribers' },
+            { key: 'free', label: 'Free (no subscription)' },
+            { key: 'all', label: 'All' },
+          ] as const).map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={viewFilter === tab.key}
+              onClick={() => setViewFilter(tab.key)}
+              className="rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors"
+              style={
+                viewFilter === tab.key
+                  ? { background: 'rgba(167,139,250,0.15)', color: '#C4B5FD' }
+                  : { color: 'rgba(255,255,255,0.5)' }
+              }
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Bulk-action bar -- only appears once rows are selected */}

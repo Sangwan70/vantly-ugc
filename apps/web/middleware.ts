@@ -337,9 +337,27 @@ export async function middleware(request: NextRequest) {
     return finish(redirectResponse);
   }
 
-  // On the app subdomain `/` is meaningless for logged-out users -
-  // there's no marketing here. Send them to /login.
-  if (pathname === '/' && !user && host === APP_HOST) {
+  // On a DELIBERATE marketing/app host split (MARKETING_APP_HOST_SPLIT=true
+  // -- see that flag's own doc comment), `/` on the app subdomain is
+  // meaningless for logged-out users: there's a truly separate marketing
+  // site on the apex domain, so send them to /login instead.
+  //
+  // This must stay gated behind HOST_SPLIT_ENABLED, same as the
+  // isAppOnlyPath redirect above -- it was NOT gated here, which was a
+  // real bug: HOST_SPLIT_ENABLED defaults off specifically because a
+  // self-hosted deployment (this codebase's default, see that flag's
+  // comment) serves its marketing homepage and its dashboard from this
+  // SAME app on ONE host, with no separate marketing site to split to.
+  // But APP_HOST also defaults to 'app.vantly-ugc.com', and a self-hoster's
+  // APP_PUBLIC_URL is conventionally set to exactly that host too (see
+  // .env.example) -- so `host === APP_HOST` was true unconditionally for
+  // that entirely normal, non-split setup, and every logged-out visitor
+  // hitting `/` got redirected straight to /login instead of ever seeing
+  // the actual homepage. Gating this behind the same flag that already
+  // controls whether a split even exists fixes it: unset (the default),
+  // `/` always serves the real homepage regardless of host; only a
+  // deployment that explicitly opts into the split sees this redirect.
+  if (HOST_SPLIT_ENABLED && pathname === '/' && !user && host === APP_HOST) {
     const redirectResponse = NextResponse.redirect(new URL('/login', request.url));
     return finish(redirectResponse);
   }

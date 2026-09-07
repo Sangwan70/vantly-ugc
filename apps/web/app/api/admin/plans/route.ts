@@ -116,14 +116,16 @@ export async function POST(req: NextRequest) {
       price_usd_cents: created.price_usd_cents,
       stripe_price_id: created.stripe_price_id,
       razorpay_plan_id: created.razorpay_plan_id,
+      paypal_plan_id: created.paypal_plan_id,
     });
     warnings = mint.warnings;
-    if (mint.stripe_price_id || mint.razorpay_plan_id) {
+    if (mint.stripe_price_id || mint.razorpay_plan_id || mint.paypal_plan_id) {
       const { data: updated, error: updateError } = await admin
         .from('plans')
         .update({
           stripe_price_id: mint.stripe_price_id,
           razorpay_plan_id: mint.razorpay_plan_id,
+          paypal_plan_id: mint.paypal_plan_id,
         })
         .eq('id', created.id)
         .select('*')

@@ -20,11 +20,13 @@ import { useVariables } from '@/components/variable-context';
 import { GeneralTab } from './_general-tab';
 import { CurrencyTab } from './_currency-tab';
 import { MailerTab } from './_mailer-tab';
+import { PaymentGatewaysTab } from './_payment-gateways-tab';
 
 const TABS = [
   { key: 'general', label: 'General' },
   { key: 'currency', label: 'Currency' },
   { key: 'mailer', label: 'Mailer' },
+  { key: 'payment-gateways', label: 'Payment Gateways' },
 ] as const;
 type TabKey = (typeof TABS)[number]['key'];
 
@@ -95,6 +97,7 @@ function AdminSettingsPageInner() {
         {tab === 'general' ? <GeneralTab /> : null}
         {tab === 'currency' ? <CurrencyTab /> : null}
         {tab === 'mailer' ? <MailerTab /> : null}
+        {tab === 'payment-gateways' ? <PaymentGatewaysTab /> : null}
       </div>
     </div>
   );

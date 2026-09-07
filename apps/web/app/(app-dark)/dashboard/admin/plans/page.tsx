@@ -34,6 +34,7 @@ interface Plan {
   max_concurrent_jobs: number;
   stripe_price_id: string | null;
   razorpay_plan_id: string | null;
+  paypal_plan_id: string | null;
   is_active: boolean;
   is_purchasable: boolean;
   sort_order: number;
@@ -148,7 +149,7 @@ export default function AdminPlansPage() {
     if (newPriceCents !== null && !Number.isFinite(newPriceCents)) { alert('Invalid price'); return; }
     if (newPriceCents !== existingPriceCents) {
       const label = newPriceCents === null ? 'clear the price' : `set the price to $${(newPriceCents / 100).toFixed(2)}`;
-      if (!window.confirm(`This will ${label} and mint a NEW Stripe price + RazorPay plan (both treat prices as immutable, so this never touches an existing subscriber's price). Continue?`)) return;
+      if (!window.confirm(`This will ${label} and mint a NEW Stripe price + RazorPay plan + PayPal plan (all treat prices as immutable, so this never touches an existing subscriber's price). Continue?`)) return;
     }
 
     const payload: Record<string, unknown> = {
@@ -237,7 +238,7 @@ export default function AdminPlansPage() {
                       {p.price_usd_cents != null ? `$${(p.price_usd_cents / 100).toFixed(2)}/mo` : 'No price'} · {p.monthly_credits.toLocaleString()} credits
                       {p.price_usd_cents != null ? (
                         <>
-                          {' '}· Stripe {p.stripe_price_id ? '✓' : '✗'} · RazorPay {p.razorpay_plan_id ? '✓' : '✗'}
+                          {' '}· Stripe {p.stripe_price_id ? '✓' : '✗'} · RazorPay {p.razorpay_plan_id ? '✓' : '✗'} · PayPal {p.paypal_plan_id ? '✓' : '✗'}
                         </>
                       ) : null}
                     </div>
@@ -249,7 +250,7 @@ export default function AdminPlansPage() {
                     <button type="button" disabled={busy === p.slug} onClick={() => toggleFlag(p, 'is_purchasable')} className="rounded-lg px-2.5 py-1.5 text-[12px]" style={{ background: '#1B1C2A', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }}>
                       {p.is_purchasable ? 'Hide from checkout' : 'Allow purchase'}
                     </button>
-                    {p.price_usd_cents != null && (!p.stripe_price_id || !p.razorpay_plan_id) ? (
+                    {p.price_usd_cents != null && (!p.stripe_price_id || !p.razorpay_plan_id || !p.paypal_plan_id) ? (
                       <button type="button" disabled={busy === p.slug} onClick={() => syncGateway(p)} className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px]" style={{ background: 'rgba(167,139,250,0.1)', color: '#C4B5FD', border: '1px solid rgba(167,139,250,0.2)' }}>
                         <RefreshCw className="h-3 w-3" /> Sync gateway
                       </button>

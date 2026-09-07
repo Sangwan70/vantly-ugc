@@ -48,7 +48,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ slug: 
   if (typeof existing.price_usd_cents !== 'number') {
     return NextResponse.json({ error: 'Plan has no price_usd_cents set -- nothing to sync' }, { status: 400 });
   }
-  if (existing.stripe_price_id && existing.razorpay_plan_id) {
+  if (existing.stripe_price_id && existing.razorpay_plan_id && existing.paypal_plan_id) {
     return NextResponse.json({ success: true, plan: existing, warnings: [], message: 'Already synced' });
   }
 
@@ -57,6 +57,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ slug: 
     price_usd_cents: existing.price_usd_cents,
     stripe_price_id: existing.stripe_price_id,
     razorpay_plan_id: existing.razorpay_plan_id,
+    paypal_plan_id: existing.paypal_plan_id,
   });
 
   const { data: updated, error: updateError } = await admin
@@ -64,6 +65,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ slug: 
     .update({
       stripe_price_id: mint.stripe_price_id,
       razorpay_plan_id: mint.razorpay_plan_id,
+      paypal_plan_id: mint.paypal_plan_id,
       updated_by: user.id,
     })
     .eq('slug', slug)

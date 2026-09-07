@@ -93,10 +93,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ slug
       price_usd_cents: updateRow.price_usd_cents,
       stripe_price_id: null,
       razorpay_plan_id: null,
+      paypal_plan_id: null,
     });
     warnings = mint.warnings;
     updateRow.stripe_price_id = mint.stripe_price_id;
     updateRow.razorpay_plan_id = mint.razorpay_plan_id;
+    updateRow.paypal_plan_id = mint.paypal_plan_id;
   }
 
   const { data: updated, error: updateError } = await admin

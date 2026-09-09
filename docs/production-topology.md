@@ -140,7 +140,17 @@ values with environment variables. Each unset one is a silent regression, not a
 crash: `NEXT_PUBLIC_ADMIN_EMAILS` (the admin link disappears), `SUPPORT_INBOX` /
 `SUPPORT_FROM` / `RESEND_API_KEY` (support form quietly disabled),
 `NEXT_PUBLIC_DISCORD_INVITE_URL`, `SESSION_HINT_DOMAIN` (the marketing site
-stops recognising signed-in visitors), `NEXT_PUBLIC_MARKETING_URL`.
+stops recognising signed-in visitors), `NEXT_PUBLIC_MARKETING_URL`. Set
+`ADMIN_EMAILS` too, to the SAME list as `NEXT_PUBLIC_ADMIN_EMAILS` --
+`NEXT_PUBLIC_ADMIN_EMAILS` only gates the client-side "show the admin UI"
+check (lib/admin-allowlist.ts's `isAdminEmailIn`); every `/api/admin/*`
+route handler checks the plain, server-only `ADMIN_EMAILS` instead
+(`isAdminEmail`). Leaving `ADMIN_EMAILS` unset is a silent regression of
+its own kind: the admin pages render normally and look fully functional,
+but every admin action 403s with "Unauthorized" as soon as it's clicked.
+`ADMIN_EMAILS` takes effect on a plain process restart; changing
+`NEXT_PUBLIC_ADMIN_EMAILS` needs a full rebuild, since Next.js inlines
+`NEXT_PUBLIC_*` values into the client bundle at build time.
 
 ---
 

@@ -452,6 +452,13 @@ export default function AgentPage() {
   /** Poll an already-submitted run to completion → tool_result string. */
   async function pollRun(toolUseId: string, runId: string, composed: boolean): Promise<string> {
     const pollPath = composed ? `/api/v1/skills/runs/${runId}` : `/api/v1/primitives/runs/${runId}`;
+    // A run that never leaves "not started" (no started_at — dispatch failed
+    // silently, or no worker ever picked it up) would otherwise sit in this
+    // loop for its full ~17-minute cap with zero feedback. Once real progress
+    // begins (started_at is set), the long cap applies normally — some jobs
+    // legitimately take several minutes.
+    const NOT_STARTED_MAX_ITERS = 18; // ~90s at the 5s poll interval below
+    let notStartedIters = 0;
     for (let i = 0; i < 200; i++) {
       await sleep(5000);
       if (cancelRef.current) {
@@ -479,7 +486,19 @@ export default function AgentPage() {
           [toolUseId]: { ...p[toolUseId], skill: p[toolUseId]?.skill ?? '', currentStep: d.current_step ?? undefined, steps: Array.isArray(d.steps) ? (d.steps as StepInfo[]) : p[toolUseId]?.steps },
         }));
       }
-      if (!TERMINAL.has(status)) continue;
+      if (!TERMINAL.has(status)) {
+        if (d.started_at) {
+          notStartedIters = 0;
+        } else if (++notStartedIters >= NOT_STARTED_MAX_ITERS) {
+          if (composed) {
+            try { await fetch(`/api/v1/skills/runs/${runId}/cancel`, { method: 'POST', credentials: 'include' }); } catch { /* best-effort */ }
+          }
+          const note = 'This generation never started (a backend issue, not something you did) — canceled after 90s of no progress.';
+          setToolRuns((p) => ({ ...p, [toolUseId]: { ...p[toolUseId], skill: p[toolUseId]?.skill ?? '', status: 'failed', note } }));
+          return JSON.stringify({ status: 'failed', error: 'never_started' });
+        }
+        continue;
+      }
       if (FAILSTATES.has(status)) {
         setToolRuns((p) => ({ ...p, [toolUseId]: { ...p[toolUseId], skill: p[toolUseId]?.skill ?? '', status: 'failed', note: d?.error?.message ?? d?.error ?? status } }));
         return JSON.stringify({ status: 'failed', error: d?.error ?? status });

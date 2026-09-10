@@ -80,6 +80,30 @@ export function isBillingEnabled(): boolean {
 }
 
 /**
+ * A composed skill's `skill_runs` row is pre-inserted (status: 'submitted')
+ * BEFORE `client.workflow.start(...)` is called, same reasoning as the
+ * generic primitive_runs path above: a poll that lands before dispatch
+ * finishes should find a real row. When workflow.start THROWS, that row is
+ * otherwise left stuck at submitted/pending forever — no started_at, no
+ * error, no steps — and the client polls it until its own ~17-minute cap.
+ * Call this from every composed dispatcher's catch block so a dispatch
+ * failure is a visible, immediate 'failed' row instead of a phantom one.
+ */
+async function markSkillRunDispatchFailed(skillRunId: string, userId: string, err: unknown): Promise<void> {
+  await supabase
+    .from('skill_runs')
+    .update({
+      status: 'failed',
+      current_step: 'failed',
+      error_code: 'temporal_dispatch_failed',
+      error_message: errorMessage(err),
+      finished_at: new Date().toISOString(),
+    })
+    .eq('id', skillRunId)
+    .eq('user_id', userId);
+}
+
+/**
  * Refund every credit charged under a skill run.
  *
  * Used by cancel, where Temporal's `terminate()` skips the workflow's own
@@ -767,6 +791,7 @@ async function dispatchMakeUgcVideo(
       'temporal.workflow.start.make_ugc_video',
     );
   } catch (err) {
+    await markSkillRunDispatchFailed(skillRunId, userId, err);
     res.status(502).json({ error: 'temporal_dispatch_failed', detail: errorMessage(err) });
     return;
   }
@@ -858,6 +883,7 @@ async function dispatchBrollTalkingHead(
       'temporal.workflow.start.make_broll_talking_head',
     );
   } catch (err) {
+    await markSkillRunDispatchFailed(skillRunId, userId, err);
     res.status(502).json({ error: 'temporal_dispatch_failed', detail: errorMessage(err) });
     return;
   }
@@ -994,6 +1020,7 @@ async function dispatchMakePodcast(
       'temporal.workflow.start.make_podcast',
     );
   } catch (err) {
+    await markSkillRunDispatchFailed(skillRunId, userId, err);
     res.status(502).json({ error: 'temporal_dispatch_failed', detail: errorMessage(err) });
     return;
   }
@@ -1169,6 +1196,7 @@ async function dispatchMakeStorybook(
       'temporal.workflow.start.make_storybook',
     );
   } catch (err) {
+    await markSkillRunDispatchFailed(skillRunId, userId, err);
     res.status(502).json({ error: 'temporal_dispatch_failed', detail: errorMessage(err) });
     return;
   }

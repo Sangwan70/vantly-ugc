@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { analytics } from '@/lib/analytics';
+import { getOAuthRedirectTo } from '@/lib/marketing';
 
 export function GoogleLoginButton({
   className,
@@ -28,7 +29,7 @@ export function GoogleLoginButton({
       const { error: authError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?redirect=${encodeURIComponent(redirect)}`,
+          redirectTo: getOAuthRedirectTo(redirect),
         },
       });
       if (authError) {

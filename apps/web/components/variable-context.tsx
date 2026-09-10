@@ -27,6 +27,17 @@ import { createContext, useContext, useEffect, type FC, type ReactNode } from 'r
 export interface VariableContextInterface {
   /** Public API origin the browser talks to (api-v2). */
   backendUrl: string;
+  /**
+   * This deployment's own public URL (APP_PUBLIC_URL server-side), e.g.
+   * 'https://app.vantly-ugc.com'. Browser-safe (it's just this site's
+   * own address) — used by lib/marketing.ts's getOAuthRedirectTo so
+   * "Continue with Google" always comes back to the app host's
+   * /auth/callback, the only redirect GoTrue (GOTRUE_SITE_URL, set from
+   * this same env var) accepts, no matter which host the button was
+   * clicked from. Empty on a plain single-host install, where the
+   * current origin is already correct and needs no override.
+   */
+  appPublicUrl: string;
   /** Supabase project URL (browser-safe). */
   supabaseUrl: string;
   /** Supabase anon key — browser-safe by design, protected by RLS. */
@@ -82,6 +93,7 @@ export interface VariableContextInterface {
 
 const EMPTY: VariableContextInterface = {
   backendUrl: '',
+  appPublicUrl: '',
   supabaseUrl: '',
   supabaseAnonKey: '',
   billingEnabled: false,

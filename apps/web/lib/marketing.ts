@@ -1,5 +1,7 @@
 // Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
+import { getVar } from '@/components/variable-context';
+
 /**
  * Where "home" is, and how to leave cleanly.
  *
@@ -14,6 +16,41 @@
  */
 export const MARKETING_URL =
   process.env.NEXT_PUBLIC_MARKETING_URL?.trim() || 'https://vantly-ugc.com';
+
+/**
+ * Where GoTrue (Supabase Auth) should send the browser back to after a
+ * "Continue with Google" round trip, regardless of which host --
+ * marketing or app -- the button was clicked from.
+ *
+ * GoTrue only honors a `redirectTo` that matches its configured Site
+ * URL (GOTRUE_SITE_URL in docker-compose.yml, set from APP_PUBLIC_URL
+ * -- i.e. the app host); GOTRUE_URI_ALLOW_LIST isn't set, so nothing
+ * else is allow-listed. Send it `https://vantly-ugc.com/auth/callback`
+ * instead (window.location.origin on the marketing host) and GoTrue
+ * silently swaps it for the bare Site URL with only `?code=` appended
+ * -- no path, no `redirect` param -- so it never reaches our
+ * /auth/callback route at all and no session gets created. (And even
+ * if it did: the marketing host's cookies wouldn't be visible on the
+ * app host anyway -- see clearSessionHint's comment above for why we
+ * deliberately don't widen the cookie domain to fix that instead.)
+ *
+ * So every OAuth-initiating button must build its `redirectTo` from
+ * this helper, never from `window.location.origin` directly.
+ *
+ * Reads APP_PUBLIC_URL via the runtime variable-context (see
+ * lib/supabase/client.ts's own comment for why: NEXT_PUBLIC_* would be
+ * inlined into the browser bundle at BUILD time, baking one
+ * deployment's app host into the image forever) -- the exact same env
+ * var GOTRUE_SITE_URL itself is already set from, so this always
+ * agrees with what GoTrue will actually accept, with zero extra
+ * configuration. Falls back to the current origin when it's unset,
+ * which is exactly correct for the single-host default (nothing to
+ * correct for).
+ */
+export function getOAuthRedirectTo(redirectPath: string): string {
+  const base = getVar('appPublicUrl', typeof window !== 'undefined' ? window.location.origin : '');
+  return `${base}/auth/callback?redirect=${encodeURIComponent(redirectPath)}`;
+}
 
 /** Mirrors SESSION_HINT in middleware.ts. */
 const SESSION_HINT = 'am_session_hint';

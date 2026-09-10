@@ -196,6 +196,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-screen bg-background text-text antialiased">
         <VariableContextComponent
           backendUrl={process.env.NEXT_PUBLIC_BACKEND_URL ?? process.env.API_V2_URL ?? ''}
+          appPublicUrl={process.env.APP_PUBLIC_URL?.trim().replace(/\/+$/, '') ?? ''}
           supabaseUrl={process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''}
           supabaseAnonKey={process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''}
           billingEnabled={billingEnabled}

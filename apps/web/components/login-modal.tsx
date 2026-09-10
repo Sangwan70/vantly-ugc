@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { Loader2, Mail, X, ExternalLink } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { analytics } from '@/lib/analytics';
+import { getOAuthRedirectTo } from '@/lib/marketing';
 
 interface LoginModalProps {
   open: boolean;
@@ -182,7 +183,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
       const { error: authError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?redirect=${encodeURIComponent('/dashboard')}`,
+          redirectTo: getOAuthRedirectTo('/dashboard'),
         },
       });
 

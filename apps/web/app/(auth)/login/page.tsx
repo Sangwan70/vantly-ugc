@@ -19,7 +19,7 @@ import { createClient } from '@/lib/supabase/client';
 import { analytics } from '@/lib/analytics';
 import { VantlyLogo } from '@/components/vantly-logo';
 import { Home2CTAButton } from '@/components/home2-cta-button';
-import { MARKETING_URL } from '@/lib/marketing';
+import { MARKETING_URL, getOAuthRedirectTo } from '@/lib/marketing';
 
 const Aurora = dynamic(() => import('@/components/Aurora'), { ssr: false });
 
@@ -200,7 +200,7 @@ function LoginForm() {
       const { error: authError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?redirect=${encodeURIComponent(redirectTo)}`,
+          redirectTo: getOAuthRedirectTo(redirectTo),
         },
       });
       if (authError) {

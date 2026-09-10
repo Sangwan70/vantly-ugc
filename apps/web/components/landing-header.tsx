@@ -3,7 +3,7 @@
 'use client';
 
 import Link from 'next/link';
-import type { ComponentType, ReactNode } from 'react';
+import type { ComponentType, MouseEvent, ReactNode } from 'react';
 import { useState } from 'react';
 import {
   BookOpenText,
@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { useLogin } from '@/components/login-context';
+import { Home2CTAButton } from '@/components/home2-cta-button';
 
 const primaryLinks = [
   { href: '/use-cases', label: 'Use Cases' },
@@ -138,7 +139,7 @@ const mobileLinkGroups = [
 
 function NavLink({ href, children }: { href: string; children: ReactNode }) {
   return (
-    <Link href={href} className="text-sm text-[#6b6b76] transition-colors hover:text-[#121212]">
+    <Link href={href} className="text-sm text-white/65 transition-colors hover:text-white">
       {children}
     </Link>
   );
@@ -163,7 +164,7 @@ function NavMenu({
     <div className="group relative">
       <button
         type="button"
-        className="flex items-center gap-1.5 text-sm text-[#6b6b76] transition-colors hover:text-[#121212] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#121212]/20"
+        className="flex items-center gap-1.5 text-sm text-white/65 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
       >
         {label}
         <ChevronDown className="h-3.5 w-3.5 transition-transform group-hover:rotate-180 group-focus-within:rotate-180" />
@@ -173,18 +174,18 @@ function NavMenu({
           align === 'right' ? 'right-0' : 'left-0'
         }`}
       >
-        <div className="w-[310px] rounded-2xl border border-black/10 bg-white p-2 shadow-[0_24px_70px_rgba(18,18,18,0.14)]">
+        <div className="w-[310px] rounded-2xl border border-white/10 bg-[#17181f] p-2 shadow-[0_24px_70px_rgba(0,0,0,0.55)]">
           {links.map(({ href, label: itemLabel, description, icon: Icon, external }) => {
             const className =
-              'flex gap-3 rounded-xl p-3 text-left transition-colors hover:bg-[#f4f4f5] focus-visible:bg-[#f4f4f5] focus-visible:outline-none';
+              'flex gap-3 rounded-xl p-3 text-left transition-colors hover:bg-white/[0.06] focus-visible:bg-white/[0.06] focus-visible:outline-none';
             const content = (
               <>
-                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#f1f1f2] text-[#121212]">
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white">
                   <Icon className="h-4 w-4" />
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-[#121212]">{itemLabel}</span>
-                  <span className="mt-0.5 block text-xs leading-5 text-[#6b6b76]">
+                  <span className="block text-sm font-semibold text-white">{itemLabel}</span>
+                  <span className="mt-0.5 block text-xs leading-5 text-white/55">
                     {description}
                   </span>
                 </span>
@@ -225,13 +226,18 @@ export function LandingHeader() {
     setMobileMenuOpen(false);
   }
 
+  function handleGenerateClick(event: MouseEvent<HTMLDivElement>) {
+    event.preventDefault();
+    openLogin();
+  }
+
   return (
-    <header className="sticky top-3 z-50 mx-3 max-w-[1200px] rounded-2xl border border-black/5 bg-white/70 px-3 backdrop-blur-md sm:top-4 sm:mx-4 sm:px-6 lg:mx-auto lg:w-full">
+    <header className="sticky top-3 z-50 mx-4 max-w-[1200px] rounded-full border border-white/10 bg-[rgba(13,14,18,0.55)] px-3 shadow-[0_20px_60px_-10px_rgba(0,0,0,0.6)] backdrop-blur-xl sm:top-4 sm:mx-6 sm:px-6 lg:mx-auto lg:w-full">
       <div className="flex h-[52px] items-center justify-between sm:h-14">
         <div className="flex min-w-0 items-center gap-4 lg:gap-8">
           <Link
             href="/"
-            className="whitespace-nowrap text-lg font-bold tracking-tight text-[#121212]"
+            className="whitespace-nowrap text-lg font-bold tracking-tight text-white"
           >
             vantly-ugc
           </Link>
@@ -246,36 +252,35 @@ export function LandingHeader() {
           </nav>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <button
-            onClick={openLogin}
-            className="rounded-full bg-[#121212] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#333] sm:px-5"
-          >
-            <span className="sm:hidden">Generate</span>
-            <span className="hidden sm:inline">Start generating</span>
-          </button>
+          <div onClick={handleGenerateClick}>
+            <Home2CTAButton href="#" variant="dark" size="md" showArrow={false}>
+              <span className="sm:hidden">Generate</span>
+              <span className="hidden sm:inline">Start generating</span>
+            </Home2CTAButton>
+          </div>
           <button
             type="button"
             aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
             aria-expanded={mobileMenuOpen}
             onClick={() => setMobileMenuOpen((open) => !open)}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-[#121212] transition-colors hover:bg-[#f2f2f3] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#121212]/20 xl:hidden"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white transition-colors hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 xl:hidden"
           >
             {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         </div>
       </div>
       {mobileMenuOpen && (
-        <nav className="absolute inset-x-0 top-[calc(100%+8px)] max-h-[calc(100vh-88px)] overflow-y-auto rounded-2xl border border-black/10 bg-white p-3 shadow-[0_24px_70px_rgba(18,18,18,0.14)] xl:hidden">
+        <nav className="absolute inset-x-0 top-[calc(100%+8px)] max-h-[calc(100vh-88px)] overflow-y-auto rounded-2xl border border-white/10 bg-[#0D0E12] p-3 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-xl xl:hidden">
           <div className="grid gap-2 sm:grid-cols-3">
             {mobileLinkGroups.map((group) => (
-              <div key={group.label} className="rounded-xl bg-[#f6f6f7] p-2">
-                <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-[#6b6b76]">
+              <div key={group.label} className="rounded-xl bg-white/5 p-2">
+                <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-white/50">
                   {group.label}
                 </p>
                 <div className="grid gap-1">
                   {group.links.map((link) => {
                     const className =
-                      'block rounded-lg px-2 py-2 text-sm font-semibold text-[#121212] transition-colors hover:bg-white focus-visible:bg-white focus-visible:outline-none';
+                      'block rounded-lg px-2 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none';
 
                     if ('external' in link && link.external) {
                       return (

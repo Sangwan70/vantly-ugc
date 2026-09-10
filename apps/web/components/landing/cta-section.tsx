@@ -4,6 +4,7 @@ import type { MouseEvent } from 'react';
 
 import { Home2CTAButton } from '@/components/home2-cta-button';
 import { useLogin } from '@/components/login-context';
+import { CtaClipMarquee } from '@/components/landing/cta-clip-marquee';
 
 /**
  * primaryText / secondaryText come from a fixed marketing page's
@@ -31,8 +32,9 @@ export function CtaSection({
 
   return (
     <section className="relative mx-auto w-full max-w-4xl px-6 py-24 text-center">
+      <CtaClipMarquee />
       <div
-        className="rounded-[32px] border px-8 py-16 sm:px-16"
+        className="relative z-10 rounded-[32px] border px-8 py-16 sm:px-16"
         style={{
           borderColor: 'rgba(255,255,255,0.08)',
           background:

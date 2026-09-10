@@ -1,46 +1,62 @@
 'use client';
 
 /**
- * Hero visual: a grid of small real generated-video clips that "zoom
- * out" into place on mount (each tile starts scaled up + faded, then
- * settles to its resting size on a stagger). Mirrors the live
- * agent-media.ai hero's clip carousel, using our own real R2-hosted
- * sample renders (same clips as Home2Flow / FeatureGrid).
+ * Hero visual: a fan of real generated-video clips radiating from a
+ * glowing anchor point beneath the headline.
+ *
+ * This mirrors the actual technique agent-media.ai's hero uses,
+ * confirmed by reading its shipped CSS in a live browser session: every
+ * card in their fan sits at the *exact same* `left`/`bottom` anchor and
+ * only its `rotate` differs (no per-card transform, no hover/scroll/
+ * mousemove listener moves them) -- the "cards fanning out of the hand"
+ * look is a static layout, not motion, on their site. We reuse that same
+ * anchor-and-rotate trick here, but add a real pop-out entrance on mount
+ * (theirs has none -- it renders straight into its resting fan), so this
+ * version visibly fans out of the glow on page load, which is the part
+ * that was actually asked for.
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { DEMO_CLIPS } from './demo-clips';
 
-const CLIPS = [
-  'https://pub-16e2ed8f6be84691845e91436920ce0a.r2.dev/vnext/primitive-runs/7252a5f8-48a5-439b-9e79-33333333cccc/simple-selfie.mp4',
-  'https://pub-16e2ed8f6be84691845e91436920ce0a.r2.dev/generation-outputs/120eaf6f-d2af-4f66-83e8-e62ec826de01/c3354440-1d8d-4832-ab4d-01bbd07bb9eb/character-video-final.mp4',
-  'https://pub-16e2ed8f6be84691845e91436920ce0a.r2.dev/generation-outputs/120eaf6f-d2af-4f66-83e8-e62ec826de01/d095fee4-2935-456f-83de-4c00681ac051/character-video-final.mp4',
-  'https://pub-16e2ed8f6be84691845e91436920ce0a.r2.dev/generation-outputs/120eaf6f-d2af-4f66-83e8-e62ec826de01/ac468576-3cc2-4d05-ad21-d69a34141132/character-video-final.mp4',
-  'https://pub-16e2ed8f6be84691845e91436920ce0a.r2.dev/brand-extracts/subtitle/120eaf6f-d2af-4f66-83e8-e62ec826de01/3f2c5f0a-61c6-45b0-a855-f2484b95d65d-subs/subtitled.mp4',
-];
+// Widest-angle tiles listed first so later (more centered) tiles paint
+// on top -- the same read order a fanned hand of cards has: the most
+// "face on" card sits frontmost, angled ones recede behind it.
+const ANGLES = [-30, 30, -20, 20, -11, 11, 0];
+const CLIP_ORDER = [0, 2, 4, 1, 3, 0, 2].map((i) => DEMO_CLIPS[i % DEMO_CLIPS.length]);
 
-// Repeat + slightly reorder so the grid has 8 tiles without importing
-// more clips than we actually have.
-const TILES = [CLIPS[0], CLIPS[1], CLIPS[2], CLIPS[3], CLIPS[4], CLIPS[1], CLIPS[3], CLIPS[0]];
+const TILE_CLASS =
+  'absolute bottom-0 w-[6.4rem] h-[11.4rem] left-[calc(50%-3.2rem)] ' +
+  'sm:w-[8.8rem] sm:h-[15.6rem] sm:left-[calc(50%-4.4rem)] ' +
+  'overflow-hidden rounded-xl border shadow-[0_16px_44px_rgba(0,0,0,0.55)] ' +
+  'transition-[rotate,scale,opacity] ease-out';
 
-function ClipTile({ src, delayMs, tall }: { src: string; delayMs: number; tall?: boolean }) {
+function FanTile({ src, deg, delayMs, z }: { src: string; deg: number; delayMs: number; z: number }) {
   const ref = useRef<HTMLVideoElement | null>(null);
   const [settled, setSettled] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(false);
 
   useEffect(() => {
+    setReduceMotion(window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     const t = setTimeout(() => setSettled(true), delayMs);
-    const el = ref.current;
-    el?.play().catch(() => {});
+    ref.current?.play().catch(() => {});
     return () => clearTimeout(t);
   }, [delayMs]);
 
+  const show = settled || reduceMotion;
+
   return (
     <div
-      className="overflow-hidden rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.45)] transition-all ease-out"
+      className={TILE_CLASS}
       style={{
-        transitionDuration: '900ms',
-        transform: settled ? 'scale(1)' : 'scale(1.55)',
-        opacity: settled ? 1 : 0,
-        gridRow: tall ? 'span 2' : undefined,
+        borderColor: 'rgba(255,255,255,0.14)',
+        transitionDuration: '820ms',
+        transitionDelay: reduceMotion ? '0ms' : `${delayMs}ms`,
+        transformOrigin: '50% 100%',
+        rotate: show ? `${deg}deg` : '0deg',
+        scale: show ? '1' : '0.35',
+        opacity: show ? 1 : 0,
+        zIndex: z,
       }}
     >
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
@@ -53,7 +69,6 @@ function ClipTile({ src, delayMs, tall }: { src: string; delayMs: number; tall?:
         autoPlay
         preload="auto"
         className="h-full w-full object-cover"
-        style={{ aspectRatio: '9 / 16' }}
       />
     </div>
   );
@@ -62,14 +77,24 @@ function ClipTile({ src, delayMs, tall }: { src: string; delayMs: number; tall?:
 export function HeroClipGrid() {
   return (
     <div
-      className="pointer-events-none mx-auto mt-14 grid w-full max-w-5xl grid-cols-4 gap-3 px-6 sm:grid-cols-8 sm:gap-4"
+      className="pointer-events-none relative mx-auto mt-16 h-[13rem] w-full max-w-md sm:mt-20 sm:h-[19rem] sm:max-w-lg"
       style={{
-        maskImage: 'linear-gradient(to bottom, black 70%, transparent 100%)',
-        WebkitMaskImage: 'linear-gradient(to bottom, black 70%, transparent 100%)',
+        maskImage: 'linear-gradient(to bottom, black 78%, transparent 100%)',
+        WebkitMaskImage: 'linear-gradient(to bottom, black 78%, transparent 100%)',
       }}
     >
-      {TILES.map((src, i) => (
-        <ClipTile key={i} src={src} delayMs={80 + i * 90} tall={i === 1 || i === 6} />
+      <div
+        aria-hidden
+        className="absolute bottom-0 left-1/2 h-32 w-32 -translate-x-1/2 translate-y-6 rounded-full blur-[56px] sm:h-44 sm:w-44"
+        style={{ background: 'var(--cryptix-purple-hot)', opacity: 0.45 }}
+      />
+      <div
+        aria-hidden
+        className="absolute bottom-0 left-1/2 h-24 w-24 -translate-x-1/2 rounded-full blur-3xl sm:h-32 sm:w-32"
+        style={{ background: 'var(--cryptix-purple-deep)', opacity: 0.55 }}
+      />
+      {ANGLES.map((deg, i) => (
+        <FanTile key={i} src={CLIP_ORDER[i]} deg={deg} delayMs={120 + i * 90} z={i} />
       ))}
     </div>
   );

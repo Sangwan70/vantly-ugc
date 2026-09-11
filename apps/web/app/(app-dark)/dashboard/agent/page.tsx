@@ -203,7 +203,15 @@ function rebuildToolRuns(msgs: Msg[]): Record<string, ToolRun> {
       if (name === 'ask_user') {
         tr[b.tool_use_id] = { skill: 'ask_user', status: 'succeeded', note: parsed.skipped ? 'skipped' : (parsed.selected ?? parsed.text) };
       } else {
-        const status = parsed.status === 'failed' ? 'failed' : 'succeeded';
+        // Only trust a persisted tool_result as a real outcome when it's an
+        // actual terminal status from the backend. Anything else (the old
+        // 'timeout' sentinel, the newer 'still_running', or an unrecognized
+        // value) means the client gave up watching before the run actually
+        // finished — NOT that it failed. Leaving it 'running' here (with the
+        // runId/composed flag still attached) is what lets the reconciliation
+        // pass in openChat() below re-check the real status on next load
+        // instead of the panel getting stuck showing a false 'failed'.
+        const status: ToolRun['status'] = FAILSTATES.has(parsed.status ?? '') ? 'failed' : parsed.status === 'succeeded' ? 'succeeded' : 'running';
         tr[b.tool_use_id] = { skill: name, status, mediaUrl: parsed.video_url ?? undefined, runId: m.skillRunId ?? undefined, composed: m.runKind === 'skill' };
       }
     }
@@ -221,6 +229,14 @@ const SUGGESTIONS = SAMPLE_PROMPTS.slice(0, 4);
 export default function AgentPage() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [toolRuns, setToolRuns] = useState<Record<string, ToolRun>>({});
+  // A run that finishes while the user isn't staring at this panel (or
+  // finishes only once the soft-timeout background watcher catches up)
+  // surfaces here: a small dismissible banner offering a jump to Gallery,
+  // plus a best-effort attempt to actually open that tab (browsers often
+  // block a programmatic window.open() that isn't a direct click, so the
+  // banner — not the auto-open — is the reliable path).
+  const [readyToast, setReadyToast] = useState<{ id: string; label: string; ts: number } | null>(null);
+  const notifiedRunsRef = useRef<Set<string>>(new Set());
   const [chatId, setChatId] = useState<string | null>(null);
   const chatIdRef = useRef<string | null>(null);
   const [chats, setChats] = useState<ChatSummary[]>([]);
@@ -400,6 +416,18 @@ export default function AgentPage() {
       }));
       const tr = rebuildToolRuns(msgs);
       setMessages(msgs); setToolRuns(tr); setChat(id); setActiveProject(j.chat?.project_id ?? null);
+      // Self-heal: any run whose last known state isn't a confirmed
+      // succeeded/failed (see rebuildToolRuns above) gets a fresh check as
+      // soon as this chat is opened — this is what lets a run that kept
+      // working past the panel's old "failed" (timed out) label show its
+      // real outcome on the very next visit, no re-login required. The
+      // last unresolved tool_use is skipped here since resumeIfNeeded
+      // (below) already re-attaches to it and continues the brain loop.
+      const skipId = lastUnresolvedToolUse(msgs)?.id;
+      for (const [tid, run] of Object.entries(tr)) {
+        if (tid === skipId) continue;
+        if (run.status === 'running' && run.runId) void recheckRun(tid, run);
+      }
       if (resume) void resumeIfNeeded(msgs, tr);
       return true;
     } catch { return false; }
@@ -449,20 +477,111 @@ export default function AgentPage() {
     void fetchChats();
   }
 
-  /** Poll an already-submitted run to completion → tool_result string. */
-  async function pollRun(toolUseId: string, runId: string, composed: boolean): Promise<string> {
+  /** A run finished with real media — tell the user via a small banner and
+   *  best-effort pop a Gallery tab (many browsers block window.open() that
+   *  isn't a direct click, so the banner's own button is the fallback that
+   *  always works). Deduped per toolUseId so the background watcher and a
+   *  later reconciliation pass can't double-fire it for the same run. */
+  function notifyArtifactReady(toolUseId: string, skillSlug: string) {
+    if (notifiedRunsRef.current.has(toolUseId)) return;
+    notifiedRunsRef.current.add(toolUseId);
+    setReadyToast({ id: toolUseId, label: skillLabel(skillSlug), ts: Date.now() });
+    try {
+      const w = window.open('/dashboard/gallery', '_blank', 'noopener');
+      if (!w) { /* popup blocked — the banner button is the fallback */ }
+    } catch { /* ignore — banner still shows */ }
+  }
+
+  /** "The job is still running for 4 min." — recomputed on every poll tick
+   *  (not just once) so the panel keeps counting up instead of showing one
+   *  static message for however long the run takes. Undefined until the
+   *  backend actually reports started_at (still queued, not misleading). */
+  function elapsedRunningNote(startedAt?: string | null): string | undefined {
+    if (!startedAt) return undefined;
+    const ms = Date.now() - new Date(startedAt).getTime();
+    if (!Number.isFinite(ms) || ms < 0) return undefined;
+    const mins = Math.max(1, Math.round(ms / 60000));
+    return `The job is still running for ${mins} min.`;
+  }
+
+  /** One status check, no loop — used by the background watcher's cadence
+   *  and by the on-load reconciliation pass. Returns null on any network
+   *  hiccup so the caller just tries again next tick. */
+  async function pollOnce(runId: string, composed: boolean): Promise<any | null> {
+    try {
+      const pr = await fetch(composed ? `/api/v1/skills/runs/${runId}` : `/api/v1/primitives/runs/${runId}`, {
+        credentials: 'include', signal: abortRef.current?.signal,
+      });
+      if (!pr.ok) return null;
+      return await pr.json();
+    } catch {
+      return null;
+    }
+  }
+
+  /** Keep checking a run every `cadenceMs` for up to `maxIters` checks,
+   *  reporting live glassbox progress via onTick, until a TERMINAL status
+   *  comes back. Returns the terminal payload, or null if the budget ran
+   *  out with the run still legitimately in progress (not a failure). */
+  async function pollUntilTerminal(
+    runId: string, composed: boolean, cadenceMs: number, maxIters: number, onTick: (d: any) => void,
+  ): Promise<any | null> {
+    for (let i = 0; i < maxIters; i++) {
+      await sleep(cadenceMs);
+      if (cancelRef.current) return null;
+      const d = await pollOnce(runId, composed);
+      if (!d) continue;
+      onTick(d);
+      if (TERMINAL.has(String(d.status ?? ''))) return d;
+    }
+    return null;
+  }
+
+  /** Shared terminal-status handler for pollRun's own loop, its background
+   *  continuation, and the on-load reconciliation pass — one place that
+   *  decides success vs. failure and fires the ready notification, so all
+   *  three paths agree on what a run's outcome actually means. */
+  function finalizeRunResult(toolUseId: string, skillSlug: string, status: string, d: any): string {
+    if (FAILSTATES.has(status)) {
+      const note = d?.error?.message ?? d?.error ?? status;
+      setToolRuns((p) => ({ ...p, [toolUseId]: { ...p[toolUseId], skill: p[toolUseId]?.skill ?? skillSlug, status: 'failed', note } }));
+      return JSON.stringify({ status: 'failed', error: d?.error ?? status });
+    }
+    const artifacts = (d.artifacts ?? []) as Array<{ url?: string }>;
+    const videoUrl = (d.final_output?.video_url as string) ?? artifacts.find((a) => /\.(mp4|webm|mov)(\?|$)/i.test(a.url ?? ''))?.url ?? artifacts[0]?.url ?? null;
+    setToolRuns((p) => ({ ...p, [toolUseId]: { ...p[toolUseId], skill: p[toolUseId]?.skill ?? skillSlug, status: 'succeeded', mediaUrl: videoUrl ?? undefined } }));
+    if (videoUrl || artifacts.length > 0) notifyArtifactReady(toolUseId, skillSlug);
+    return JSON.stringify({ status: 'succeeded', video_url: videoUrl, artifact_urls: artifacts.map((a) => a.url).filter(Boolean), final_output: d.final_output ?? null });
+  }
+
+  /** Poll an already-submitted run to completion → tool_result string.
+   *
+   *  Fast phase: 5s cadence for ~25 minutes, covering the overwhelming
+   *  majority of real runs. If a composed skill is STILL going after that
+   *  (make_ugc_video's steps each retry up to 3x with a 20-minute
+   *  activity timeout — a real worst case comfortably exceeds the old
+   *  ~17-minute cap), we do NOT report a false failure: the brain is told
+   *  it's still working, and a detached slow-cadence watcher keeps
+   *  checking in the background for as long as this tab stays open, so
+   *  the panel (and Jobs/Gallery, once they poll too) still reflect the
+   *  real outcome without the user needing to reload or log back in. */
+  async function pollRun(toolUseId: string, runId: string, composed: boolean, skillSlug: string): Promise<string> {
     const pollPath = composed ? `/api/v1/skills/runs/${runId}` : `/api/v1/primitives/runs/${runId}`;
     // A run that never leaves "not started" (no started_at — dispatch failed
     // silently, or no worker ever picked it up) would otherwise sit in this
-    // loop for its full ~17-minute cap with zero feedback. Once real progress
-    // begins (started_at is set), the long cap applies normally — some jobs
+    // loop for its full cap with zero feedback. Once real progress begins
+    // (started_at is set), the long cap applies normally — some jobs
     // legitimately take several minutes.
     const NOT_STARTED_MAX_ITERS = 18; // ~90s at the 5s poll interval below
     let notStartedIters = 0;
-    for (let i = 0; i < 200; i++) {
+    // Carries the run's started_at across into the post-loop "still going"
+    // note below, so that first message already has a real elapsed time
+    // instead of waiting for the background watcher's first tick.
+    let lastKnownStartedAt: string | undefined;
+    for (let i = 0; i < 300; i++) {
       await sleep(5000);
       if (cancelRef.current) {
-        setToolRuns((p) => ({ ...p, [toolUseId]: { ...p[toolUseId], skill: p[toolUseId]?.skill ?? '', status: 'failed', note: 'canceled' } }));
+        setToolRuns((p) => ({ ...p, [toolUseId]: { ...p[toolUseId], skill: p[toolUseId]?.skill ?? skillSlug, status: 'failed', note: 'canceled' } }));
         return JSON.stringify({ status: 'canceled' });
       }
       let pr: Response;
@@ -470,7 +589,7 @@ export default function AgentPage() {
         pr = await fetch(pollPath, { credentials: 'include', signal: abortRef.current?.signal });
       } catch (e) {
         if (cancelRef.current || (e as Error)?.name === 'AbortError') {
-          setToolRuns((p) => ({ ...p, [toolUseId]: { ...p[toolUseId], skill: p[toolUseId]?.skill ?? '', status: 'failed', note: 'canceled' } }));
+          setToolRuns((p) => ({ ...p, [toolUseId]: { ...p[toolUseId], skill: p[toolUseId]?.skill ?? skillSlug, status: 'failed', note: 'canceled' } }));
           return JSON.stringify({ status: 'canceled' });
         }
         continue; // transient network blip — keep polling
@@ -479,11 +598,20 @@ export default function AgentPage() {
       const d = await pr.json();
       const status = String(d.status ?? '');
       // Glassbox: surface the live per-step checklist + any artifacts produced so
-      // far (the API already returns current_step + steps[]). Shown in the panel.
-      if (composed) {
+      // far (the API already returns current_step + steps[]), plus a running
+      // elapsed-time note — refreshed on every tick (every 5s here) so it
+      // actually counts up instead of appearing once and going stale.
+      if (!TERMINAL.has(status)) {
+        if (d.started_at) lastKnownStartedAt = d.started_at;
+        const note = elapsedRunningNote(d.started_at);
         setToolRuns((p) => ({
           ...p,
-          [toolUseId]: { ...p[toolUseId], skill: p[toolUseId]?.skill ?? '', currentStep: d.current_step ?? undefined, steps: Array.isArray(d.steps) ? (d.steps as StepInfo[]) : p[toolUseId]?.steps },
+          [toolUseId]: {
+            ...p[toolUseId], skill: p[toolUseId]?.skill ?? skillSlug,
+            currentStep: composed ? (d.current_step ?? undefined) : p[toolUseId]?.currentStep,
+            steps: composed && Array.isArray(d.steps) ? (d.steps as StepInfo[]) : p[toolUseId]?.steps,
+            note: note ?? p[toolUseId]?.note,
+          },
         }));
       }
       if (!TERMINAL.has(status)) {
@@ -494,22 +622,78 @@ export default function AgentPage() {
             try { await fetch(`/api/v1/skills/runs/${runId}/cancel`, { method: 'POST', credentials: 'include' }); } catch { /* best-effort */ }
           }
           const note = 'This generation never started (a backend issue, not something you did) — canceled after 90s of no progress.';
-          setToolRuns((p) => ({ ...p, [toolUseId]: { ...p[toolUseId], skill: p[toolUseId]?.skill ?? '', status: 'failed', note } }));
+          setToolRuns((p) => ({ ...p, [toolUseId]: { ...p[toolUseId], skill: p[toolUseId]?.skill ?? skillSlug, status: 'failed', note } }));
           return JSON.stringify({ status: 'failed', error: 'never_started' });
         }
         continue;
       }
-      if (FAILSTATES.has(status)) {
-        setToolRuns((p) => ({ ...p, [toolUseId]: { ...p[toolUseId], skill: p[toolUseId]?.skill ?? '', status: 'failed', note: d?.error?.message ?? d?.error ?? status } }));
-        return JSON.stringify({ status: 'failed', error: d?.error ?? status });
-      }
-      const artifacts = (d.artifacts ?? []) as Array<{ url?: string }>;
-      const videoUrl = (d.final_output?.video_url as string) ?? artifacts.find((a) => /\.(mp4|webm|mov)(\?|$)/i.test(a.url ?? ''))?.url ?? artifacts[0]?.url ?? null;
-      setToolRuns((p) => ({ ...p, [toolUseId]: { ...p[toolUseId], skill: p[toolUseId]?.skill ?? '', status: 'succeeded', mediaUrl: videoUrl ?? undefined } }));
-      return JSON.stringify({ status: 'succeeded', video_url: videoUrl, artifact_urls: artifacts.map((a) => a.url).filter(Boolean), final_output: d.final_output ?? null });
+      return finalizeRunResult(toolUseId, skillSlug, status, d);
     }
-    setToolRuns((p) => ({ ...p, [toolUseId]: { ...p[toolUseId], skill: p[toolUseId]?.skill ?? '', status: 'failed', note: 'timed out' } }));
-    return JSON.stringify({ status: 'timeout' });
+    // The fast phase ran out but the run is still legitimately going. Say so
+    // honestly (not 'failed') and keep watching in the background — the
+    // note keeps counting up every tick from here on, not just this once.
+    setToolRuns((p) => ({
+      ...p,
+      [toolUseId]: {
+        ...p[toolUseId], skill: p[toolUseId]?.skill ?? skillSlug, status: 'running',
+        note: elapsedRunningNote(lastKnownStartedAt) ?? 'Still generating — this is taking longer than usual.',
+      },
+    }));
+    void (async () => {
+      const d = await pollUntilTerminal(runId, composed, 20000, 540, (tick) => {
+        setToolRuns((p) => ({
+          ...p,
+          [toolUseId]: {
+            ...p[toolUseId], skill: p[toolUseId]?.skill ?? skillSlug,
+            currentStep: composed ? (tick.current_step ?? undefined) : p[toolUseId]?.currentStep,
+            steps: composed && Array.isArray(tick.steps) ? (tick.steps as StepInfo[]) : p[toolUseId]?.steps,
+            note: elapsedRunningNote(tick.started_at) ?? p[toolUseId]?.note,
+          },
+        }));
+      });
+      if (d) finalizeRunResult(toolUseId, skillSlug, String(d.status ?? ''), d);
+    })();
+    return JSON.stringify({ status: 'still_running', note: 'The render is still in progress — longer than usual, but not failed. Let the user know and mention they can check the Jobs page; you will not get another update for this run in this conversation turn.' });
+  }
+
+  /** Re-check a run that a PAST page load gave up watching (persisted
+   *  tool_result says something other than a real terminal outcome — see
+   *  the rebuildToolRuns fix above). One immediate check; if it's already
+   *  done, finalize it right away. If it's genuinely still going, keep a
+   *  slow watcher alive for as long as this tab stays open. This is what
+   *  makes a freshly (re)loaded /dashboard/agent chat self-heal a stale
+   *  "failed" without the user needing to log out and back in. */
+  async function recheckRun(toolUseId: string, run: ToolRun) {
+    if (!run.runId) return;
+    const composed = !!run.composed;
+    const d = await pollOnce(run.runId, composed);
+    if (!d) return; // couldn't reach it right now — next load tries again
+    const status = String(d.status ?? '');
+    if (TERMINAL.has(status)) {
+      finalizeRunResult(toolUseId, run.skill, status, d);
+      return;
+    }
+    setToolRuns((p) => ({
+      ...p,
+      [toolUseId]: {
+        ...p[toolUseId], status: 'running',
+        currentStep: d.current_step ?? p[toolUseId]?.currentStep,
+        steps: Array.isArray(d.steps) ? (d.steps as StepInfo[]) : p[toolUseId]?.steps,
+        note: elapsedRunningNote(d.started_at) ?? p[toolUseId]?.note,
+      },
+    }));
+    const finalD = await pollUntilTerminal(run.runId, composed, 20000, 540, (tick) => {
+      setToolRuns((p) => ({
+        ...p,
+        [toolUseId]: {
+          ...p[toolUseId],
+          currentStep: tick.current_step ?? p[toolUseId]?.currentStep,
+          steps: Array.isArray(tick.steps) ? (tick.steps as StepInfo[]) : p[toolUseId]?.steps,
+          note: elapsedRunningNote(tick.started_at) ?? p[toolUseId]?.note,
+        },
+      }));
+    });
+    if (finalD) finalizeRunResult(toolUseId, run.skill, String(finalD.status ?? ''), finalD);
   }
 
   /** Read-only tool: list the user's saved characters. Resolves immediately. */
@@ -623,7 +807,7 @@ export default function AgentPage() {
     const composed = Boolean(subJson.skill_run_id);
     const id = (subJson.skill_run_id ?? subJson.run_id) as string;
     setToolRuns((p) => ({ ...p, [tu.id]: { skill: tu.name, status: 'running', runId: id, composed } }));
-    const text = await pollRun(tu.id, id, composed);
+    const text = await pollRun(tu.id, id, composed, tu.name);
     return { text, runId: id, runKind: composed ? 'skill' : 'primitive' };
   }
 
@@ -681,7 +865,7 @@ export default function AgentPage() {
     setBusy(true); setError(null);
     try {
       setToolRuns((p) => ({ ...p, [tu.id]: { ...run, status: 'running' } }));
-      const resultText = await pollRun(tu.id, run.runId, !!run.composed);
+      const resultText = await pollRun(tu.id, run.runId, !!run.composed, run.skill);
       const trMsg: Msg = { role: 'user', content: [{ type: 'tool_result', tool_use_id: tu.id, content: resultText }], cmid: tu.id, skillRunId: run.runId ?? null, runKind: run.composed ? 'skill' : 'primitive' };
       const convo: Msg[] = [...msgs, trMsg];
       setMessages(convo);
@@ -1014,7 +1198,7 @@ export default function AgentPage() {
     setMessages((prev) => [...prev, asstMsg]);
     persist([asstMsg]);
     setToolRuns((p) => ({ ...p, [toolUseId]: { skill: target.slug, status: 'running', runId: result.id, composed: result.composed } }));
-    const resultText = await pollRun(toolUseId, result.id, result.composed);
+    const resultText = await pollRun(toolUseId, result.id, result.composed, target.slug);
     const trMsg: Msg = { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUseId, content: resultText }], cmid: toolUseId, skillRunId: result.id, runKind: result.composed ? 'skill' : 'primitive' };
     setMessages((prev) => [...prev, trMsg]);
     persist([trMsg]);
@@ -1512,6 +1696,40 @@ export default function AgentPage() {
       {skillRunModal}
       {historyRail}
 
+      {readyToast ? (
+        <div
+          key={readyToast.id}
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl px-4 py-3 shadow-2xl"
+          style={{ backgroundColor: '#191A22', border: '1px solid rgba(167,139,250,0.35)', color: '#E9E9F0' }}
+        >
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: 'rgba(52,211,153,0.15)' }}>
+            <Check className="h-4 w-4" style={{ color: '#34D399' }} />
+          </span>
+          <div className="text-sm">
+            <p className="font-medium">{readyToast.label} is ready</p>
+            <p style={{ color: 'rgba(255,255,255,0.55)' }} className="text-xs">Your artifact finished generating.</p>
+          </div>
+          <Link
+            href="/dashboard/gallery"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setReadyToast(null)}
+            className="ml-1 shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold"
+            style={{ backgroundColor: '#A78BFA', color: '#0F1015' }}
+          >
+            Open Gallery
+          </Link>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={() => setReadyToast(null)}
+            className="shrink-0 rounded-full p-1 opacity-60 transition-opacity hover:opacity-100"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ) : null}
+
       {/* ── Conversation column ─────────────────────────────────────────── */}
       <div className="relative flex min-w-0 flex-1 flex-col">
         <div className="flex items-center justify-end gap-2 px-6 pt-4">
@@ -1576,9 +1794,15 @@ export default function AgentPage() {
                       // progress, character picker, artifacts) lives in the panel.
                       const run = toolRuns[b.id];
                       const label = skillLabel(b.name);
+                      // Once a run's actual elapsed time is known (run.note, refreshed
+                      // on every poll tick — see pollRun/recheckRun above), that takes
+                      // priority over the generic step label or the static "usually
+                      // 1-2 min" guess, so a long-running job keeps visibly counting up
+                      // instead of showing one message that goes stale.
                       const statusText = run?.status === 'succeeded' ? 'done'
                         : run?.status === 'failed' ? `failed${run.note ? ` — ${run.note}` : ''}`
                         : b.name === 'list_my_characters' ? 'loading…'
+                        : run?.note ? run.note
                         : run?.currentStep && run.currentStep !== 'done' ? `${run.currentStep.replace(/_/g, ' ')}…`
                         : 'generating… · usually 1–2 min';
                       return (

@@ -65,6 +65,10 @@ function isFailed(status: string): boolean {
   return status === 'failed' || status === 'error';
 }
 
+// Anything not in here is treated as still in-progress (running, submitted,
+// queued, pending, etc.) — used to decide whether it's worth auto-refreshing.
+const TERMINAL_STATUSES = new Set(['succeeded', 'completed', 'success', 'failed', 'error', 'canceled', 'cancelled']);
+
 function statusColor(s: string): { bg: string; fg: string; border: string } {
   switch (s) {
     case 'succeeded':
@@ -120,6 +124,20 @@ export default function JobsPage() {
   useEffect(() => {
     load();
   }, []);
+
+  // Auto-refresh while anything is still in progress, so a run that
+  // finishes while this page is open (or was already running when it was
+  // opened) shows up without a manual reload. Stops once everything is
+  // terminal, and pauses while the tab isn't visible.
+  useEffect(() => {
+    const hasInFlight = (jobs ?? []).some((j) => !TERMINAL_STATUSES.has(j.status));
+    if (!hasInFlight) return;
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      void load();
+    }, 10000);
+    return () => window.clearInterval(id);
+  }, [jobs]);
 
   const failedCount = useMemo(
     () => (jobs ?? []).filter((j) => isFailed(j.status)).length,

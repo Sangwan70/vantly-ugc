@@ -44,6 +44,10 @@ interface CreditsResp {
   plan?: { tier?: string | null; name?: string | null } | null;
 }
 
+// Anything not in here is still in progress — used to decide whether it's
+// worth auto-refreshing this widget (see the polling effect below).
+const TERMINAL_STATUSES = new Set(['succeeded', 'completed', 'success', 'failed', 'error', 'canceled', 'cancelled']);
+
 export default function DashboardHomePage() {
   const [email, setEmail] = useState<string | null>(null);
   const [jobs, setJobs] = useState<GenerationJob[] | null>(null);
@@ -51,91 +55,122 @@ export default function DashboardHomePage() {
   const [error, setError] = useState<string | null>(null);
   const [planTier, setPlanTier] = useState<string | null>(null);
   const [playing, setPlaying] = useState<VideoModalSubject | null>(null);
+  // Whether the merged feed's most recent fetch still had anything
+  // in-progress — drives the auto-refresh interval below so a generation
+  // that finishes while this page is open shows up without a reload.
+  const [hasInFlight, setHasInFlight] = useState(false);
+  const mountedRef = useRef(true);
+
+  // Merged feed: legacy generation_jobs + vNext primitive_runs + vNext
+  // composed skill_runs, all returned in one date-sorted list by the api-v2
+  // route /v1/me/gallery (proxied same-origin). Factored out of the mount
+  // effect so the polling effect below can call it again once anything is
+  // still in progress, instead of only ever fetching once on load.
+  async function refreshGallery() {
+    try {
+      const resp = await fetch('/api/v1/me/gallery?limit=60', { credentials: 'include' });
+      if (!mountedRef.current) return;
+      if (!resp.ok) {
+        if (resp.status !== 401) {
+          setError(`gallery ${resp.status}`);
+        }
+        setJobs([]);
+        setHasInFlight(false);
+        return;
+      }
+      const json = (await resp.json()) as {
+        items?: Array<{
+          id: string;
+          source: string;
+          primitive: string | null;
+          status: string;
+          created_at: string;
+          media_url: string | null;
+          thumbnail_url: string | null;
+          duration_seconds: number | null;
+          prompt: string | null;
+        }>;
+        total?: number;
+      };
+      if (!mountedRef.current) return;
+      // Every run the user has triggered (any status, any output type —
+      // matches what /dashboard/jobs counts). Falls back to the page's
+      // own item count if an older api-v2 hasn't been redeployed with
+      // `total` yet, so this never regresses to "No runs yet" outright.
+      setRunCount(json.total ?? json.items?.length ?? 0);
+      setHasInFlight((json.items ?? []).some((j) => !TERMINAL_STATUSES.has(j.status)));
+      // Show recent generations of ANY type — videos AND images
+      // (portraits/character sheets). Filtering to videos-only made the
+      // home read "No generations yet" for users whose recent work is all
+      // images (the "everything disappeared" report).
+      const MEDIA_RE = /\.(mp4|webm|mov|png|jpe?g|webp|gif)(\?|$)/i;
+      const recent = (json.items ?? []).filter(
+        (j) => j.media_url && MEDIA_RE.test(j.media_url),
+      );
+      // Map to the GenerationJob shape the existing UI expects.
+      setJobs(
+        recent.slice(0, 12).map((j) => ({
+          id: j.id,
+          model_slug: j.primitive,
+          operation: j.primitive,
+          status: j.status,
+          prompt: j.prompt,
+          output_media_url: j.media_url,
+          output_thumbnail_url: j.thumbnail_url,
+          duration_seconds: j.duration_seconds,
+          created_at: j.created_at,
+        })) as GenerationJob[],
+      );
+    } catch (err) {
+      if (mountedRef.current) {
+        setError((err as Error).message);
+        setJobs([]);
+        setRunCount(0);
+        setHasInFlight(false);
+      }
+    }
+  }
 
   useEffect(() => {
-    let cancelled = false;
+    mountedRef.current = true;
     (async () => {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
-      if (cancelled) return;
+      if (!mountedRef.current) return;
       setEmail(user?.email ?? null);
 
       // Plan tier via the same Supabase edge function /subscribe uses.
       // (Credits live in the sidebar now — the home card surfaces Skills & MCP.)
       invokeFn('credits-check', { method: 'GET' })
         .then(({ data }) => {
-          if (cancelled) return;
+          if (!mountedRef.current) return;
           const resp = data as CreditsResp | null;
           if (resp?.plan?.tier) setPlanTier(resp.plan.tier);
         })
         .catch(() => {});
 
-      // Merged feed: legacy generation_jobs + vNext primitive_runs +
-      // vNext composed skill_runs, all returned in one date-sorted list
-      // by the api-v2 route /v1/me/gallery (proxied same-origin).
-      try {
-        const resp = await fetch('/api/v1/me/gallery?limit=60', { credentials: 'include' });
-        if (!resp.ok) {
-          if (resp.status !== 401) {
-            setError(`gallery ${resp.status}`);
-          }
-          setJobs([]);
-        } else {
-          const json = (await resp.json()) as {
-            items?: Array<{
-              id: string;
-              source: string;
-              primitive: string | null;
-              status: string;
-              created_at: string;
-              media_url: string | null;
-              thumbnail_url: string | null;
-              duration_seconds: number | null;
-              prompt: string | null;
-            }>;
-            total?: number;
-          };
-          if (cancelled) return;
-          // Every run the user has triggered (any status, any output type —
-          // matches what /dashboard/jobs counts). Falls back to the page's
-          // own item count if an older api-v2 hasn't been redeployed with
-          // `total` yet, so this never regresses to "No runs yet" outright.
-          setRunCount(json.total ?? json.items?.length ?? 0);
-          // Show recent generations of ANY type — videos AND images
-          // (portraits/character sheets). Filtering to videos-only made the
-          // home read "No generations yet" for users whose recent work is all
-          // images (the "everything disappeared" report).
-          const MEDIA_RE = /\.(mp4|webm|mov|png|jpe?g|webp|gif)(\?|$)/i;
-          const recent = (json.items ?? []).filter(
-            (j) => j.media_url && MEDIA_RE.test(j.media_url),
-          );
-          // Map to the GenerationJob shape the existing UI expects.
-          setJobs(
-            recent.slice(0, 12).map((j) => ({
-              id: j.id,
-              model_slug: j.primitive,
-              operation: j.primitive,
-              status: j.status,
-              prompt: j.prompt,
-              output_media_url: j.media_url,
-              output_thumbnail_url: j.thumbnail_url,
-              duration_seconds: j.duration_seconds,
-              created_at: j.created_at,
-            })) as GenerationJob[],
-          );
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError((err as Error).message);
-          setJobs([]);
-          setRunCount(0);
-        }
-      }
+      await refreshGallery();
     })();
     return () => {
-      cancelled = true;
+      mountedRef.current = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Auto-refresh while anything in the feed is still in progress, so a
+  // generation that finishes while the user is sitting on the Dashboard
+  // home page shows up on its own — previously this widget fetched once on
+  // load, so the only way to see a newly-finished run was a full reload
+  // (or, as reported, logging out and back in).
+  useEffect(() => {
+    if (!hasInFlight) return;
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      void refreshGallery();
+    }, 12000);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasInFlight]);
 
   const firstName = (email ?? '').split('@')[0];
   const loading = jobs === null;

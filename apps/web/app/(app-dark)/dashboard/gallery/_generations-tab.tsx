@@ -125,6 +125,30 @@ export function GenerationsTab() {
     return () => { cancelled = true; };
   }, [fetchPage]);
 
+  // Auto-refresh the head of the feed periodically, so a generation that
+  // finishes while this tab is open (portrait/character-sheet/video for a
+  // still-running skill run, or a run that only just wrapped up) appears
+  // without the user needing to reload — previously the only way to see it
+  // was a full page reload (or, as reported, logging out and back in).
+  // Only NEW items (by id) get prepended; already-loaded pages further down
+  // via infinite scroll are left alone so scroll position doesn't jump.
+  const jobsLoaded = jobs !== null;
+  useEffect(() => {
+    if (!jobsLoaded) return;
+    const id = window.setInterval(async () => {
+      if (document.visibilityState === 'hidden') return;
+      const head = await fetchPage(0);
+      if (!head) return;
+      setJobs((prev) => {
+        const existing = new Set((prev ?? []).map((j) => j.id));
+        const fresh = head.videos.filter((j) => !existing.has(j.id));
+        if (fresh.length === 0) return prev;
+        return [...fresh, ...(prev ?? [])];
+      });
+    }, 12000);
+    return () => window.clearInterval(id);
+  }, [jobsLoaded, fetchPage]);
+
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el || !hasMore || jobs === null) return;

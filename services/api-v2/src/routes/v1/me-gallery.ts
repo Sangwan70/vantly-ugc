@@ -109,6 +109,46 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
     return;
   }
 
+  // ── vNext: each composed skill run's CHILD primitive_runs (steps), keyed
+  // by skill_run_id. A composed run's `final_output` (used below) is only
+  // ever written once by the workflow, at the very end, after every step —
+  // including an optional one like subtitles — has succeeded (see
+  // workflows/make-ugc-video.ts). If ANY step fails, or the client that
+  // was watching gave up before the workflow finished, `final_output` stays
+  // null forever even though earlier steps genuinely succeeded, got
+  // uploaded to R2, and were paid for. Fetching the real per-step artifacts
+  // here lets the loop below fall back to them so those artifacts still
+  // show up instead of a single contentless "failed" placeholder.
+  const skillRunIds = (skillRuns ?? []).map((r) => r.id as string);
+  const childrenBySkillRun = new Map<
+    string,
+    Array<{ status: string; primitive_id: string | null; primitive_artifacts: Array<{ url: string; kind: string }> }>
+  >();
+  if (skillRunIds.length > 0) {
+    const { data: children } = await supabase
+      .from('primitive_runs')
+      .select('skill_run_id, status, primitive_id, primitive_artifacts(url, kind, mime, bytes)')
+      .in('skill_run_id', skillRunIds);
+    for (const c of children ?? []) {
+      const key = c.skill_run_id as string;
+      const list = childrenBySkillRun.get(key) ?? [];
+      list.push(c as unknown as { status: string; primitive_id: string | null; primitive_artifacts: Array<{ url: string; kind: string }> });
+      childrenBySkillRun.set(key, list);
+    }
+    // Tolerate a lookup failure silently — worst case we fall back to the
+    // final_output-only behavior this replaces, not a hard error.
+  }
+  // kind → which final_output field it would have filled, so the fallback
+  // below reads the same artifact regardless of which one populated it.
+  function findChildArtifact(skillRunId: string, kinds: string[]): { url: string; status: string } | null {
+    for (const c of childrenBySkillRun.get(skillRunId) ?? []) {
+      const arts = c.primitive_artifacts ?? [];
+      const hit = arts.find((a) => kinds.includes(a.kind) && a.url);
+      if (hit) return { url: hit.url, status: c.status };
+    }
+    return null;
+  }
+
   const VIDEO_EXT_RE = /\.(mp4|webm|mov)(\?|$|#)/i;
 
   const items: GalleryItem[] = [];
@@ -166,61 +206,70 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
     // character-sheet visibility, same as for a standalone character-sheet
     // run, so this doesn't change what's shown for that one, only restores
     // the portrait and lets the video keep its own row.
+    // Fall back to each step's own artifact when final_output never got
+    // that field set — e.g. the workflow's outer catch block never writes
+    // final_output at all on failure (see workflows/make-ugc-video.ts), so
+    // an earlier step that genuinely succeeded (and was paid for) would
+    // otherwise vanish from every gallery/jobs view entirely.
+    const portraitFallback = !out.portrait_url ? findChildArtifact(row.id as string, ['portrait']) : null;
+    const sheetFallback = !out.character_sheet_url ? findChildArtifact(row.id as string, ['character_sheet']) : null;
+    const videoFallback = !out.video_url ? findChildArtifact(row.id as string, ['subtitled_video', 'selfie_video']) : null;
+
     let emitted = false;
-    if (out.portrait_url) {
+    if (out.portrait_url || portraitFallback) {
       items.push({
         id: `${row.id}-portrait`,
         run_id: row.id as string,
         source: 'vnext_skill',
         primitive: 'portrait_gpt2',
-        status,
+        status: portraitFallback ? portraitFallback.status : status,
         created_at: createdAt,
         finished_at: finishedAt,
-        media_url: out.portrait_url,
-        thumbnail_url: out.portrait_url,
+        media_url: out.portrait_url ?? portraitFallback?.url ?? null,
+        thumbnail_url: out.portrait_url ?? portraitFallback?.url ?? null,
         duration_seconds: null,
         prompt: null,
         credits_deducted: 0,
       });
       emitted = true;
     }
-    if (out.character_sheet_url) {
+    if (out.character_sheet_url || sheetFallback) {
       items.push({
         id: `${row.id}-character-sheet`,
         run_id: row.id as string,
         source: 'vnext_skill',
         primitive: 'character_sheet_gpt2',
-        status,
+        status: sheetFallback ? sheetFallback.status : status,
         created_at: createdAt,
         finished_at: finishedAt,
-        media_url: out.character_sheet_url,
-        thumbnail_url: out.character_sheet_url,
+        media_url: out.character_sheet_url ?? sheetFallback?.url ?? null,
+        thumbnail_url: out.character_sheet_url ?? sheetFallback?.url ?? null,
         duration_seconds: null,
         prompt: null,
         credits_deducted: 0,
       });
       emitted = true;
     }
-    if (out.video_url) {
+    if (out.video_url || videoFallback) {
       items.push({
         id: emitted ? `${row.id}-video` : (row.id as string),
         run_id: row.id as string,
         source: 'vnext_skill',
         primitive: (row.skill_slug as string) ?? null,
-        status,
+        status: videoFallback ? videoFallback.status : status,
         created_at: createdAt,
         finished_at: finishedAt,
-        media_url: out.video_url,
-        thumbnail_url: out.character_sheet_url ?? out.portrait_url ?? null,
+        media_url: out.video_url ?? videoFallback?.url ?? null,
+        thumbnail_url: out.character_sheet_url ?? out.portrait_url ?? sheetFallback?.url ?? portraitFallback?.url ?? null,
         duration_seconds: durationSeconds,
         prompt: promptText,
         credits_deducted: totalCredits,
       });
       emitted = true;
     }
-    // A skill run with no artifact URLs yet (still running, or failed
-    // before producing anything) still gets one placeholder row so it
-    // shows up as in-progress/failed rather than silently vanishing.
+    // A skill run with no artifact URLs at all — from final_output OR any
+    // child step — still gets one placeholder row so it shows up as
+    // in-progress/failed rather than silently vanishing.
     if (!emitted) {
       items.push({
         id: row.id as string,

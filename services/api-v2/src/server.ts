@@ -42,6 +42,8 @@ import { characterCreateRoute, listCharactersRoute, updateCharacterRoute } from 
 import { listMyCharactersRoute } from './routes/v1/characters.js';
 import { subtitleRoute } from './routes/v2/subtitle.js';
 import { jobStreamRoute } from './routes/v2/job-stream.js';
+import { generateRoute as looseGenerateRoute, quoteGenerateRoute } from './routes/v2/generate.js';
+import { listModelsRoute } from './routes/v1/models.js';
 import { mcpRoute } from './routes/mcp.js';
 import { startReconciler } from './orchestrator/reconciler.js';
 import { startPrimitiveReconciler } from './orchestrator/primitive-reconciler.js';
@@ -840,6 +842,13 @@ app.get('/v2/characters',  readLimiter,     authMiddleware, listCharactersRoute)
 app.patch('/v2/characters/:characterId', generateLimiter, authMiddleware, updateCharacterRoute);
 app.post('/v2/subtitle',   generateLimiter, authMiddleware, videoConcurrencyGate, subtitleRoute);
 app.get('/v2/jobs/:jobId/stream', readLimiter, authMiddleware, jobStreamRoute);
+
+// ── Loose generate surface (generate_image/video/audio) — additive to,
+// never a replacement for, the fixed tools above (make_ugc, selfie,
+// crazy-look, the composed skills). See routes/v2/generate.ts.
+app.post('/v2/generate/:kind', generateLimiter, authMiddleware, videoConcurrencyGate, looseGenerateRoute);
+app.post('/v2/quote/:kind',    readLimiter,     authMiddleware, quoteGenerateRoute);
+app.get('/v1/models',          readLimiter,     authMiddleware, listModelsRoute);
 
 // ── HTTP MCP server (Claude.ai integrations + remote MCP clients) ─────────
 // Both POST (RPC) and GET (SSE) per the streamable HTTP transport spec.

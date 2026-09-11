@@ -1,10 +1,15 @@
 // Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * Minimal OpenAI Images Edits client for gpt-image-2 reference-image
- * generation. Used by character-sheets.js as a direct replacement for the
- * EvoLink proxy, which has been flaky on the Azure-hosted gpt-image-2
- * route ("Resource temporarily exhausted" upstream errors).
+ * Minimal OpenAI Images client for reference-image generation. The model
+ * is data: it defaults to the catalog default (see image-models.js), so a
+ * new OpenAI image generation is one constant, not a code change in every
+ * pipeline.
+ *
+ * Originally written for gpt-image-2 reference-image generation. Used by
+ * character-sheets.js as a direct replacement for the EvoLink proxy,
+ * which has been flaky on the Azure-hosted gpt-image-2 route
+ * ("Resource temporarily exhausted" upstream errors).
  *
  *   generateImageEdit({ prompt, imageBuffers, size, quality, n })
  *     → POST https://api.openai.com/v1/images/edits
@@ -12,6 +17,8 @@
  *
  * Reads OPENAI_API_KEY from env. Throws if unset.
  */
+
+import { DEFAULT_PROVIDER_IMAGE_MODEL } from './image-models.js';
 
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
 
@@ -22,7 +29,7 @@ const OPENAI_API_BASE = 'https://api.openai.com/v1';
  *
  * @param {object} args
  * @param {string} args.prompt
- * @param {string} [args.model='gpt-image-2']
+ * @param {string} [args.model] provider id; defaults to the catalog default (image-models.js)
  * @param {string} [args.size='1024x1024']
  * @param {string} [args.quality='medium']
  * @param {number} [args.n=1]
@@ -31,7 +38,7 @@ const OPENAI_API_BASE = 'https://api.openai.com/v1';
  */
 export async function generateImageFromText({
   prompt,
-  model = 'gpt-image-2',
+  model = DEFAULT_PROVIDER_IMAGE_MODEL,
   size = '1024x1024',
   quality = 'medium',
   n = 1,
@@ -115,7 +122,7 @@ function isTransient(status, errPayload) {
  * @param {object} args
  * @param {string} args.prompt
  * @param {Buffer[]} args.imageBuffers - one or more reference images (PNG/JPEG/WebP/GIF)
- * @param {string} [args.model='gpt-image-2']
+ * @param {string} [args.model] provider id; defaults to the catalog default (image-models.js)
  * @param {string} [args.size='1024x1024'] — must be one of OpenAI's supported sizes: 1024x1024, 1024x1536 (portrait), 1536x1024 (landscape), or 'auto'
  * @param {string} [args.quality='medium']
  * @param {number} [args.n=1]
@@ -126,7 +133,7 @@ function isTransient(status, errPayload) {
 export async function generateImageEdit({
   prompt,
   imageBuffers,
-  model = 'gpt-image-2',
+  model = DEFAULT_PROVIDER_IMAGE_MODEL,
   size = '1024x1024',
   quality = 'medium',
   n = 1,

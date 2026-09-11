@@ -224,3 +224,64 @@ async function runGenerationInner(model, params, options = {}, apiKey) {
 
   throw lastError;
 }
+
+/**
+ * Same as runGeneration, but also returns the completed EvoLink task
+ * object (usage.cost, usage.credits_used, task_info.video_duration)
+ * alongside the asset URL, so a caller can record what the provider
+ * actually billed. Used by the loose-surface generate_video pipeline
+ * (v2/generate-pipeline.js); every existing caller keeps using the plain
+ * runGeneration above — this is an additive twin, not a replacement, so
+ * nothing about the well-tested retry/limiter behavior above changes.
+ *
+ * @param {string} model - EvoLink model ID
+ * @param {Object} params - Generation parameters
+ * @returns {Promise<{ url: string, task: object }>}
+ */
+export async function runGenerationDetailed(model, params, options = {}) {
+  return evolinkLimiter.run((apiKey) => runGenerationDetailedInner(model, params, options, apiKey));
+}
+
+async function runGenerationDetailedInner(model, params, options = {}, apiKey) {
+  const attempts = parsePositiveInteger(options.attempts, DEFAULT_GENERATION_ATTEMPTS);
+  const retryDelayMs = parsePositiveInteger(options.retryDelayMs, DEFAULT_RETRY_DELAY_MS);
+  let lastError;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const submission = await submitGeneration(model, params, apiKey);
+
+      const taskId = submission.id;
+      if (!taskId) {
+        throw new Error('EvoLink submission missing task ID');
+      }
+
+      console.log(`    EvoLink task: ${taskId}, polling...`);
+      const completed = await pollTask(taskId, options.timeoutMs, apiKey);
+
+      const assetUrl = completed.results?.[0]
+        ?? completed.image_url
+        ?? completed.video_url
+        ?? completed.result?.image_url
+        ?? completed.result?.video_url
+        ?? completed.output?.image_url
+        ?? completed.output?.video_url;
+
+      if (!assetUrl) {
+        throw new Error(`EvoLink task completed but no asset URL found in response: ${JSON.stringify(completed).substring(0, 200)}`);
+      }
+
+      return { url: assetUrl, task: completed };
+    } catch (err) {
+      lastError = err;
+      if (!isTransientEvoLinkError(err) || attempt >= attempts) {
+        throw err;
+      }
+      const waitMs = retryDelayMs * attempt;
+      console.warn(`    EvoLink transient failure on attempt ${attempt}/${attempts}: ${err.message}. Retrying in ${Math.round(waitMs / 1000)}s...`);
+      await sleep(waitMs);
+    }
+  }
+
+  throw lastError;
+}

@@ -9,15 +9,24 @@ UGC for developers. Script in, video URL out — directly from your IDE.
 
 ## What It Does
 
-Five tools that let AI agents generate UGC videos:
+This package is a thin stdio proxy to the hosted vantly-ugc MCP connector at
+`https://api.vantly-ugc.com/mcp`. It opens that connector over Streamable
+HTTP with your API key as the bearer, and re-exposes over stdio exactly the
+tools the hosted side lists — so the tool set here is always current with no
+release of this package needed. Ask your AI assistant to list its available
+tools (or call `tools/list`) to see the live set; as of this writing it
+includes `make_ugc` (script + person/image/character in, finished vertical
+video out), `list_characters`, `get_run_status`, the loose
+`generate_image` / `generate_video` / `generate_audio` primitives with
+`quote` and `list_models`, plus the composed skills (`make_podcast`,
+`make_subtitles`, `make_storybook`, ...).
 
-| Tool | Description |
-|---|---|
-| `create_video` | Generate a UGC video from a script. Polls until complete, returns the video URL. |
-| `show_your_app` | Generate an actor holding a phone that shows your app screenshot. |
-| `product_acting_ugc` | Generate an actor presenting or reacting to a product image. |
-| `list_actors` | Browse available AI actors — slugs, names, demographics. |
-| `get_video_status` | Check a generation job's status, video URL, or error message. |
+If your client can add a remote MCP server directly, skip this package and
+point it at the hosted connector instead:
+
+```bash
+claude mcp add --transport http vantly-ugc https://api.vantly-ugc.com/mcp
+```
 
 ## Setup
 
@@ -89,69 +98,27 @@ vantly-ugc-mcp
 
 Once configured, ask your AI assistant:
 
-> "Generate a 10-second UGC video with Sofia explaining why our product is great"
+> "Make a UGC video of someone explaining why our product is great, no captions"
 
-> "List available actors and create a SaaS Review video with an enthusiastic tone"
+> "List my saved characters, then make a podcast-style video with two of them"
 
-> "Create a product acting UGC video with Sofia holding this perfume bottle image"
+> "Generate a 5-second video of a fox cub exploring a garden, seedance-2.0, 9:16"
 
-> "Check the status of job abc123"
+> "Check the status of run abc123"
 
-The MCP server handles the API calls, polling, and returns the finished video URL.
+The MCP server forwards these to the hosted connector, which handles auth, credits, dispatch and status — call `get_run_status` on the returned id for the finished output URL.
 
 ## Tool Parameters
 
-### create_video
+Each tool's parameters are described by its own JSON Schema, served live by
+the hosted connector (`tools/list`) — most MCP clients (Claude Code, Cursor,
+Claude Desktop) show these to the agent automatically, so they are not
+duplicated here where they would go stale. `make_ugc`'s tool description
+documents its script/person/character inputs; `generate_video`'s documents
+prompt/model/refs/frames; and so on.
 
-| Parameter | Type | Description |
-|---|---|---|
-| `script` | string | Video script (50-3000 chars). Required unless `prompt` is set. |
-| `prompt` | string | AI generates the script from this prompt. |
-| `actor_slug` | string | Actor to use (from `list_actors`). |
-| `tone` | string | `energetic`, `calm`, `confident`, `dramatic` |
-| `music` | string | `chill`, `energetic`, `corporate`, `dramatic`, `upbeat` |
-| `style` | string | Subtitle style — 17 options including `hormozi`, `bold`, `neon`, `fire` |
-| `target_duration` | number | `5`, `10`, or `15` seconds |
-| `aspect_ratio` | string | `9:16`, `16:9`, `1:1` |
-| `allow_broll` | boolean | Include AI-generated B-roll footage |
-| `template` | string | `saas-review`, `testimonial`, `monologue`, `listicle`, etc. |
-| `composition_mode` | string | `pip` for picture-in-picture |
-| `webhook_url` | string | Async completion callback URL |
-
-### product_acting_ugc
-
-| Parameter | Type | Description |
-|---|---|---|
-| `product_image_url` | string | Public product image URL. Required. |
-| `actor_slug` | string | Actor to use (from `list_actors`). Required. |
-| `product_description` | string | Product context used when script is omitted. |
-| `script` | string | Exact words the actor says. Optional if `product_description` is provided. |
-| `template` | string | `product-in-hand`, `mirror-selfie`, `bathroom-reaction`, `kitchen-counter`, `car-selfie`, `couch-review`, `expert-interview`, `product-closeup` |
-| `acting_style` | string | `raw-selfie`, `shocked`, `angry`, `excited`, `dramatic`, `weird-hook`, `casual-demo`, `honest-review` |
-| `duration` | number | `5`, `10`, or `15` seconds |
-| `subtitle_style` | string | `hormozi` or `none` |
-
-### list_actors
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `limit` | number | 20 | Max actors to return (max 200) |
-| `offset` | number | 0 | Pagination offset |
-
-### get_video_status
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `job_id` | string | Yes | Job ID from `create_video` |
-
-## Webhooks
-
-Pass `webhook_url` to `create_video` to get notified when the job completes or fails instead of polling.
-
-**Payload on success:** `{ job_id, status: "completed", video_url }`
-**Payload on failure:** `{ job_id, status: "failed", error_message }`
-
-Must be `https://`, publicly reachable, max 2048 chars. On non-2xx response, vantly-ugc retries 3× with exponential backoff (1 s, 4 s, 16 s). Query strings are preserved — append `?secret=MY_TOKEN` to verify authenticity.
+Call `get_run_status` with the `run_id` any tool returns to check progress
+and, when done, get the output URL — the proxy does not poll for you.
 
 ## Environment Variables
 

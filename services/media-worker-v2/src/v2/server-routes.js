@@ -11,6 +11,9 @@
  * Routes:
  *   POST /v2/selfie       — enqueue + run a Selfie generation
  *   POST /v2/crazy-look   — enqueue + run a Crazy Look generation
+ *   POST /v2/generate/image | /video | /audio — the loose surface:
+ *                           one provider call from the agent's own prompt
+ *   POST /v2/probe        — durations of remote media, for quoting reference clips
  *
  * Each route returns 202 immediately with { accepted, job_id } and
  * fires a callback to the caller-supplied callback_url on completion
@@ -22,6 +25,7 @@ import { processSelfie } from './selfie-adapter.js';
 import { processCharacterCreate } from './character-create-pipeline.js';
 import { processSubtitle } from './subtitle-pipeline.js';
 import { processCrazyLook } from './crazy-look-pipeline.js';
+import { processGenerateImage, processGenerateVideo, processGenerateAudio, probeDuration } from './generate-pipeline.js';
 import { scheduleOrphanReclaim } from './orphan-reclaimer.js';
 import { classifyError } from '../error-classifier.js';
 
@@ -134,6 +138,9 @@ function runJob(key, jobEnvelope) {
   else if (pipeline === 'character-create') runner = processCharacterCreate;
   else if (pipeline === 'subtitle') runner = processSubtitle;
   else if (pipeline === 'crazy-look') runner = processCrazyLook;
+  else if (pipeline === 'generate-image') runner = processGenerateImage;
+  else if (pipeline === 'generate-video') runner = processGenerateVideo;
+  else if (pipeline === 'generate-audio') runner = processGenerateAudio;
   else runner = null;
   if (!runner) {
     console.error(`[v2:${pipeline}:${job_id}] unknown pipeline`);
@@ -150,7 +157,11 @@ function runJob(key, jobEnvelope) {
   // Hard ceiling: Seedance's own 30-min timeout failed to release the
   // queue at least once (job wedged >40 min, everything behind it
   // starved). Whatever a provider client does, the queue advances.
-  const HARD_JOB_TIMEOUT_MS = 45 * 60_000;
+  // Per-job: the loose surface passes the catalog's per-model budget
+  // (seedance-2.5 renders take up to 90 min); the hard ceiling sits above
+  // it. Every other pipeline never sets timeout_minutes, so it keeps the
+  // existing 45-minute default exactly as before.
+  const HARD_JOB_TIMEOUT_MS = (params.timeout_minutes ? Number(params.timeout_minutes) + 15 : 45) * 60_000;
   let settled = false;
   const settle = (fn) => {
     if (settled) return false;
@@ -201,6 +212,15 @@ function runJob(key, jobEnvelope) {
       } else if (pipeline === 'subtitle') {
         // Subtitle returns just the rehosted mp4 url.
         payload = { ...base, output_url: result.videoUrl };
+      } else if (pipeline.startsWith('generate-')) {
+        // Loose surface: one output_url (png, mp4 or mp3).
+        payload = {
+          ...base,
+          output_url: result.outputUrl,
+          ...(result.providerModel ? { provider_model: result.providerModel } : {}),
+          ...(result.mode ? { mode: result.mode } : {}),
+          ...(result.providerUsage ? { provider_usage: result.providerUsage } : {}),
+        };
       } else {
         // Selfie (and future video pipelines): video + debug assets.
         payload = {
@@ -487,8 +507,69 @@ export function registerV2Routes(app, verifySecret) {
     });
   });
 
-  console.log('[v2 routes] registered: POST /v2/selfie, POST /v2/crazy-look, POST /v2/characters, POST /v2/subtitle');
+  console.log('[v2 routes] registered: POST /v2/selfie, POST /v2/crazy-look, POST /v2/characters, POST /v2/subtitle, POST /v2/generate/:kind, POST /v2/probe');
 
   // Re-hydrate the in-memory queue with jobs a deploy swap orphaned.
   scheduleOrphanReclaim(enqueueV2Job);
+
+  // ── POST /v2/probe — durations of remote media, for quoting reference clips ──
+  app.post('/v2/probe', verifySecret, async (req, res) => {
+    const urls = Array.isArray(req.body?.urls) ? req.body.urls.filter((u) => typeof u === 'string' && u.startsWith('https://')).slice(0, 10) : [];
+    const durations = {};
+    await Promise.all(urls.map(async (u) => { durations[u] = await probeDuration(u); }));
+    res.json({ durations });
+  });
+
+  // ── POST /v2/generate/:kind — the loose surface ───────────────────
+  // api-v2 already validated the body against GenerateImage/Video/Audio
+  // schemas and the live catalog; the worker checks only what it needs
+  // to run and queues the envelope like every other v2 job.
+  const GENERATE_KINDS = { image: 'generate-image', video: 'generate-video', audio: 'generate-audio' };
+  app.post('/v2/generate/:kind', verifySecret, async (req, res) => {
+    const pipeline = GENERATE_KINDS[req.params.kind];
+    if (!pipeline) {
+      return res.status(404).json({ error: `unknown generate kind "${req.params.kind}" (image | video | audio)` });
+    }
+    const body = req.body ?? {};
+    const { job_id, user_id, callback_url } = body;
+    if (!job_id || !user_id) {
+      return res.status(400).json({ error: 'missing required field: job_id / user_id' });
+    }
+    if (pipeline === 'generate-audio' ? !body.text : !body.prompt) {
+      return res.status(400).json({ error: pipeline === 'generate-audio' ? 'text is required' : 'prompt is required' });
+    }
+    const envelope = {
+      pipeline,
+      params: {
+        job_id,
+        user_id,
+        callback_url,
+        model: body.model,
+        prompt: body.prompt,
+        text: body.text,
+        refs: Array.isArray(body.refs) ? body.refs : [],
+        size: body.size,
+        // video: the cell api-v2 resolved from the catalog + the inputs of that mode
+        mode: body.mode,
+        provider_model: body.provider_model,
+        first_frame: body.first_frame,
+        last_frame: body.last_frame,
+        video_refs: Array.isArray(body.video_refs) ? body.video_refs : [],
+        audio_refs: Array.isArray(body.audio_refs) ? body.audio_refs : [],
+        seconds: body.seconds,
+        aspect: body.aspect,
+        quality: body.quality,
+        audio: body.audio,
+        timeout_minutes: body.timeout_minutes,
+        voice: body.voice,
+        tone: body.tone,
+      },
+    };
+    const enq = enqueueV2Job(envelope);
+    res.status(202).json({
+      accepted: true,
+      job_id,
+      ...(enq.queued ? { queued: true, position: enq.position } : {}),
+    });
+  });
 }

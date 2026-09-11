@@ -227,3 +227,35 @@ export async function resolvePlanByPaypalPlanId(
   if (row && PLANS[row.slug]) return PLANS[row.slug];
   return undefined;
 }
+
+// ─── Calendar-month arithmetic (for trial_months coupons) ──────────────────
+
+/**
+ * Add `months` calendar months (UTC) to a unix-seconds timestamp, returning
+ * a unix-seconds timestamp. Used by both the RazorPay (`start_at`) and
+ * Stripe (`subscription_data.trial_end`) checkout paths for trial_months
+ * coupons, so "N months free" lands on the same calendar date regardless
+ * of gateway -- deliberately NOT `months * 30 * 86400` (drifts from actual
+ * calendar months, and two independent day-math implementations could
+ * silently disagree with each other).
+ *
+ * Month-end clamping follows native JS `Date` UTC semantics: if the target
+ * month is shorter than the source day-of-month, it rolls into the next
+ * month (e.g. Jan 31 + 1 month -> Mar 3, not Feb 28) -- same behavior
+ * `Date.UTC` gives for any out-of-range day component. Trial coupons are
+ * expected to be redeemed against the current date, so this edge case is
+ * rare (only touches trials redeemed on the 29th-31st of a month) but is
+ * documented here rather than silently relied upon.
+ */
+export function addCalendarMonthsUTC(fromUnixSeconds: number, months: number): number {
+  const d = new Date(fromUnixSeconds * 1000);
+  const result = new Date(Date.UTC(
+    d.getUTCFullYear(),
+    d.getUTCMonth() + months,
+    d.getUTCDate(),
+    d.getUTCHours(),
+    d.getUTCMinutes(),
+    d.getUTCSeconds(),
+  ));
+  return Math.floor(result.getTime() / 1000);
+}

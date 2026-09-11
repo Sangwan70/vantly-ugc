@@ -348,8 +348,24 @@ async function handlePaymentIntentSucceeded(paymentIntent: Record<string, unknow
 
 async function handleCheckoutSessionCompleted(session: Record<string, unknown>): Promise<void> {
   const stripeCustomerId = session.customer as string | null;
-  const stripeSubscriptionId = session.subscription as string | null;
   const mode = session.mode as string;
+
+  // checkout.ts passes `expand: ['subscription']` on every session it
+  // creates, so session.subscription is the real Subscription object here,
+  // not just an id -- read its actual status/trial_end instead of
+  // assuming 'active' (a prior bug: this handler used to hardcode
+  // status:'active' unconditionally, which would silently clobber a
+  // genuine 'trialing' subscription and never set trial_ends_at). A bare
+  // string here (e.g. an older/foreign session) falls back to 'active',
+  // the previous behavior, rather than guessing 'trialing'.
+  const subscriptionField = session.subscription;
+  const subscriptionEntity =
+    subscriptionField && typeof subscriptionField === 'object' ? (subscriptionField as Record<string, unknown>) : null;
+  const stripeSubscriptionId = subscriptionEntity ? (subscriptionEntity.id as string) : (subscriptionField as string | null);
+  const realStatus = (subscriptionEntity?.status as string | undefined) ?? 'active';
+  const trialEndUnix = subscriptionEntity?.trial_end as number | undefined;
+  const subscriptionMetadata = subscriptionEntity?.metadata as Record<string, string> | undefined;
+  const couponCode = subscriptionMetadata?.coupon_code;
 
   const metadata = session.metadata as Record<string, string> | undefined;
   const userId = (session.client_reference_id as string | null) ?? metadata?.user_id ?? null;
@@ -370,17 +386,19 @@ async function handleCheckoutSessionCompleted(session: Record<string, unknown>):
       const existingPlan = PLANS[existing.plan_slug as string];
       const shouldApplyPlan = monthlyCredits >= (existingPlan?.monthlyCredits ?? 0);
       const updatePayload: Record<string, unknown> = {
-        status: 'active',
+        status: realStatus,
         cancel_at_period_end: false,
         stripe_customer_id: stripeCustomerId,
         stripe_subscription_id: stripeSubscriptionId,
+        trial_ends_at: trialEndUnix ? new Date(trialEndUnix * 1000).toISOString() : null,
       };
       if (shouldApplyPlan) updatePayload.plan_slug = planTier;
+      if (couponCode) updatePayload.coupon_code = couponCode;
 
       const { error: updateError } = await supabase.from('subscriptions').update(updatePayload).eq('id', existing.id);
       if (updateError) throw new Error(`Failed to link Stripe IDs to subscription: ${updateError.message}`);
 
-      console.log(`checkout.session.completed: linked Stripe customer ${stripeCustomerId} to user ${userId}`);
+      console.log(`checkout.session.completed: linked Stripe customer ${stripeCustomerId} to user ${userId} (status=${realStatus})`);
 
       if (monthlyCredits > 0) {
         const { data: existingCredits } = await supabase
@@ -403,13 +421,15 @@ async function handleCheckoutSessionCompleted(session: Record<string, unknown>):
         plan_slug: planTier,
         stripe_customer_id: stripeCustomerId,
         stripe_subscription_id: stripeSubscriptionId,
-        status: 'active',
+        status: realStatus,
         cancel_at_period_end: false,
+        trial_ends_at: trialEndUnix ? new Date(trialEndUnix * 1000).toISOString() : null,
+        ...(couponCode ? { coupon_code: couponCode } : {}),
       });
       if (insertError) throw new Error(`Failed to create subscription record: ${insertError.message}`);
 
-      console.log(`checkout.session.completed: created subscription for user ${userId} (plan=${planTier})`);
-      notifyTelegram(`<b>New subscription</b>\nUser: ${userId}\nPlan: ${planTier}`);
+      console.log(`checkout.session.completed: created subscription for user ${userId} (plan=${planTier}, status=${realStatus})`);
+      notifyTelegram(`<b>New subscription</b>\nUser: ${userId}\nPlan: ${planTier}${realStatus === 'trialing' ? ' (trial)' : ''}`);
 
       if (monthlyCredits > 0) {
         const { data: existingCredits } = await supabase
@@ -427,6 +447,25 @@ async function handleCheckoutSessionCompleted(session: Record<string, unknown>):
           await supabase.from('user_credits').insert({ user_id: userId, monthly_credits_remaining: monthlyCredits, purchased_balance: 0 });
           console.log(`checkout.session.completed: created user_credits with ${monthlyCredits} monthly for ${userId}`);
         }
+      }
+    }
+
+    // trial_months coupon: Checkout Session completion means the card is
+    // genuinely saved, so redeem now rather than waiting for a later
+    // event. A redemption bookkeeping failure (e.g. a race) is logged/
+    // alerted but does not undo the trial -- Stripe's own 'trialing'
+    // status is what actually grants access.
+    if (realStatus === 'trialing' && couponCode) {
+      const { error: redeemError } = await supabase.rpc('redeem_coupon', {
+        p_code: couponCode,
+        p_user_id: userId,
+        p_plan_slug: planTier,
+      });
+      if (redeemError) {
+        console.error(`checkout.session.completed: failed to redeem trial coupon ${couponCode} for user ${userId}:`, redeemError.message);
+        Sentry.captureException(redeemError, { extra: { userId, couponCode, context: 'stripe_trial_coupon_redeem' } });
+      } else {
+        console.log(`checkout.session.completed: redeemed trial coupon ${couponCode} for user ${userId}`);
       }
     }
   } else if (mode === 'payment' && userId) {

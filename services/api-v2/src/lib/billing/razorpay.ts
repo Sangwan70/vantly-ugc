@@ -60,10 +60,20 @@ export interface RazorpaySubscription {
   [key: string]: unknown;
 }
 
-/** total_count: 120 monthly cycles (~10 years) -- RazorPay requires a finite count, no "forever" subscriptions. */
+/**
+ * total_count: 120 monthly cycles (~10 years) -- RazorPay requires a finite
+ * count, no "forever" subscriptions.
+ *
+ * startAt (unix seconds, optional): RazorPay's native delayed-billing
+ * mechanism -- the customer authorizes/sets up the payment mandate now
+ * (subscription status starts at 'created', then 'authenticated' once
+ * they complete that step), but the first real charge is deferred until
+ * this timestamp (subscription.charged/activated fire then). Used for
+ * trial_months coupons; omitted, billing starts immediately as before.
+ */
 export async function createSubscription(
   creds: { keyId: string; keySecret: string },
-  params: { planId: string; totalCount?: number; customerNotify?: boolean; notes: Record<string, string> },
+  params: { planId: string; totalCount?: number; customerNotify?: boolean; startAt?: number; notes: Record<string, string> },
 ): Promise<RazorpaySubscription> {
   return razorpayFetch<RazorpaySubscription>(creds, '/subscriptions', {
     method: 'POST',
@@ -71,6 +81,7 @@ export async function createSubscription(
       plan_id: params.planId,
       total_count: params.totalCount ?? 120,
       customer_notify: params.customerNotify ?? 1,
+      ...(params.startAt ? { start_at: params.startAt } : {}),
       notes: params.notes,
     },
   });

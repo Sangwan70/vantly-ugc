@@ -60,8 +60,8 @@ export async function POST(req: NextRequest) {
   if (!code) {
     return NextResponse.json({ error: 'code is required' }, { status: 400 });
   }
-  if (!['percent_off', 'fixed_off', 'credits'].includes(body.type)) {
-    return NextResponse.json({ error: "type must be one of 'percent_off', 'fixed_off', 'credits'" }, { status: 400 });
+  if (!['percent_off', 'fixed_off', 'credits', 'trial_months'].includes(body.type)) {
+    return NextResponse.json({ error: "type must be one of 'percent_off', 'fixed_off', 'credits', 'trial_months'" }, { status: 400 });
   }
 
   const insertRow: Record<string, unknown> = {
@@ -71,6 +71,7 @@ export async function POST(req: NextRequest) {
     percent_off: body.type === 'percent_off' ? Number(body.percent_off) : null,
     fixed_off_cents: body.type === 'fixed_off' ? Number(body.fixed_off_cents) : null,
     credits_amount: body.type === 'credits' ? Number(body.credits_amount) : null,
+    trial_months: body.type === 'trial_months' ? Number(body.trial_months) : null,
     applicable_plans: Array.isArray(body.applicable_plans) ? body.applicable_plans : [],
     max_redemptions: body.max_redemptions != null ? Number(body.max_redemptions) : null,
     per_user_limit: body.per_user_limit != null ? Number(body.per_user_limit) : 1,
@@ -90,6 +91,9 @@ export async function POST(req: NextRequest) {
   }
   if (insertRow.type === 'credits' && (typeof insertRow.credits_amount !== 'number' || !Number.isFinite(insertRow.credits_amount))) {
     return NextResponse.json({ error: 'credits_amount is required for type=credits' }, { status: 400 });
+  }
+  if (insertRow.type === 'trial_months' && (typeof insertRow.trial_months !== 'number' || !Number.isFinite(insertRow.trial_months) || insertRow.trial_months <= 0)) {
+    return NextResponse.json({ error: 'trial_months (a positive integer) is required for type=trial_months' }, { status: 400 });
   }
 
   const admin = createAdminClient(

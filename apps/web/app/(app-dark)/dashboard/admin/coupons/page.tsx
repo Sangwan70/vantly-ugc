@@ -19,7 +19,7 @@ import { createClient } from '@/lib/supabase/client';
 import { isAdminEmailIn } from '@/lib/admin-allowlist';
 import { useVariables } from '@/components/variable-context';
 
-type CouponType = 'percent_off' | 'fixed_off' | 'credits';
+type CouponType = 'percent_off' | 'fixed_off' | 'credits' | 'trial_months';
 
 interface Coupon {
   id: string;
@@ -29,6 +29,7 @@ interface Coupon {
   percent_off: number | null;
   fixed_off_cents: number | null;
   credits_amount: number | null;
+  trial_months: number | null;
   applicable_plans: string[];
   max_redemptions: number | null;
   times_redeemed: number;
@@ -60,6 +61,7 @@ function generateCode(len = 8): string {
 function discountLabel(c: Coupon): string {
   if (c.type === 'percent_off') return `${c.percent_off}% off`;
   if (c.type === 'fixed_off') return `$${((c.fixed_off_cents ?? 0) / 100).toFixed(2)} off`;
+  if (c.type === 'trial_months') return `${c.trial_months} month${c.trial_months === 1 ? '' : 's'} free`;
   return `${(c.credits_amount ?? 0).toLocaleString()} credits`;
 }
 
@@ -70,6 +72,7 @@ interface CreateForm {
   percent_off: string;
   fixed_off_dollars: string;
   credits_amount: string;
+  trial_months: string;
   applicable_plans: string;
   max_redemptions: string;
   per_user_limit: string;
@@ -84,6 +87,7 @@ function blankForm(): CreateForm {
     percent_off: '',
     fixed_off_dollars: '',
     credits_amount: '',
+    trial_months: '',
     applicable_plans: '',
     max_redemptions: '',
     per_user_limit: '1',
@@ -164,10 +168,14 @@ export default function AdminCouponsPage() {
       const v = Math.round(parseFloat(form.fixed_off_dollars) * 100);
       if (!Number.isFinite(v) || v <= 0) { alert('Enter a valid dollar amount'); return; }
       payload.fixed_off_cents = v;
-    } else {
+    } else if (form.type === 'credits') {
       const v = parseInt(form.credits_amount, 10);
       if (!Number.isFinite(v) || v <= 0) { alert('Enter a valid credits amount'); return; }
       payload.credits_amount = v;
+    } else {
+      const v = parseInt(form.trial_months, 10);
+      if (!Number.isFinite(v) || v <= 0 || v > 24) { alert('Enter a valid trial length (1-24 months)'); return; }
+      payload.trial_months = v;
     }
 
     setSaving(true);
@@ -282,6 +290,7 @@ export default function AdminCouponsPage() {
                   <option value="credits">Credits</option>
                   <option value="percent_off">Percent off</option>
                   <option value="fixed_off">Fixed amount off</option>
+                  <option value="trial_months">Trial (free months, then real billing)</option>
                 </select>
               </label>
               {form.type === 'percent_off' ? (
@@ -294,10 +303,18 @@ export default function AdminCouponsPage() {
                   Amount off (USD)
                   <input value={form.fixed_off_dollars} onChange={(e) => setForm({ ...form, fixed_off_dollars: e.target.value })} placeholder="10.00" className="mt-1 w-full rounded-lg px-2.5 py-1.5 text-[13px]" style={INPUT} />
                 </label>
-              ) : (
+              ) : form.type === 'credits' ? (
                 <label className="col-span-2 text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
                   Credits
                   <input value={form.credits_amount} onChange={(e) => setForm({ ...form, credits_amount: e.target.value })} type="number" className="mt-1 w-full rounded-lg px-2.5 py-1.5 text-[13px]" style={INPUT} />
+                </label>
+              ) : (
+                <label className="col-span-2 text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                  Trial length (months)
+                  <input value={form.trial_months} onChange={(e) => setForm({ ...form, trial_months: e.target.value })} type="number" min="1" max="24" placeholder="3" className="mt-1 w-full rounded-lg px-2.5 py-1.5 text-[13px]" style={INPUT} />
+                  <span className="mt-1 block text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                    Redeeming activates the plan immediately (credits granted now); the customer&apos;s real Stripe/RazorPay charge is deferred this many months.
+                  </span>
                 </label>
               )}
               <label className="col-span-2 text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>

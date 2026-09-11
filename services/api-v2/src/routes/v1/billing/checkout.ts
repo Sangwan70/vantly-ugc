@@ -67,6 +67,7 @@ import {
   resolveStripePriceId,
   resolveRazorpayPlanId,
   resolvePaypalPlanId,
+  addCalendarMonthsUTC,
 } from '../../../lib/billing/plans.js';
 import {
   createSubscription as createRazorpaySubscription,
@@ -101,6 +102,8 @@ interface CheckoutRequestBody {
   dub_id?: string;
   embedded?: boolean;
   elements?: boolean;
+  /** trial_months coupon code, applied only when plan_tier is also set (subscription checkout). */
+  coupon_code?: string;
 }
 
 const VALID_PLAN_TIERS = new Set<string>(PAID_PLAN_SLUGS);
@@ -161,6 +164,55 @@ function validateRequest(body: CheckoutRequestBody): ValidationResult {
   return { type: 'payg_dynamic', amount_cents: body.amount_cents, credits: body.amount_cents * CREDITS_PER_CENT };
 }
 
+// ── Trial coupon resolution (shared by both gateways) ───────────────────────
+
+interface TrialCouponInfo {
+  couponCode: string;
+  trialMonths: number;
+}
+
+/**
+ * Validate a coupon code for checkout-time application. Read-only (calls
+ * validate_coupon, never redeem_coupon) -- redemption happens once the
+ * gateway actually confirms the trial (RazorPay: subscription.authenticated;
+ * Stripe: checkout.session.completed landing on a trialing subscription),
+ * not here, so an abandoned/failed checkout never burns the coupon. Only
+ * trial_months coupons are checkout-applicable today -- percent_off/
+ * fixed_off remain recorded-only, unchanged from before this feature.
+ */
+async function resolveTrialCoupon(
+  userId: string,
+  planTier: string,
+  rawCode: string,
+): Promise<{ error: string } | TrialCouponInfo> {
+  const { data, error } = await supabase.rpc('validate_coupon', {
+    p_code: rawCode,
+    p_user_id: userId,
+    p_plan_slug: planTier,
+  });
+  if (error) return { error: `Failed to validate coupon: ${error.message}` };
+
+  const result = data as {
+    valid: boolean;
+    reason?: string;
+    type?: string;
+    trial_months?: number;
+    coupon_code?: string;
+  } | null;
+
+  if (!result?.valid) {
+    return { error: `Coupon is not valid${result?.reason ? ` (${result.reason})` : ''}` };
+  }
+  if (result.type !== 'trial_months') {
+    return { error: 'Only trial coupons can be applied at checkout today' };
+  }
+  if (!result.trial_months || result.trial_months <= 0) {
+    return { error: 'Coupon is missing a valid trial length' };
+  }
+
+  return { couponCode: result.coupon_code ?? rawCode.trim().toUpperCase(), trialMonths: result.trial_months };
+}
+
 // ── RazorPay Checkout ────────────────────────────────────────────────────────
 
 /**
@@ -202,6 +254,7 @@ async function createRazorpaySubscriptionCheckoutSession(
   userId: string,
   userEmail: string,
   planTier: string,
+  trialCoupon: TrialCouponInfo | undefined,
   res: Response,
 ): Promise<void> {
   const planId = await resolveRazorpayPlanId(supabase, planTier);
@@ -225,19 +278,40 @@ async function createRazorpaySubscriptionCheckoutSession(
 
   if (existingError) {
     console.error('Error checking existing RazorPay subscription:', existingError.message);
-  } else if (existingSub && (existingSub.status === 'active' || existingSub.status === 'trialing')) {
+  } else if (existingSub && existingSub.status !== 'canceled' && existingSub.status !== 'expired') {
+    // Broadened from the original active/trialing-only check: a trial
+    // subscription sits in 'unpaid' between creation and the customer
+    // completing RazorPay's mandate authentication (subscription.authenticated),
+    // so a double-submitted checkout in that window must also be rejected,
+    // not just once the subscription is already active/trialing.
     res.status(409).json({
       error: 'subscription_pending',
-      error_description: 'You already have an active subscription. Cancel it before subscribing to a different plan.',
+      error_description: 'You already have a subscription in progress. Cancel it, or wait for it to finish processing, before subscribing again.',
     });
     return;
   }
+
+  // trial_months coupon: defer the real first charge via RazorPay's native
+  // start_at mechanism. The customer authorizes/sets up the mandate now
+  // (subscription.authenticated fires); the actual charge only happens
+  // when startAt arrives (subscription.charged/activated). See
+  // webhook-razorpay.ts for how subscription.authenticated activates the
+  // trial (status/credits/redemption) for a coupon-bearing subscription.
+  const startAt = trialCoupon
+    ? addCalendarMonthsUTC(Math.floor(Date.now() / 1000), trialCoupon.trialMonths)
+    : undefined;
 
   let subscription;
   try {
     subscription = await createRazorpaySubscription(creds, {
       planId,
-      notes: { user_id: userId, plan_tier: planTier, user_email: userEmail },
+      startAt,
+      notes: {
+        user_id: userId,
+        plan_tier: planTier,
+        user_email: userEmail,
+        ...(trialCoupon ? { coupon_code: trialCoupon.couponCode } : {}),
+      },
     });
   } catch (err) {
     console.error('Failed to create RazorPay subscription:', err);
@@ -254,6 +328,7 @@ async function createRazorpaySubscriptionCheckoutSession(
       razorpay_subscription_id: subscription.id,
       razorpay_plan_id: planId,
       status: 'unpaid',
+      ...(trialCoupon ? { coupon_code: trialCoupon.couponCode } : {}),
     });
   } catch (err) {
     console.error('Failed to record RazorPay subscription row:', err);
@@ -265,6 +340,7 @@ async function createRazorpaySubscriptionCheckoutSession(
     razorpay_key_id: creds.keyId,
     plan_tier: planTier,
     short_url: subscription.short_url,
+    ...(trialCoupon ? { trial_months: trialCoupon.trialMonths } : {}),
   });
 }
 
@@ -321,6 +397,7 @@ async function handleRazorpayCheckout(
   validation: ValidationResult,
   userId: string,
   userEmail: string,
+  trialCoupon: TrialCouponInfo | undefined,
   res: Response,
 ): Promise<void> {
   if ('error' in validation) {
@@ -329,7 +406,7 @@ async function handleRazorpayCheckout(
   }
 
   if (validation.type === 'subscription') {
-    return createRazorpaySubscriptionCheckoutSession(creds, userId, userEmail, validation.plan_tier, res);
+    return createRazorpaySubscriptionCheckoutSession(creds, userId, userEmail, validation.plan_tier, trialCoupon, res);
   }
   if (validation.type === 'payg_dynamic') {
     return createRazorpayPaygOrder(creds, userId, validation.credits, null, res);
@@ -614,6 +691,7 @@ async function createSubscriptionCheckout(
   userId: string,
   planTier: string,
   body: CheckoutRequestBody | undefined,
+  trialCoupon: TrialCouponInfo | undefined,
   res: Response,
 ): Promise<void> {
   const priceId = await resolveStripePriceId(supabase, planTier);
@@ -656,6 +734,13 @@ async function createSubscriptionCheckout(
   const isElements = body?.elements === true;
 
   if (isElements) {
+    if (trialCoupon) {
+      res.status(400).json({
+        error: 'invalid_coupon',
+        error_description: 'Trial coupons are not supported with embedded checkout yet -- use the hosted checkout flow.',
+      });
+      return;
+    }
     const subscription = await createStripeSubscription(secretKey, {
       customer: customerId,
       items: [{ price: priceId }],
@@ -677,6 +762,9 @@ async function createSubscriptionCheckout(
     return;
   }
 
+  const subscriptionMetadata: Record<string, string> = { user_id: userId, plan_tier: planTier };
+  if (trialCoupon) subscriptionMetadata.coupon_code = trialCoupon.couponCode;
+
   const sessionParams: Record<string, unknown> = {
     customer: customerId,
     mode: 'subscription',
@@ -684,7 +772,20 @@ async function createSubscriptionCheckout(
     locale: 'en',
     line_items: [{ price: priceId, quantity: 1 }],
     metadata: { user_id: userId, plan_tier: planTier, checkout_type: 'subscription', dubCustomerExternalId: userId },
-    subscription_data: { metadata: { user_id: userId, plan_tier: planTier } },
+    subscription_data: {
+      metadata: subscriptionMetadata,
+      // "Legacy" free-trial mechanism -- Stripe's newer Trial Offer API is
+      // explicitly NOT supported by Checkout Sessions (per Stripe's own
+      // docs), so trial_end is the correct/only lever here.
+      ...(trialCoupon
+        ? { trial_end: addCalendarMonthsUTC(Math.floor(Date.now() / 1000), trialCoupon.trialMonths) }
+        : {}),
+    },
+    // So webhook-stripe.ts's checkout.session.completed handler can read
+    // the real subscription status/trial_end instead of assuming 'active'
+    // (see that file: it previously hardcoded status:'active', which
+    // would have silently clobbered a genuine 'trialing' status).
+    expand: ['subscription'],
   };
 
   if (isEmbedded) {
@@ -827,6 +928,16 @@ export async function checkoutRoute(req: Request, res: Response): Promise<void> 
     return;
   }
 
+  let trialCoupon: TrialCouponInfo | undefined;
+  if (validation.type === 'subscription' && body.coupon_code) {
+    const couponResult = await resolveTrialCoupon(userId, validation.plan_tier, body.coupon_code);
+    if ('error' in couponResult) {
+      res.status(400).json({ error: 'invalid_coupon', error_description: couponResult.error });
+      return;
+    }
+    trialCoupon = couponResult;
+  }
+
   let resolved;
   try {
     resolved = await resolveActiveGatewayAndCredentials(supabase);
@@ -846,12 +957,20 @@ export async function checkoutRoute(req: Request, res: Response): Promise<void> 
       validation,
       userId,
       userEmail,
+      trialCoupon,
       res,
     );
     return;
   }
 
   if (resolved.gateway === 'paypal') {
+    if (trialCoupon) {
+      res.status(400).json({
+        error: 'invalid_coupon',
+        error_description: 'Trial coupons are only supported with Stripe or RazorPay checkout today.',
+      });
+      return;
+    }
     if (!resolved.paypal.clientId || !resolved.paypal.clientSecret) {
       res.status(500).json({ error: 'configuration_error', error_description: 'Payment system is not configured' });
       return;
@@ -891,7 +1010,7 @@ export async function checkoutRoute(req: Request, res: Response): Promise<void> 
 
   try {
     if (validation.type === 'subscription') {
-      await createSubscriptionCheckout(secretKey, customerId, userId, validation.plan_tier, body, res);
+      await createSubscriptionCheckout(secretKey, customerId, userId, validation.plan_tier, body, trialCoupon, res);
       return;
     }
     if (validation.type === 'payg_dynamic') {

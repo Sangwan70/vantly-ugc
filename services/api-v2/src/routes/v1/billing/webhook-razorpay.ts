@@ -133,6 +133,62 @@ async function resolveSubscriptionRow(
 
 // ─── Event handlers ─────────────────────────────────────────────────────────
 
+/**
+ * Shared by handleSubscriptionActivatedOrCharged (real charge lands) and
+ * handleSubscriptionAuthenticated (trial_months coupon activates before
+ * any real charge) -- both need identical "grant on first credit row,
+ * else reset_monthly_credits" behavior. reset_monthly_credits is a flat
+ * "set monthly_credits_remaining to the new allowance" operation, not
+ * period-boundary-aware, so calling this once at trial start and again
+ * independently when the real charge lands is correct (same as it already
+ * is for every ordinary monthly renewal) -- not a double-grant.
+ */
+async function grantOrResetMonthlyCredits(
+  userId: string,
+  monthlyAllowance: number,
+  planSlugForLog: string,
+  contextLabel: string,
+): Promise<void> {
+  const { data: existingCredits } = await supabase.from('user_credits').select('id').eq('user_id', userId).maybeSingle();
+
+  if (!existingCredits) {
+    const { error: insertError } = await supabase
+      .from('user_credits')
+      .insert({ user_id: userId, monthly_credits_remaining: monthlyAllowance, purchased_balance: 0 });
+
+    if (insertError) {
+      if (insertError.code === '23505') {
+        const { error: upsertError } = await supabase
+          .from('user_credits')
+          .update({ monthly_credits_remaining: monthlyAllowance })
+          .eq('user_id', userId);
+        if (upsertError) throw new Error(`Failed to initialize credits: ${upsertError.message}`);
+      } else {
+        throw new Error(`Failed to insert user_credits: ${insertError.message}`);
+      }
+    }
+
+    await supabase.from('credit_transactions').insert({
+      user_id: userId,
+      type: 'monthly_reset',
+      amount: monthlyAllowance,
+      bucket: 'monthly',
+      running_monthly_balance: monthlyAllowance,
+      running_purchased_balance: 0,
+      description: `Initial credit allocation for ${planSlugForLog} plan (RazorPay)`,
+    });
+
+    console.log(`RazorPay: initialized ${monthlyAllowance} credits for user ${userId} (${contextLabel})`);
+  } else {
+    const { data: rpcResult, error: rpcError } = await supabase.rpc('reset_monthly_credits', {
+      p_user_id: userId,
+      p_allowance: monthlyAllowance,
+    });
+    if (rpcError) throw new Error(`reset_monthly_credits RPC failed: ${rpcError.message}`);
+    console.log(`RazorPay: reset monthly credits for user ${userId} (${contextLabel}):`, rpcResult);
+  }
+}
+
 async function handleSubscriptionActivatedOrCharged(sub: Record<string, unknown>): Promise<void> {
   const razorpaySubscriptionId = sub.id as string;
   const notes = sub.notes as Record<string, string> | undefined;
@@ -167,44 +223,85 @@ async function handleSubscriptionActivatedOrCharged(sub: Record<string, unknown>
   const { error: updateError } = await supabase.from('subscriptions').update(subUpdate).eq('id', subRecord.id);
   if (updateError) console.error('Failed to update RazorPay subscription record:', updateError.message);
 
-  const { data: existingCredits } = await supabase.from('user_credits').select('id').eq('user_id', userId).maybeSingle();
+  await grantOrResetMonthlyCredits(userId, monthlyAllowance, plan?.slug ?? 'unknown', 'activated/charged');
+}
 
-  if (!existingCredits) {
-    const { error: insertError } = await supabase
-      .from('user_credits')
-      .insert({ user_id: userId, monthly_credits_remaining: monthlyAllowance, purchased_balance: 0 });
+/**
+ * subscription.authenticated: the customer has completed RazorPay's
+ * mandate-setup step. For an ordinary (non-trial) subscription this is
+ * purely informational -- real activation is subscription.activated/
+ * charged, handled above. For a trial_months-coupon subscription (created
+ * with a future start_at, see checkout.ts), this IS the moment of genuine
+ * commitment: the mandate is confirmed even though the real charge won't
+ * happen until start_at. So this is where the trial actually activates --
+ * status/trial_ends_at/credits/coupon redemption -- mirroring what
+ * checkout.session.completed does for a Stripe trial.
+ */
+async function handleSubscriptionAuthenticated(sub: Record<string, unknown>): Promise<void> {
+  const razorpaySubscriptionId = sub.id as string;
+  const notes = sub.notes as Record<string, string> | undefined;
+  const couponCode = notes?.coupon_code;
 
-    if (insertError) {
-      if (insertError.code === '23505') {
-        const { error: upsertError } = await supabase
-          .from('user_credits')
-          .update({ monthly_credits_remaining: monthlyAllowance })
-          .eq('user_id', userId);
-        if (upsertError) throw new Error(`Failed to initialize credits: ${upsertError.message}`);
-      } else {
-        throw new Error(`Failed to insert user_credits: ${insertError.message}`);
-      }
-    }
-
-    await supabase.from('credit_transactions').insert({
-      user_id: userId,
-      type: 'monthly_reset',
-      amount: monthlyAllowance,
-      bucket: 'monthly',
-      running_monthly_balance: monthlyAllowance,
-      running_purchased_balance: 0,
-      description: `Initial credit allocation for ${plan?.slug ?? 'unknown'} plan (RazorPay)`,
-    });
-
-    console.log(`RazorPay: initialized ${monthlyAllowance} credits for user ${userId}`);
-  } else {
-    const { data: rpcResult, error: rpcError } = await supabase.rpc('reset_monthly_credits', {
-      p_user_id: userId,
-      p_allowance: monthlyAllowance,
-    });
-    if (rpcError) throw new Error(`reset_monthly_credits RPC failed: ${rpcError.message}`);
-    console.log(`RazorPay: reset monthly credits for user ${userId}:`, rpcResult);
+  if (!couponCode) {
+    console.log(`RazorPay lifecycle event (log-only, no trial coupon): subscription.authenticated for ${razorpaySubscriptionId}`);
+    return;
   }
+
+  const subRecord = await resolveSubscriptionRow(razorpaySubscriptionId, notes);
+  if (!subRecord) {
+    console.warn(`subscription.authenticated: no local record resolvable for ${razorpaySubscriptionId} — acknowledging without action`);
+    return;
+  }
+
+  // Only activate once: a retried webhook delivery, or a subscription that
+  // already progressed past its initial pending state, must not re-grant
+  // credits or attempt a second coupon redemption.
+  const { data: currentRow, error: currentRowError } = await supabase
+    .from('subscriptions')
+    .select('status')
+    .eq('id', subRecord.id)
+    .maybeSingle();
+  if (currentRowError) throw new Error(`subscription.authenticated: failed to read current status: ${currentRowError.message}`);
+  if (currentRow && currentRow.status !== 'unpaid') {
+    console.log(`subscription.authenticated: subscription ${razorpaySubscriptionId} already past pending (status=${currentRow.status}), skipping trial activation`);
+    return;
+  }
+
+  const userId = subRecord.user_id;
+  const planId = sub.plan_id as string | undefined;
+  const planFromId = planId ? await resolvePlanByRazorpayPlanId(supabase, planId) : undefined;
+  const plan = planFromId ?? PLANS[notes?.plan_tier ?? subRecord.plan_slug] ?? PLANS[subRecord.plan_slug];
+  const monthlyAllowance = plan?.monthlyCredits ?? 0;
+  const planSlug = plan?.slug ?? subRecord.plan_slug;
+
+  const startAt = sub.start_at as number | undefined;
+  const subUpdate: Record<string, unknown> = {
+    status: 'trialing',
+    payment_gateway: 'razorpay',
+    razorpay_subscription_id: razorpaySubscriptionId,
+    trial_ends_at: startAt ? new Date(startAt * 1000).toISOString() : null,
+  };
+  if (plan?.slug) subUpdate.plan_slug = plan.slug;
+  if (planId) subUpdate.razorpay_plan_id = planId;
+
+  const { error: updateError } = await supabase.from('subscriptions').update(subUpdate).eq('id', subRecord.id);
+  if (updateError) throw new Error(`Failed to activate RazorPay trial subscription: ${updateError.message}`);
+
+  await grantOrResetMonthlyCredits(userId, monthlyAllowance, planSlug ?? 'unknown', 'trial start');
+
+  const { error: redeemError } = await supabase.rpc('redeem_coupon', {
+    p_code: couponCode,
+    p_user_id: userId,
+    p_plan_slug: planSlug,
+  });
+  if (redeemError) {
+    console.error(`subscription.authenticated: failed to redeem trial coupon ${couponCode} for user ${userId}:`, redeemError.message);
+    Sentry.captureException(redeemError, { extra: { userId, couponCode, context: 'razorpay_trial_coupon_redeem' } });
+  } else {
+    console.log(`subscription.authenticated: redeemed trial coupon ${couponCode} for user ${userId}`);
+  }
+
+  console.log(`RazorPay: activated trial for user ${userId}, plan=${planSlug}, trial_ends_at=${subUpdate.trial_ends_at}`);
 }
 
 async function handleSubscriptionEnded(sub: Record<string, unknown>): Promise<void> {
@@ -287,11 +384,16 @@ async function routeEvent(payload: RazorpayWebhookPayload): Promise<boolean> {
       await handlePaygOrderPaid(order, payment);
       return true;
     }
+    case 'subscription.authenticated': {
+      const sub = entity(payload, 'subscription');
+      if (!sub) return false;
+      await handleSubscriptionAuthenticated(sub);
+      return true;
+    }
     case 'subscription.pending':
     case 'subscription.paused':
     case 'subscription.resumed':
     case 'subscription.updated':
-    case 'subscription.authenticated':
       console.log(`RazorPay lifecycle event (log-only): ${payload.event}`);
       return true;
     default:

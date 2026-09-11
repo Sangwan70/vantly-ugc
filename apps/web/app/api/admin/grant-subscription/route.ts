@@ -3,18 +3,12 @@ import { createClient } from '@/lib/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { isAdminEmail } from '@/lib/admin-allowlist';
 
-const PLAN_CREDITS: Record<string, number> = {
-  starter: 3900,
-  creator: 6900,
-  pro_plus: 12900,
-};
-
 /** 'free' is handled separately below (see the downgrade branch) -- it's
  * not a purchasable tier with a credit allowance the way the paid ones
- * are, so it's deliberately excluded from PLAN_CREDITS rather than mapped
- * to 0 there (that would let it silently pass the paid-plan branch's
- * upsert/reset_monthly_credits flow with a 0 allowance, which is a
- * different, wronger operation than an actual downgrade). */
+ * are, so it's handled as its own branch rather than going through the
+ * plans-table lookup below (that would let it silently pass the paid-plan
+ * branch's upsert/reset_monthly_credits flow with a 0 allowance, which is
+ * a different, wronger operation than an actual downgrade). */
 const DOWNGRADE_SLUG = 'free';
 
 export async function POST(req: NextRequest) {
@@ -33,13 +27,6 @@ export async function POST(req: NextRequest) {
   if (!user_id || !plan_slug) {
     return NextResponse.json(
       { error: 'user_id and plan_slug are required' },
-      { status: 400 },
-    );
-  }
-
-  if (plan_slug !== DOWNGRADE_SLUG && !PLAN_CREDITS[plan_slug]) {
-    return NextResponse.json(
-      { error: `Invalid plan_slug. Must be one of: ${[...Object.keys(PLAN_CREDITS), DOWNGRADE_SLUG].join(', ')}` },
       { status: 400 },
     );
   }
@@ -83,6 +70,43 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, user_id, plan_slug: DOWNGRADE_SLUG, monthly_credits: 0 });
   }
 
+  // Look up the plan's live definition from the canonical `plans` table
+  // (the Admin Plans panel, see 20260904160000_plans_table.sql) instead of
+  // a hardcoded credit map -- so any active plan an admin creates there
+  // (e.g. a tier priced specifically for offline/bank-transfer customers)
+  // is assignable here immediately, with no code change. Deliberately not
+  // filtered to is_purchasable: this route is the OFFLINE-payment path --
+  // an admin comping or manually invoicing a user is exactly the case
+  // where a plan marked "not selectable in self-serve checkout" still
+  // needs to be assignable by hand. is_active is still required: an
+  // inactive/deprecated tier (e.g. the legacy 'newby' plan) is kept around
+  // to resolve existing subscribers, not to hand out to someone new.
+  const { data: plan, error: planLookupError } = await admin
+    .from('plans')
+    .select('slug, monthly_credits, is_active')
+    .eq('slug', plan_slug)
+    .maybeSingle();
+
+  if (planLookupError) {
+    return NextResponse.json(
+      { error: 'Failed to look up plan', details: planLookupError.message },
+      { status: 500 },
+    );
+  }
+  if (!plan || !plan.is_active) {
+    const { data: activePlans } = await admin
+      .from('plans')
+      .select('slug')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true });
+    const validSlugs = [...(activePlans ?? []).map((p) => p.slug), DOWNGRADE_SLUG];
+    return NextResponse.json(
+      { error: `Invalid plan_slug. Must be one of: ${validSlugs.join(', ')}` },
+      { status: 400 },
+    );
+  }
+  const monthlyCredits = plan.monthly_credits;
+
   // Upsert subscription record
   const now = new Date();
   const periodEnd = new Date(now);
@@ -111,7 +135,7 @@ export async function POST(req: NextRequest) {
   // Reset monthly credits to the plan's allowance
   const { error: rpcError } = await admin.rpc('reset_monthly_credits', {
     p_user_id: user_id,
-    p_allowance: PLAN_CREDITS[plan_slug],
+    p_allowance: monthlyCredits,
   });
 
   if (rpcError) {
@@ -121,7 +145,7 @@ export async function POST(req: NextRequest) {
       .upsert(
         {
           user_id,
-          monthly_credits_remaining: PLAN_CREDITS[plan_slug],
+          monthly_credits_remaining: monthlyCredits,
         },
         { onConflict: 'user_id' },
       );
@@ -131,6 +155,6 @@ export async function POST(req: NextRequest) {
     success: true,
     user_id,
     plan_slug,
-    monthly_credits: PLAN_CREDITS[plan_slug],
+    monthly_credits: monthlyCredits,
   });
 }

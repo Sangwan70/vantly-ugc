@@ -23,13 +23,24 @@ import { supabase } from '../../server.js';
 import { isAdminEmail } from '../../lib/admin-allowlist.js';
 
 // ── Plan tier definitions — MUST mirror supabase/functions/credits-check ──
-const TIER_ORDER: string[] = ['free', 'newby', 'payg', 'starter', 'creator', 'pro_plus'];
-
-function tierRank(tier: string): number {
-  const idx = TIER_ORDER.indexOf(tier);
-  return idx >= 0 ? idx : 0;
-}
-
+//
+// Read from the canonical `plans` table (the Admin Plans panel; see
+// 20260904160000_plans_table.sql) instead of a hardcoded map, so a plan an
+// admin creates or edits there — including one priced specifically for
+// offline/bank-transfer customers assigned via /api/admin/grant-subscription
+// — gets correct generation-time limits (video duration, concurrency, model
+// access) without a code change here.
+//
+// ALL rows are read, not just is_active ones: a subscription can carry a
+// deprecated plan_slug (e.g. legacy 'newby', is_active=false — no longer
+// offered to new users, but real grandfathered subscribers still have it),
+// and that must keep resolving to its real limits rather than silently
+// falling back to Free.
+//
+// 'payg' (pay-as-you-go: purchased credits, no subscription) is NEVER a row
+// in `plans` — it's a synthetic tier this route assigns below when a
+// subscription-less user has a positive purchased_balance — so its config
+// and rank are injected by hand, not read from the DB.
 interface PlanConfig {
   name: string;
   monthly_credits: number;
@@ -37,17 +48,65 @@ interface PlanConfig {
   max_video_duration: number; // seconds
 }
 
-const PLAN_CONFIGS: Record<string, PlanConfig> = {
-  free:     { name: 'Free',          monthly_credits: 0,     max_concurrent_jobs: 1,  max_video_duration: 5  },
-  payg:     { name: 'Pay As You Go', monthly_credits: 0,     max_concurrent_jobs: 2,  max_video_duration: 15 },
-  newby:    { name: 'Newby',         monthly_credits: 1300,  max_concurrent_jobs: 2,  max_video_duration: 10 },
-  starter:  { name: 'Creator',       monthly_credits: 3900,  max_concurrent_jobs: 3,  max_video_duration: 10 },
-  creator:  { name: 'Pro',           monthly_credits: 6900,  max_concurrent_jobs: 5,  max_video_duration: 15 },
-  pro_plus: { name: 'Pro Plus',      monthly_credits: 12900, max_concurrent_jobs: 10, max_video_duration: 15 },
-};
+const PAYG_SLUG = 'payg';
+const PAYG_CONFIG: PlanConfig = { name: 'Pay As You Go', monthly_credits: 0, max_concurrent_jobs: 2, max_video_duration: 15 };
+// Historically ordered directly above 'newby' and below the paid tiers
+// (TIER_ORDER used to be a fixed ['free','newby','payg','starter',...]
+// array); ranked here as "half a step" above whichever of free/newby the
+// live catalog puts highest, so that relative ordering survives without
+// depending on a specific sort_order value existing for either.
+const FREE_SLUG = 'free';
+const FALLBACK_FREE_CONFIG: PlanConfig = { name: 'Free', monthly_credits: 0, max_concurrent_jobs: 1, max_video_duration: 5 };
 
-function getPlanConfig(tier: string): PlanConfig {
-  return PLAN_CONFIGS[tier] ?? PLAN_CONFIGS.free;
+interface PlanCatalog {
+  configBySlug: Map<string, PlanConfig>;
+  rankBySlug: Map<string, number>;
+}
+
+async function loadPlanCatalog(): Promise<PlanCatalog> {
+  const { data: rows } = await supabase
+    .from('plans')
+    .select('slug, display_name, monthly_credits, max_concurrent_jobs, max_video_duration_seconds, sort_order');
+
+  const configBySlug = new Map<string, PlanConfig>();
+  const rankBySlug = new Map<string, number>();
+  for (const row of rows ?? []) {
+    configBySlug.set(row.slug, {
+      name: row.display_name,
+      monthly_credits: row.monthly_credits ?? 0,
+      max_concurrent_jobs: row.max_concurrent_jobs ?? 1,
+      // Nullable in the table (e.g. an image-only or audio-only plan might
+      // never set it); fall back to Free's original default rather than 0,
+      // which would zero out video access entirely for a plan that simply
+      // never set this column.
+      max_video_duration: row.max_video_duration_seconds ?? FALLBACK_FREE_CONFIG.max_video_duration,
+    });
+    rankBySlug.set(row.slug, row.sort_order ?? 0);
+  }
+
+  // Defensive fallback: `plans` should always have an active 'free' row
+  // (it's the seed migration's first row), but if it's ever missing or the
+  // query fails, every unknown-tier lookup below must still resolve to
+  // something safe rather than throw.
+  if (!configBySlug.has(FREE_SLUG)) {
+    configBySlug.set(FREE_SLUG, FALLBACK_FREE_CONFIG);
+    rankBySlug.set(FREE_SLUG, 0);
+  }
+
+  configBySlug.set(PAYG_SLUG, PAYG_CONFIG);
+  const freeRank = rankBySlug.get(FREE_SLUG) ?? 0;
+  const newbyRank = rankBySlug.has('newby') ? rankBySlug.get('newby')! : freeRank;
+  rankBySlug.set(PAYG_SLUG, Math.max(freeRank, newbyRank) + 0.5);
+
+  return { configBySlug, rankBySlug };
+}
+
+function getPlanConfig(catalog: PlanCatalog, tier: string): PlanConfig {
+  return catalog.configBySlug.get(tier) ?? catalog.configBySlug.get(FREE_SLUG) ?? FALLBACK_FREE_CONFIG;
+}
+
+function tierRank(catalog: PlanCatalog, tier: string): number {
+  return catalog.rankBySlug.get(tier) ?? 0;
 }
 
 export async function creditsCheckRoute(req: Request, res: Response): Promise<void> {
@@ -56,13 +115,16 @@ export async function creditsCheckRoute(req: Request, res: Response): Promise<vo
   const unlimited = isAdminEmail((req as { userEmail?: string }).userEmail);
 
   try {
-    const { data: subscription, error: subError } = await supabase
-      .from('subscriptions')
-      .select('plan_slug, status, current_period_end, trial_ends_at, cancel_at_period_end')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const [{ data: subscription, error: subError }, catalog] = await Promise.all([
+      supabase
+        .from('subscriptions')
+        .select('plan_slug, status, current_period_end, trial_ends_at, cancel_at_period_end')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      loadPlanCatalog(),
+    ]);
 
     if (subError) {
       res.status(500).json({ error: 'server_error', error_description: 'Failed to fetch subscription data' });
@@ -103,9 +165,9 @@ export async function creditsCheckRoute(req: Request, res: Response): Promise<vo
       planSlug = 'payg';
     }
 
-    const planConfig = getPlanConfig(planSlug);
+    const planConfig = getPlanConfig(catalog, planSlug);
 
-    const userRank = tierRank(planSlug);
+    const userRank = tierRank(catalog, planSlug);
     const { data: availableModels } = await supabase
       .from('models')
       .select('slug, min_plan_tier')
@@ -113,7 +175,7 @@ export async function creditsCheckRoute(req: Request, res: Response): Promise<vo
       .order('slug');
 
     const modelsAvailable = (availableModels ?? [])
-      .filter((m: { min_plan_tier: string }) => tierRank(m.min_plan_tier) <= userRank)
+      .filter((m: { min_plan_tier: string }) => tierRank(catalog, m.min_plan_tier) <= userRank)
       .map((m: { slug: string }) => m.slug);
 
     // ── Self-healing: allocate monthly credits if a billing webhook was missed ──

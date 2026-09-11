@@ -62,7 +62,11 @@ interface Growth {
 }
 
 const CARD = { backgroundColor: '#14151F', border: '1px solid rgba(255,255,255,0.06)' } as const;
-const PLANS = ['starter', 'creator', 'pro_plus'];
+
+interface AssignablePlan {
+  slug: string;
+  display_name: string;
+}
 
 // Every other admin section, now that the global sidebar (formerly in
 // layout.tsx) is gone -- this index page is the sole hub linking to them.
@@ -80,6 +84,12 @@ export default function AdminPage() {
   const [authChecked, setAuthChecked] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [users, setUsers] = useState<AdminUser[] | null>(null);
+  // Live, from the canonical `plans` table (Admin Plans panel) instead of a
+  // hardcoded list -- so a plan created there (e.g. one priced specifically
+  // for offline/bank-transfer customers) shows up in the assign dropdown
+  // below with no code change. Loaded once; plans don't change often enough
+  // to warrant reloading on every user-list refresh.
+  const [plans, setPlans] = useState<AssignablePlan[]>([]);
   const [growth, setGrowth] = useState<Growth | null>(null);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [signups, setSignups] = useState<SignupsByDay | null>(null);
@@ -109,6 +119,29 @@ export default function AdminPage() {
       setAuthChecked(true);
     })();
   }, [adminEmails]);
+
+  // Assignable plans for the per-user "Plan..." dropdown -- active tiers
+  // only (a deprecated one like legacy 'newby' stays visible to existing
+  // subscribers but shouldn't be handed to someone new), sorted the same
+  // way the Plans admin panel orders them.
+  useEffect(() => {
+    if (!isAdmin) return;
+    (async () => {
+      try {
+        const r = await fetch('/api/admin/plans', { credentials: 'include' });
+        if (!r.ok) return;
+        const j = await r.json().catch(() => null);
+        const active = ((j?.plans ?? []) as Array<{ slug: string; display_name: string; is_active: boolean; sort_order: number }>)
+          .filter((p) => p.is_active && p.slug !== 'free')
+          .sort((a, b) => a.sort_order - b.sort_order)
+          .map((p) => ({ slug: p.slug, display_name: p.display_name }));
+        setPlans(active);
+      } catch {
+        // Non-fatal: the dropdown just shows only "Downgrade to free" until
+        // a reload succeeds.
+      }
+    })();
+  }, [isAdmin]);
 
   const load = useCallback(async () => {
     try {
@@ -514,7 +547,7 @@ export default function AdminPage() {
                       <button type="button" disabled={busy === u.id} onClick={() => giveCredits(u)} className="rounded-lg px-2.5 py-1.5 text-[12px]" style={{ background: '#1B1C2A', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }}>{busy === u.id ? '…' : '+ Credits'}</button>
                       <select disabled={busy === u.id} value="" onChange={(e) => { if (e.target.value === 'free' && !window.confirm(`Downgrade ${u.email ?? u.id} to free? Their monthly allowance zeroes out immediately (purchased credits are kept).`)) return; grantPlan(u, e.target.value); }} className="rounded-lg px-2 py-1.5 text-[12px]" style={{ background: '#1B1C2A', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }}>
                         <option value="">Plan…</option>
-                        {PLANS.map((p) => <option key={p} value={p}>{p}</option>)}
+                        {plans.map((p) => <option key={p.slug} value={p.slug}>{p.display_name}</option>)}
                         <option value="free">Downgrade to free</option>
                       </select>
                       <button type="button" disabled={busy === u.id} onClick={() => blockUser(u, !u.is_blocked)} className="rounded-lg px-2.5 py-1.5 text-[12px]" style={{ background: '#1B1C2A', color: u.is_blocked ? '#34D399' : '#FCA5A5', border: '1px solid rgba(255,255,255,0.1)' }}>{busy === u.id ? '…' : u.is_blocked ? 'Unblock' : 'Block'}</button>

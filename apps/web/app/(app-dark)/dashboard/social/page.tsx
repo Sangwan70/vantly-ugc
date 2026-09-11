@@ -12,21 +12,42 @@
  * pasted API key) — see vantly_not_connected handling below.
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { Loader2, Plus, Trash2, Send, Check, RefreshCw, Link2 } from 'lucide-react';
+import { Loader2, Plus, Trash2, Send, Check, RefreshCw, Link2, X as XIcon, AlertCircle, ExternalLink } from 'lucide-react';
 import { NetworkLogo, PoweredByVantly } from '@/components/brand-icons';
+import { createClient } from '@/lib/supabase/client';
 
 interface Provider { name: string; identifier: string; toolTip?: string }
 interface Channel { id: string; name: string; provider: string; profile?: string | null }
 interface GalleryVideo {
   id: string;
+  run_id: string;
+  source: string;
   media_url: string;
   thumbnail_url: string | null;
   created_at: string;
   primitive: string | null;
   prompt: string | null;
+  title: string | null;
 }
+
+// One row per (video, channel) publish attempt for the currently-selected
+// video — seeded from POST /publish's `results`, then kept live via a
+// Supabase realtime subscription on vantly_publications filtered to this
+// video's run_id (mirrors the pattern in
+// apps/web/app/(dashboard)/integrations/vantly/page.tsx).
+interface PublishStatus {
+  publication_id: string | null;
+  channel_id: string;
+  status: 'pending' | 'uploaded' | 'published' | 'failed' | 'already_in_progress';
+  error_message?: string | null;
+  release_url?: string | null;
+}
+
+const IN_FLIGHT_STATUSES = new Set(['pending', 'uploaded']);
+const RESOLVE_URL_POLL_MS = 5000;
+const RESOLVE_URL_MAX_ATTEMPTS = 6;
 
 const VIDEO_RE = /\.(mp4|webm|mov)(\?|$|#)/i;
 
@@ -53,7 +74,9 @@ export default function SocialPage() {
   const [caption, setCaption] = useState('');
   const [captionTouched, setCaptionTouched] = useState(false);
   const [picked, setPicked] = useState<Record<string, boolean>>({});
-  const [publishMsg, setPublishMsg] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [publishStatuses, setPublishStatuses] = useState<PublishStatus[] | null>(null);
+  const resolveAttempts = useRef<Map<string, number>>(new Map());
 
   const loadChannels = useCallback(async () => {
     try {
@@ -91,11 +114,14 @@ export default function SocialPage() {
           .filter((it) => it.status === 'succeeded' && typeof it.media_url === 'string' && VIDEO_RE.test(it.media_url as string))
           .map((it) => ({
             id: it.id as string,
+            run_id: (it.run_id as string | undefined) ?? (it.id as string),
+            source: (it.source as string | undefined) ?? 'legacy',
             media_url: it.media_url as string,
             thumbnail_url: (it.thumbnail_url as string | null) ?? null,
             created_at: it.created_at as string,
             primitive: (it.primitive as string | null) ?? null,
             prompt: (it.prompt as string | null) ?? null,
+            title: (it.title as string | null) ?? null,
           }));
         setVideos(vids);
       } catch { setVideos([]); }
@@ -107,6 +133,9 @@ export default function SocialPage() {
   // was generated with — so publishing rarely means retyping the caption.
   const pickVideo = (id: string) => {
     setSelectedVideoId(id);
+    setConfirming(false);
+    setPublishStatuses(null);
+    resolveAttempts.current.clear();
     const v = (videos ?? []).find((x) => x.id === id);
     if (!v) return;
     setVideoUrl(v.media_url);
@@ -140,8 +169,25 @@ export default function SocialPage() {
     finally { setBusy(null); }
   }
 
-  async function publish() {
-    setPublishMsg(null); setError(null);
+  const selectedVideo = (videos ?? []).find((x) => x.id === selectedVideoId) ?? null;
+  const hasInFlightForSelected = !!publishStatuses?.some((s) => IN_FLIGHT_STATUSES.has(s.status));
+
+  // Step 1 of 2: just validates + shows the inline confirm row. No network
+  // call yet — this is what stops an accidental single click from
+  // publishing anything, on top of the server-side idempotency guard.
+  function requestPublish() {
+    setError(null);
+    const channel_ids = Object.entries(picked).filter(([, v]) => v).map(([k]) => k);
+    if (!videoUrl || channel_ids.length === 0) { setError('Pick a video URL and at least one channel.'); return; }
+    setConfirming(true);
+  }
+
+  function cancelPublish() { setConfirming(false); }
+
+  // Step 2 of 2: the actual publish, only reachable via the confirm row.
+  async function confirmPublish() {
+    setConfirming(false);
+    setError(null);
     const channel_ids = Object.entries(picked).filter(([, v]) => v).map(([k]) => k);
     if (!videoUrl || channel_ids.length === 0) { setError('Pick a video URL and at least one channel.'); return; }
     setBusy('publish');
@@ -149,16 +195,108 @@ export default function SocialPage() {
       const r = await fetch('/api/v1/social/publish', {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ video_url: videoUrl, channel_ids, caption, type: 'now' }),
+        body: JSON.stringify({
+          video_url: videoUrl,
+          channel_ids,
+          caption,
+          type: 'now',
+          run_id: selectedVideo?.run_id,
+          source: selectedVideo?.source,
+        }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.detail || j?.error || `publish ${r.status}`);
-      const n = Array.isArray(j?.post_ids) ? j.post_ids.length : 0;
-      if (n === 0) throw new Error('Vantly accepted the request but created no post — nothing was published.');
-      setPublishMsg(`Published to ${n} channel${n === 1 ? '' : 's'}! 🎉`);
+      const results = Array.isArray(j?.results)
+        ? (j.results as Array<{ channel_id: string; status: PublishStatus['status']; publication_id?: string; error?: string }>)
+        : [];
+      if (results.length === 0) throw new Error('Vantly accepted the request but nothing was published.');
+      resolveAttempts.current.clear();
+      setPublishStatuses(
+        results.map((res) => ({
+          publication_id: res.publication_id ?? null,
+          channel_id: res.channel_id,
+          status: res.status,
+          error_message: res.error ?? null,
+          release_url: null,
+        })),
+      );
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(null); }
   }
+
+  // Live status: keep each channel's row in sync with vantly_publications as
+  // the manual publish flow moves it through pending → uploaded → published
+  // (or failed) — same realtime pattern as
+  // apps/web/app/(dashboard)/integrations/vantly/page.tsx, scoped to just
+  // this video's run_id via a server-side filter.
+  useEffect(() => {
+    const runId = selectedVideo?.run_id;
+    if (!publishStatuses || publishStatuses.length === 0 || !runId) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`vantly-publications-social-${runId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'vantly_publications', filter: `run_id=eq.${runId}` },
+        (payload) => {
+          const row = payload.new as {
+            id: string; integration_id: string; status: string; error_message: string | null; release_url: string | null;
+          };
+          setPublishStatuses((prev) => {
+            if (!prev) return prev;
+            let matched = false;
+            const next = prev.map((s) => {
+              if (s.publication_id === row.id || (!s.publication_id && s.channel_id === row.integration_id)) {
+                matched = true;
+                return {
+                  ...s,
+                  publication_id: row.id,
+                  status: row.status as PublishStatus['status'],
+                  error_message: row.error_message,
+                  release_url: row.release_url ?? s.release_url ?? null,
+                };
+              }
+              return s;
+            });
+            return matched ? next : prev;
+          });
+        },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [publishStatuses !== null, selectedVideo?.run_id]);
+
+  // Postiz's create-post response never includes a platform permalink and
+  // has no lifecycle webhooks — once a channel reaches 'published', poll
+  // the resolve-url endpoint a few times so a real "View post" link can
+  // appear without the user needing to do anything.
+  useEffect(() => {
+    if (!publishStatuses) return;
+    const pending = publishStatuses.filter(
+      (s) =>
+        s.status === 'published' &&
+        s.publication_id &&
+        !s.release_url &&
+        (resolveAttempts.current.get(s.publication_id) ?? 0) < RESOLVE_URL_MAX_ATTEMPTS,
+    );
+    if (pending.length === 0) return;
+    const timer = window.setTimeout(async () => {
+      for (const s of pending) {
+        const id = s.publication_id!;
+        resolveAttempts.current.set(id, (resolveAttempts.current.get(id) ?? 0) + 1);
+        try {
+          const r = await fetch(`/api/v1/social/publications/${encodeURIComponent(id)}/resolve-url`, { credentials: 'include' });
+          if (!r.ok) continue;
+          const j = await r.json();
+          if (j?.release_url) {
+            setPublishStatuses((prev) => (prev ? prev.map((x) => (x.publication_id === id ? { ...x, release_url: j.release_url } : x)) : prev));
+          }
+        } catch { /* try again next tick, or give up after RESOLVE_URL_MAX_ATTEMPTS */ }
+      }
+    }, RESOLVE_URL_POLL_MS);
+    return () => window.clearTimeout(timer);
+  }, [publishStatuses]);
 
   return (
     <div className="mx-auto w-full max-w-4xl px-8 py-10">
@@ -251,20 +389,29 @@ export default function SocialPage() {
               </option>
               {(videos ?? []).map((v) => {
                 const date = new Date(v.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-                const label = v.prompt ? (v.prompt.length > 60 ? v.prompt.slice(0, 60) + '…' : v.prompt) : (v.primitive ?? 'video');
+                const label = v.title ?? (v.prompt ? (v.prompt.length > 60 ? v.prompt.slice(0, 60) + '…' : v.prompt) : (v.primitive ?? 'video'));
                 return <option key={v.id} value={v.id}>{date} · {label}</option>;
               })}
             </select>
             {selectedVideoId && videoUrl && (
-              <div className="flex items-center gap-2.5 rounded-lg px-2.5 py-2" style={{ background: '#0F1015', border: '1px solid rgba(255,255,255,0.06)' }}>
-                {(() => {
-                  const v = (videos ?? []).find((x) => x.id === selectedVideoId);
-                  return v?.thumbnail_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={v.thumbnail_url} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover' }} />
-                  ) : null;
-                })()}
-                <span className="min-w-0 flex-1 truncate text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>{videoUrl}</span>
+              <div className="flex items-center gap-3 rounded-lg px-2.5 py-2.5" style={{ background: '#0F1015', border: '1px solid rgba(255,255,255,0.06)' }}>
+                {/* Deliberately smaller than a Gallery grid card (~150-280px) —
+                    just enough to confirm this is the right video before publishing. */}
+                <video
+                  key={selectedVideoId}
+                  src={videoUrl}
+                  controls
+                  muted
+                  playsInline
+                  preload="metadata"
+                  style={{ width: 92, aspectRatio: '3 / 4', borderRadius: 8, objectFit: 'cover', background: '#000', flexShrink: 0 }}
+                />
+                <div className="min-w-0 flex-1">
+                  {selectedVideo?.title ? (
+                    <p className="truncate text-[13px] font-medium" style={{ color: '#E9E9F0' }}>{selectedVideo.title}</p>
+                  ) : null}
+                  <span className="block truncate text-[11px]" style={{ color: 'rgba(255,255,255,0.45)' }}>{videoUrl}</span>
+                </div>
               </div>
             )}
             <button type="button" onClick={() => { setManualUrl(true); setSelectedVideoId(''); }} className="self-start text-[11px] underline" style={{ color: 'rgba(255,255,255,0.45)' }}>
@@ -291,12 +438,75 @@ export default function SocialPage() {
             </label>
           ))}
         </div>
-        <div className="flex items-center gap-3">
-          <button type="button" onClick={publish} disabled={busy === 'publish'} className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-60" style={{ background: '#A78BFA', color: '#0F1015' }}>
-            {busy === 'publish' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Publish now
-          </button>
-          {publishMsg ? <span className="text-sm" style={{ color: '#34D399' }}>{publishMsg}</span> : null}
-        </div>
+        {confirming ? (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl px-3 py-2.5" style={{ background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.3)' }}>
+            <span className="text-sm" style={{ color: '#E9E9F0' }}>
+              Publish {selectedVideo?.title ? `"${selectedVideo.title}"` : 'this video'} to{' '}
+              {Object.values(picked).filter(Boolean).length} channel{Object.values(picked).filter(Boolean).length === 1 ? '' : 's'}?
+            </span>
+            <div className="ml-auto flex items-center gap-2">
+              <button type="button" onClick={cancelPublish} className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium" style={{ color: 'rgba(255,255,255,0.65)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                <XIcon className="h-3.5 w-3.5" /> Cancel
+              </button>
+              <button type="button" onClick={confirmPublish} disabled={busy === 'publish'} className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-60" style={{ background: '#A78BFA', color: '#0F1015' }}>
+                {busy === 'publish' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Confirm publish
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={requestPublish}
+              disabled={busy === 'publish' || hasInFlightForSelected}
+              className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
+              style={{ background: '#A78BFA', color: '#0F1015' }}
+            >
+              {busy === 'publish' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {hasInFlightForSelected ? 'Publishing…' : 'Publish now'}
+            </button>
+          </div>
+        )}
+
+        {/* Per-channel status — seeded immediately from the publish response,
+            then kept live via the vantly_publications realtime subscription
+            above as each row moves pending → uploaded → published (or
+            failed), with a permalink once resolve-url finds one. */}
+        {publishStatuses && publishStatuses.length > 0 ? (
+          <div className="flex flex-col gap-1.5 rounded-xl p-3" style={{ background: '#0F1015', border: '1px solid rgba(255,255,255,0.06)' }}>
+            {publishStatuses.map((s) => {
+              const c = (channels ?? []).find((ch) => ch.id === s.channel_id);
+              const label = c ? `${c.name} (${PRETTY[c.provider] ?? c.provider})` : s.channel_id;
+              return (
+                <div key={s.channel_id} className="flex items-center gap-2.5 text-sm">
+                  {c ? <NetworkLogo provider={c.provider} size={15} /> : null}
+                  <span className="min-w-0 flex-1 truncate" style={{ color: 'rgba(255,255,255,0.8)' }}>{label}</span>
+                  {s.status === 'pending' || s.status === 'uploaded' ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> {s.status === 'pending' ? 'Uploading…' : 'Publishing…'}
+                    </span>
+                  ) : s.status === 'published' ? (
+                    s.release_url ? (
+                      <a href={s.release_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: '#34D399' }}>
+                        <Check className="h-3.5 w-3.5" /> Published <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: '#34D399' }}>
+                        <Check className="h-3.5 w-3.5" /> Published
+                      </span>
+                    )
+                  ) : s.status === 'already_in_progress' ? (
+                    <span className="text-xs" style={{ color: 'rgba(255,255,255,0.5)' }}>Already publishing or recently published — skipped</span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: '#FCA5A5' }} title={s.error_message ?? undefined}>
+                      <AlertCircle className="h-3.5 w-3.5" /> Failed{s.error_message ? `: ${s.error_message}` : ''}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
     </div>
   );

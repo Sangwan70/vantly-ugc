@@ -162,9 +162,16 @@ export interface VantlyPostInput {
   media?: { id: string; path: string }[];
 }
 
+export interface VantlyPostResult {
+  /** Which requested channel this post landed on. */
+  integrationId: string;
+  /** Vantly/Postiz post id for that channel's post. */
+  postId: string;
+}
+
 export interface VantlyCreateResult {
-  /** Post ids that were actually created. Empty ⇒ nothing posted. */
-  postIds: string[];
+  /** One entry per post Vantly actually created, matched back to the integration that requested it. Empty ⇒ nothing posted. */
+  results: VantlyPostResult[];
   /** Raw response, for logging/diagnostics. */
   raw: unknown;
 }
@@ -199,22 +206,68 @@ export async function createPost(
     }),
   });
 
-  const postIds = extractPostIds(raw);
-  if (postIds.length === 0) {
+  const results = extractPostResults(raw);
+  if (results.length === 0) {
     throw new Error(`vantly created no post (empty result): ${JSON.stringify(raw).slice(0, 400)}`);
   }
-  return { postIds, raw };
+  return { results, raw };
 }
 
-function extractPostIds(raw: unknown): string[] {
-  const ids: string[] = [];
+/**
+ * Postiz's create-post response is a flat array like [{postId, integration}]
+ * — `integration` is the integration/channel id the post was created for
+ * (sometimes nested as {id: ...} rather than a bare string, so both shapes
+ * are handled). Matching each result back to its integrationId is what lets
+ * callers record per-channel status instead of just a raw count.
+ */
+function extractPostResults(raw: unknown): VantlyPostResult[] {
+  const results: VantlyPostResult[] = [];
   const pick = (o: unknown): void => {
     if (!o || typeof o !== 'object') return;
     const rec = o as Record<string, unknown>;
-    const id = rec.postId ?? rec.id ?? rec.releaseURL;
-    if (typeof id === 'string' && id) ids.push(id);
+    const postId = rec.postId ?? rec.id;
+    const integrationRaw = rec.integration ?? rec.integrationId;
+    const integrationId =
+      typeof integrationRaw === 'string'
+        ? integrationRaw
+        : integrationRaw && typeof integrationRaw === 'object'
+          ? ((integrationRaw as Record<string, unknown>).id as string | undefined)
+          : undefined;
+    if (typeof postId === 'string' && postId && typeof integrationId === 'string' && integrationId) {
+      results.push({ integrationId, postId });
+    }
   };
   if (Array.isArray(raw)) raw.forEach(pick);
   else pick(raw);
-  return ids;
+  return results;
+}
+
+/**
+ * List Posts — the only Postiz endpoint that returns per-post delivery
+ * status (`state`: QUEUE/PUBLISHED/ERROR/DRAFT) and the platform permalink
+ * (`releaseURL`). POST /posts's own response has neither, and Postiz has no
+ * lifecycle webhooks (confirmed against its own issue tracker), so this is
+ * the only way to resolve a real "view on platform" link after publishing —
+ * see resolvePublicationUrlRoute in routes/v1/social.ts, which polls this
+ * shortly after a post is created.
+ */
+export interface VantlyPostStatus {
+  id: string;
+  state: 'QUEUE' | 'PUBLISHED' | 'ERROR' | 'DRAFT';
+  releaseURL: string | null;
+  publishDate: string | null;
+}
+
+export async function listPosts(token: string, args: { startDate: string; endDate: string }): Promise<VantlyPostStatus[]> {
+  const params = new URLSearchParams({ startDate: args.startDate, endDate: args.endDate });
+  const raw = await pjson<unknown>(`/posts?${params.toString()}`, token);
+  const arr = Array.isArray(raw) ? raw : ((raw as { posts?: unknown[]; data?: unknown[] } | null)?.posts ?? (raw as { data?: unknown[] } | null)?.data ?? []);
+  return (arr as Record<string, unknown>[])
+    .map((p) => ({
+      id: String(p.id ?? ''),
+      state: (typeof p.state === 'string' ? p.state : 'QUEUE') as VantlyPostStatus['state'],
+      releaseURL: typeof p.releaseURL === 'string' && p.releaseURL ? p.releaseURL : null,
+      publishDate: (typeof p.publishDate === 'string' ? p.publishDate : null),
+    }))
+    .filter((p) => p.id);
 }

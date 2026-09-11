@@ -31,6 +31,12 @@ interface GalleryItem {
   thumbnail_url: string | null;
   duration_seconds: number | null;
   prompt: string | null;
+  // Story title (currently only ever set by make_storybook's optional
+  // `title` input field — see skills/registry.ts's MakeStorybookSkillInputSchema).
+  // NULL for every other skill/primitive and for the legacy path; callers
+  // (e.g. dashboard/social's video picker) should fall back to `prompt`/
+  // `primitive` the same way this route's own promptText derivation does.
+  title: string | null;
   credits_deducted: number;
 }
 
@@ -166,6 +172,7 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
       thumbnail_url: (row.output_thumbnail_url as string | null) ?? null,
       duration_seconds: (row.duration_seconds as number | null) ?? null,
       prompt: (row.prompt as string | null) ?? null,
+      title: null,
       credits_deducted: Number(row.credit_cost ?? 0),
     });
   }
@@ -183,6 +190,12 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
       (typeof inp.scene_action === 'string' && inp.scene_action.trim()) ? inp.scene_action.trim() :
       (typeof inp.person === 'string' && inp.person.trim()) ? inp.person.trim() :
       null;
+    // Only make_storybook's input schema has a `title` field today (see
+    // skills/registry.ts) — every other skill leaves this null, so callers
+    // must still fall back to promptText/primitive the way dashboard/social
+    // already does for the caption.
+    const titleText: string | null =
+      (typeof inp.title === 'string' && inp.title.trim()) ? inp.title.trim() : null;
     const totalCredits = ((row.credits_deducted_total as any) || []).reduce(
       (s: number, c: any) => s + Number(c?.credits_deducted ?? 0),
       0,
@@ -229,6 +242,7 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
         thumbnail_url: out.portrait_url ?? portraitFallback?.url ?? null,
         duration_seconds: null,
         prompt: null,
+        title: null,
         credits_deducted: 0,
       });
       emitted = true;
@@ -246,6 +260,7 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
         thumbnail_url: out.character_sheet_url ?? sheetFallback?.url ?? null,
         duration_seconds: null,
         prompt: null,
+        title: null,
         credits_deducted: 0,
       });
       emitted = true;
@@ -263,6 +278,7 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
         thumbnail_url: out.character_sheet_url ?? out.portrait_url ?? sheetFallback?.url ?? portraitFallback?.url ?? null,
         duration_seconds: durationSeconds,
         prompt: promptText,
+        title: titleText,
         credits_deducted: totalCredits,
       });
       emitted = true;
@@ -283,6 +299,7 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
         thumbnail_url: null,
         duration_seconds: durationSeconds,
         prompt: null,
+        title: null,
         credits_deducted: totalCredits,
       });
     }
@@ -306,6 +323,7 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
         (row.input as any)?.description ??
         (row.input as any)?.script ??
         null,
+      title: null,
       credits_deducted: Number(row.credits_deducted ?? 0),
     });
   }

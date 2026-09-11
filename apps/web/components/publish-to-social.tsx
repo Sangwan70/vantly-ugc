@@ -68,8 +68,16 @@ export function PublishToSocial({ videoUrl }: { videoUrl: string }) {
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.detail || j?.error || `publish ${r.status}`);
-      const n = Array.isArray(j?.post_ids) ? j.post_ids.length : 0;
-      if (n === 0) throw new Error('Vantly accepted the request but created no post.');
+      // /api/v1/social/publish now returns per-channel `results` (status
+      // tracking added for /dashboard/social's manual publish flow — see
+      // routes/v1/social.ts) instead of a flat post_ids count. This button
+      // doesn't send run_id/source, so every result here is a fresh
+      // 'published' or 'failed', never 'already_in_progress'.
+      const results = Array.isArray(j?.results) ? (j.results as Array<{ status: string; error?: string }>) : [];
+      const succeeded = results.filter((res) => res.status === 'published').length;
+      if (succeeded === 0) {
+        throw new Error(results.find((res) => res.error)?.error || 'Vantly accepted the request but created no post.');
+      }
       setMsg('Published! 🎉');
     } catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }

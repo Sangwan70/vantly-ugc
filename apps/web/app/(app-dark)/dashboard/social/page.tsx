@@ -77,6 +77,11 @@ const PRETTY: Record<string, string> = {
   devto: 'DEV Community',
 };
 
+// Appended to the caption (as its own paragraph) when the "promote my
+// platforms" checkbox is on. One line, plain URLs — matches what every
+// supported network accepts inside a caption/body, no per-network markup.
+const PROMO_LINE = 'Video generated at https://vantly-ugc.com and shared via https://vantly.social';
+
 export default function SocialPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [channels, setChannels] = useState<Channel[] | null>(null);
@@ -92,6 +97,7 @@ export default function SocialPage() {
   const [manualUrl, setManualUrl] = useState(false);
   const [caption, setCaption] = useState('');
   const [captionTouched, setCaptionTouched] = useState(false);
+  const [addPromoLinks, setAddPromoLinks] = useState(false);
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [confirming, setConfirming] = useState(false);
   const [publishStatuses, setPublishStatuses] = useState<PublishStatus[] | null>(null);
@@ -190,6 +196,7 @@ export default function SocialPage() {
 
   const selectedVideo = (videos ?? []).find((x) => x.id === selectedVideoId) ?? null;
   const hasInFlightForSelected = !!publishStatuses?.some((s) => IN_FLIGHT_STATUSES.has(s.status));
+  const effectiveCaption = addPromoLinks ? `${caption}\n\n${PROMO_LINE}` : caption;
 
   // Step 1 of 2: just validates + shows the inline confirm row. No network
   // call yet — this is what stops an accidental single click from
@@ -217,7 +224,7 @@ export default function SocialPage() {
         body: JSON.stringify({
           video_url: videoUrl,
           channel_ids,
-          caption,
+          caption: effectiveCaption,
           type: 'now',
           run_id: selectedVideo?.run_id,
           source: selectedVideo?.source,
@@ -454,6 +461,15 @@ export default function SocialPage() {
         )}
         <textarea value={caption} onChange={(e) => { setCaption(e.target.value); setCaptionTouched(true); }} placeholder="Caption — auto-filled from the video's script when you pick one above" rows={2}
           className="resize-none rounded-xl px-3 py-2 text-sm outline-none" style={{ background: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }} />
+        <label className="inline-flex items-start gap-2 text-[13px]" style={{ color: 'rgba(255,255,255,0.7)' }}>
+          <input type="checkbox" className="mt-[2px]" checked={addPromoLinks} onChange={(e) => setAddPromoLinks(e.target.checked)} />
+          <span>Add https://vantly-ugc.com and https://vantly.social links in the body of the description?</span>
+        </label>
+        {addPromoLinks && (
+          <p className="text-[11px] italic" style={{ color: 'rgba(255,255,255,0.4)' }}>
+            Will be appended: &ldquo;{PROMO_LINE}&rdquo;
+          </p>
+        )}
         <div className="flex flex-wrap gap-3">
           {(channels ?? []).map((c) => (
             <label key={c.id} className="inline-flex items-center gap-2 text-sm" style={{ color: 'rgba(255,255,255,0.8)' }}>

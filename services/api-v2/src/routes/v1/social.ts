@@ -27,7 +27,21 @@ import {
 } from '../../lib/vantly.js';
 
 // The providers we expose in the UI (user asked for TikTok, Instagram, X).
-const ALLOWED_PROVIDERS = new Set(['tiktok', 'instagram', 'instagram-standalone', 'x']);
+// Every network vantly-ugc can build a valid createPost `settings` payload
+// for (see buildNetworkSettings in lib/social-post-settings.ts) — either it
+// needs no settings beyond __type, a fixed operational default, or an
+// LLM-derived title/subtitle/tags clamped to that platform's limits.
+// Deliberately excludes networks whose required setting names a real
+// account-specific resource (Pinterest board, Discord/Slack channel, Reddit/
+// Lemmy subreddit, Skool/Whop group, Farcaster channel, Listmonk list,
+// Moltbook submolt, Hashnode publication) — no model call can safely invent
+// an id that has to already exist and belong to that account.
+const ALLOWED_PROVIDERS = new Set([
+  'tiktok', 'instagram', 'instagram-standalone', 'x',
+  'kick', 'twitch', 'facebook', 'linkedin', 'linkedin-page', 'gmb',
+  'threads', 'mastodon', 'bluesky', 'telegram', 'nostr', 'vk', 'mewe',
+  'tumblr', 'youtube', 'wordpress', 'dribbble', 'medium', 'devto',
+]);
 
 const R2_PUBLIC = (process.env.R2_PUBLIC_URL || 'https://pub-16e2ed8f6be84691845e91436920ce0a.r2.dev').replace(/\/+$/, '');
 
@@ -217,6 +231,13 @@ export async function publishSocialRoute(req: Request, res: Response): Promise<v
   const date = body.date ? String(body.date) : undefined;
   const runId = body.run_id ? String(body.run_id) : null;
   const source = body.source ? String(body.source) : null;
+  // Source video's working title/prompt, if the caller has them — used to
+  // derive a real title/subtitle for networks that require post-content
+  // settings fields (YouTube, WordPress, Dribbble, Medium, DevTo). Optional:
+  // callers that don't send them (e.g. the Gallery quick-publish button)
+  // still work, just with a caption-derived fallback title.
+  const title = body.title ? String(body.title).slice(0, 500) : null;
+  const prompt = body.prompt ? String(body.prompt).slice(0, 2000) : null;
 
   // SSRF guard: only our own R2-hosted videos.
   if (!videoUrl.startsWith(R2_PUBLIC + '/')) {
@@ -335,6 +356,8 @@ export async function publishSocialRoute(req: Request, res: Response): Promise<v
           network: byId.get(integrationId)!.identifier,
           content: caption,
           media: [{ id: media.id, path: media.path! }],
+          title,
+          prompt,
         })),
       });
     } catch (e) {

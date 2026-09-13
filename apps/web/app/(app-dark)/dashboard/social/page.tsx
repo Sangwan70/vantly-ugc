@@ -56,6 +56,25 @@ const PRETTY: Record<string, string> = {
   instagram: 'Instagram',
   'instagram-standalone': 'Instagram (Standalone)',
   x: 'X',
+  facebook: 'Facebook',
+  linkedin: 'LinkedIn',
+  'linkedin-page': 'LinkedIn (Page)',
+  gmb: 'Google Business',
+  threads: 'Threads',
+  mastodon: 'Mastodon',
+  bluesky: 'Bluesky',
+  telegram: 'Telegram',
+  nostr: 'Nostr',
+  vk: 'VK',
+  kick: 'Kick',
+  twitch: 'Twitch',
+  mewe: 'MeWe',
+  tumblr: 'Tumblr',
+  youtube: 'YouTube',
+  wordpress: 'WordPress',
+  dribbble: 'Dribbble',
+  medium: 'Medium',
+  devto: 'DEV Community',
 };
 
 export default function SocialPage() {
@@ -202,6 +221,12 @@ export default function SocialPage() {
           type: 'now',
           run_id: selectedVideo?.run_id,
           source: selectedVideo?.source,
+          // Source material for networks that need a real title/subtitle
+          // (YouTube, WordPress, Dribbble, Medium, DevTo) — the backend
+          // derives it via LLM from these when present, caption alone
+          // otherwise.
+          title: selectedVideo?.title,
+          prompt: selectedVideo?.prompt,
         }),
       });
       const j = await r.json();

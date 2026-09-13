@@ -22,6 +22,8 @@
  *   - apps/backend/src/api/routes/no.auth.integrations.controller.ts (catalog)
  */
 
+import { buildNetworkSettings, generateSocialCopy, COPY_NEEDED_NETWORKS } from './social-post-settings.js';
+
 const VANTLY_PUBLIC_API_BASE = (
   process.env.VANTLY_API_BASE_URL || 'https://vantly.social/api/public/v1'
 ).replace(/\/+$/, '');
@@ -144,14 +146,6 @@ export async function uploadFromUrl(token: string, url: string): Promise<{ id: s
   return { id: data.id, path: data.path };
 }
 
-/** Per-network required `settings` for createPost (verified against the live commercial API; Vantly is the same Postiz DTO shape). */
-function networkSettings(network: string): Record<string, unknown> {
-  const base = { __type: network };
-  // X requires who_can_reply_post; without it the post is rejected.
-  if (network === 'x') return { ...base, who_can_reply_post: 'everyone' };
-  return base;
-}
-
 export interface VantlyPostInput {
   /** Vantly integration (channel) id. */
   integrationId: string;
@@ -160,6 +154,9 @@ export interface VantlyPostInput {
   content: string;
   /** Uploaded media — MUST carry both id AND path (from uploadFromUrl). */
   media?: { id: string; path: string }[];
+  /** Source video's working title/prompt, if any — used to derive copy for networks that require a title/subtitle (see COPY_NEEDED_NETWORKS). */
+  title?: string | null;
+  prompt?: string | null;
 }
 
 export interface VantlyPostResult {
@@ -191,6 +188,21 @@ export async function createPost(
   args: { type: 'now' | 'schedule'; date?: string; posts: VantlyPostInput[] },
 ): Promise<VantlyCreateResult> {
   const date = args.date ?? new Date().toISOString();
+
+  // Derive title/subtitle/tags AT MOST ONCE per publish request — never per
+  // network — and only when some requested network actually needs it.
+  // Computed fresh per call (never cached across requests): this is
+  // one user's content for one publish click, so nothing here may leak
+  // into a concurrent different user's request.
+  const needsCopy = args.posts.some((p) => COPY_NEEDED_NETWORKS.has(p.network));
+  const copy = needsCopy
+    ? await generateSocialCopy({
+        caption: args.posts[0]?.content ?? '',
+        title: args.posts.find((p) => p.title)?.title,
+        prompt: args.posts.find((p) => p.prompt)?.prompt,
+      })
+    : undefined;
+
   const raw = await pjson<unknown>('/posts', token, {
     method: 'POST',
     body: JSON.stringify({
@@ -201,7 +213,7 @@ export async function createPost(
       posts: args.posts.map((p) => ({
         integration: { id: p.integrationId },
         value: [{ content: p.content, image: p.media ?? [] }],
-        settings: networkSettings(p.network),
+        settings: buildNetworkSettings({ network: p.network, caption: p.content, copy }),
       })),
     }),
   });

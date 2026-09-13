@@ -88,7 +88,19 @@ export async function listSocialProvidersRoute(_req: Request, res: Response): Pr
   }
 }
 
-/** GET /v1/social/channels — the user's connected channels. */
+/**
+ * GET /v1/social/channels — the user's connected channels.
+ *
+ * Filtered to ALLOWED_PROVIDERS: Vantly's /integrations endpoint returns
+ * every channel connected to the user's Vantly org, including networks
+ * (YouTube, Pinterest, ...) the user may have connected directly on
+ * vantly.social itself, outside this app. This app only knows how to build
+ * a valid createPost `settings` payload for ALLOWED_PROVIDERS (see
+ * networkSettings in lib/vantly.ts) - surfacing an unsupported channel here
+ * let a user select it for publishing and get a raw Vantly 400 (missing
+ * required per-network settings like YouTube's title/type or Pinterest's
+ * board) instead of never seeing it as an option.
+ */
 export async function listSocialChannelsRoute(req: Request, res: Response): Promise<void> {
   const userId = uid(req);
   if (!userId) { res.status(401).json({ error: 'unauthorized' }); return; }
@@ -96,14 +108,16 @@ export async function listSocialChannelsRoute(req: Request, res: Response): Prom
     const token = await getVantlyToken(userId);
     const raw = await listIntegrations(token);
     // Normalize: Vantly returns the network in `identifier`; expose it as `provider`.
-    const channels = (raw ?? []).map((c) => ({
-      id: c.id,
-      name: c.name,
-      provider: c.identifier,
-      profile: c.profile ?? null,
-      picture: c.picture ?? null,
-      disabled: c.disabled ?? false,
-    }));
+    const channels = (raw ?? [])
+      .filter((c) => ALLOWED_PROVIDERS.has(c.identifier))
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        provider: c.identifier,
+        profile: c.profile ?? null,
+        picture: c.picture ?? null,
+        disabled: c.disabled ?? false,
+      }));
     res.status(200).json({ channels });
   } catch (e) {
     respondVantlyError(res, e);
@@ -221,6 +235,23 @@ export async function publishSocialRoute(req: Request, res: Response): Promise<v
     const unknown = channelIds.filter((id) => !byId.has(id));
     if (unknown.length > 0) {
       res.status(400).json({ error: 'unknown_channel', detail: `not a connected channel: ${unknown.join(', ')}` });
+      return;
+    }
+    // Belt-and-suspenders: listSocialChannelsRoute already filters to
+    // ALLOWED_PROVIDERS, but this endpoint trusts whatever channel_ids the
+    // caller sends, so re-check here too. Without this, a channel this app
+    // has no settings-building support for (e.g. YouTube, which requires
+    // settings.title/type, or Pinterest, which requires settings.board -
+    // see networkSettings in lib/vantly.ts) reaches Vantly's /posts and
+    // fails validation there instead of with a clear error here.
+    const unsupported = channelIds.filter((id) => !ALLOWED_PROVIDERS.has(byId.get(id)!.identifier));
+    if (unsupported.length > 0) {
+      res.status(400).json({
+        error: 'unsupported_provider',
+        detail: `vantly-ugc can't publish to this channel's network yet: ${unsupported
+          .map((id) => `${id} (${byId.get(id)!.identifier})`)
+          .join(', ')}`,
+      });
       return;
     }
 

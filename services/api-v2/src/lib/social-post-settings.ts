@@ -1,29 +1,39 @@
 // Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
 /**
- * Builds the `settings` object POST /posts requires per network, matching
- * the required-field shape of Vantly's own per-provider settings DTOs
- * (verified against vantly/libraries/nestjs-libraries/src/dtos/posts/
- * providers-settings/*.dto.ts — this app has no access to that repo at
- * runtime, so these constraints are hand-mirrored and must be re-checked
+ * Builds the per-network `settings` object AND post body/description for
+ * POST /posts (verified against vantly/libraries/nestjs-libraries/src/dtos/
+ * posts/providers-settings/*.dto.ts — this app has no access to that repo
+ * at runtime, so these constraints are hand-mirrored and must be re-checked
  * there if Vantly's DTOs change).
  *
- * Every network falls into exactly one of three buckets:
+ * Two responsibilities live here, both driven by ONE Anthropic call per
+ * publish request (generateSocialCopy, called once in vantly.ts's
+ * createPost — never once per network):
  *
+ *  - buildNetworkSettings(): the required `settings.*` fields each network's
+ *    Postiz DTO validates (a title field, a fixed operational default, or
+ *    nothing at all — see the network buckets below).
+ *  - buildNetworkContent(): the post BODY every network actually publishes —
+ *    an eye-grabbing title's matching marketing description ("Wow! You can
+ *    create videos like this with Vantly UGC...", what prompt made the
+ *    video, and hashtags), clamped to fit that specific network's real
+ *    character limit rather than one string sent everywhere unmodified,
+ *    plus (WordPress only) an embedded <video> tag, since
+ *    WordpressProvider.post() never uploads video on its own.
+ *
+ * Settings buckets (buildNetworkSettings):
  *  1. No required fields beyond the `settings.__type` discriminator
  *     (kick/twitch/facebook/linkedin/linkedin-page/gmb/threads/mastodon/
  *     bluesky/telegram/nostr/vk) - nothing to build.
  *  2. A required field that's a fixed operational choice, not post content
  *     (TikTok's content_posting_method/privacy_level/duet/..., Instagram's
  *     post_type, MeWe's postType) - a fixed default, no model call. These
- *     lean toward "Publish Now" actually publishing live/public, matching
- *     what tiktok/instagram/x already did before this file existed.
- *  3. A required field that IS post content - a title, subtitle, or tags -
- *     within a hard length limit (YouTube/WordPress/Dribbble/Medium/DevTo).
- *     generateSocialCopy() below derives all of it in ONE model call per
- *     publish request (not one per network), and every caller clamps the
- *     result to fit rather than trusting the model to land inside a
- *     class-validator MinLength/MaxLength on its own.
+ *     lean toward "Publish Now" actually publishing live/public.
+ *  3. A required field that IS post content - a title (YouTube/WordPress/
+ *     Dribbble/Medium/DevTo/TikTok's optional title) - within a hard length
+ *     limit; every caller clamps the model's result to fit rather than
+ *     trusting it to land inside a class-validator MinLength/MaxLength.
  *
  * Deliberately NOT covered here (see ALLOWED_PROVIDERS in
  * routes/v1/social.ts): any network whose required field names a real
@@ -47,6 +57,45 @@ const MODEL = process.env.ANTHROPIC_AGENT_MODEL || 'claude-sonnet-4-6';
 // YOUTUBE_TAGS_MAX_LENGTH in vantly's youtube.settings.dto.ts).
 const YOUTUBE_TAGS_BUDGET = 480; // small safety margin under the real 500 cap
 
+// Appended to the post body (its own line, always last) when the caller
+// opts in via the "promote my platforms" checkbox. Single source of truth —
+// the frontend only sends a boolean and mirrors this exact string for its
+// own preview text (apps/web/.../dashboard/social/page.tsx) — so it and
+// this file must be kept in sync by hand if the wording ever changes.
+export const PROMO_LINE = 'Video generated at https://vantly-ugc.com and shared via https://vantly.social';
+
+// Real (or, where a platform has no hard published cap, a deliberately
+// conservative) per-network body/description character limits, so the
+// composed marketing description never gets rejected or silently mangled
+// by a platform-side truncation. A network missing here just falls back to
+// DEFAULT_BODY_LIMIT, which is safe (short) rather than wrong.
+const PLATFORM_BODY_LIMITS: Record<string, number> = {
+  x: 280,
+  bluesky: 300,
+  threads: 500,
+  mastodon: 500, // the common default instance config; self-hosted instances vary but this is a safe floor
+  instagram: 2200,
+  'instagram-standalone': 2200,
+  tiktok: 2200,
+  telegram: 1024, // caption-on-media limit (this app always attaches the video) — not the 4096 text-only limit
+  tumblr: 4096,
+  gmb: 1500,
+  vk: 4096,
+  kick: 500,
+  twitch: 500,
+  mewe: 5000,
+  facebook: 2000, // ~63k is technically allowed; kept to normal social-post length rather than maxed out
+  linkedin: 3000,
+  'linkedin-page': 3000,
+  nostr: 2000, // relay-dependent, no universal hard cap — conservative default
+  youtube: 5000, // description field
+  dribbble: 500, // no dedicated description field — shares the title's small budget
+  medium: 20000,
+  devto: 20000,
+  wordpress: 20000, // WordpressProvider.post()'s maxLength() is 100000; kept well under it for a sane post length
+};
+const DEFAULT_BODY_LIMIT = 2000;
+
 export interface PostCopyInput {
   caption: string;
   title?: string | null;
@@ -55,33 +104,33 @@ export interface PostCopyInput {
 
 export interface GeneratedCopy {
   title: string;
-  subtitle: string;
+  /** A short, original, exciting marketing sentence promoting the app (e.g. "Wow! You can create videos like this with Vantly UGC...") — composeDescription() below builds every network's actual body around this. */
+  hook: string;
   tags: string[];
 }
 
-const EMPTY_COPY: GeneratedCopy = { title: '', subtitle: '', tags: [] };
+const EMPTY_COPY: GeneratedCopy = { title: '', hook: '', tags: [] };
 
-const SYSTEM_PROMPT = `You write short titles and metadata for a social/video post, from its caption and (if given) its original creation prompt or working title. The "working title" you're given is often actually the video's full script or lyrics, not a real title - never copy it, the caption, or the prompt verbatim into TITLE or SUBTITLE; always write new, original, short text in your own words, however long the input is. Output EXACTLY this format, nothing else, no surrounding quotes on any line:
+const SYSTEM_PROMPT = `You write marketing copy for a post publicizing a video made by an AI video app (vantly-ugc.com, published via vantly.social), from its caption and (if given) its original creation prompt or working title. The "working title" you're given is often actually the video's full script or lyrics, not a real title - never copy it, the caption, or the prompt verbatim into TITLE or HOOK; always write new, original, short text in your own words, however long or short the input is. Output EXACTLY this format, nothing else, no surrounding quotes on any line:
 TITLE: <a punchy original title, 3-12 words, never a copy of the input text>
-SUBTITLE: <a one-sentence original subtitle/summary, worded differently from the title and from the input>
-TAGS: <3-6 short topical tags, comma separated, no # symbol, lowercase>`;
+HOOK: <one exciting, original marketing sentence promoting the app - e.g. starting "Wow! You can create videos like this with..." - never a copy of the input>
+TAGS: <3-6 short topical hashtag-ready tags, comma separated, no # symbol, lowercase>`;
 
 /**
- * One Anthropic call that derives a title/subtitle/tags set good enough to
- * clamp into every network that needs one - called at most once per publish
- * request (see createPost in vantly.ts), never per network.
+ * One Anthropic call that derives a title/hook/tags set used to build every
+ * network's title (where it has one) and description - called at most once
+ * per publish request (see createPost in vantly.ts), never per network.
  *
- * Never throws: a missing/failed model call must not block publishing to
- * networks with no settings requirements just because one network wanted
- * a nicer title. Every caller below has its own caption-derived fallback
- * for when this comes back empty.
+ * Never throws: a missing/failed model call must not block publishing.
+ * Every caller below has its own caption-derived fallback for when this
+ * comes back empty.
  */
 export async function generateSocialCopy(input: PostCopyInput): Promise<GeneratedCopy> {
   const userMessageParts = [
     input.title ? `Existing working title: ${input.title}` : null,
     `Caption: ${input.caption || '(none)'}`,
     input.prompt ? `Original creation prompt: ${input.prompt}` : null,
-    'Write the TITLE/SUBTITLE/TAGS now, in the exact format specified.',
+    'Write the TITLE/HOOK/TAGS now, in the exact format specified.',
   ].filter((p): p is string => !!p);
 
   try {
@@ -106,7 +155,7 @@ export async function generateSocialCopy(input: PostCopyInput): Promise<Generate
       .join('')
       .trim();
     const titleMatch = raw.match(/^TITLE:\s*(.+)$/m);
-    const subtitleMatch = raw.match(/^SUBTITLE:\s*(.+)$/m);
+    const hookMatch = raw.match(/^HOOK:\s*(.+)$/m);
     const tagsMatch = raw.match(/^TAGS:\s*(.+)$/m);
     const tags = (tagsMatch?.[1] ?? '')
       .split(',')
@@ -114,7 +163,7 @@ export async function generateSocialCopy(input: PostCopyInput): Promise<Generate
       .filter(Boolean);
     return {
       title: stripQuotes(titleMatch?.[1]),
-      subtitle: stripQuotes(subtitleMatch?.[1]),
+      hook: stripQuotes(hookMatch?.[1]),
       tags,
     };
   } catch (err) {
@@ -152,13 +201,78 @@ function captionFallbackTitle(caption: string): string {
   return flat.split(' ').slice(0, 8).join(' ');
 }
 
+/** Generic fallback hook for when the model call fails - short, on-brand, never derived from user content so it can't accidentally echo anything malformed (e.g. the promo line, if that's all a blank caption + the checkbox left to work with). */
+const FALLBACK_HOOK = 'Check out this AI-generated video!';
+
+function truncateAtWordBoundary(s: string, max: number): string {
+  const t = (s || '').trim();
+  if (t.length <= max) return t;
+  if (max <= 1) return t.slice(0, Math.max(max, 0));
+  const cut = t.slice(0, max - 1); // leave room for the ellipsis
+  const lastSpace = cut.lastIndexOf(' ');
+  return (lastSpace > max * 0.4 ? cut.slice(0, lastSpace) : cut).trim() + '…';
+}
+
+function buildHashtagString(tags: string[]): string {
+  return tags
+    .map((t) => `#${t.trim().replace(/[^a-z0-9_]/gi, '')}`)
+    .filter((t) => t.length > 1)
+    .join(' ');
+}
+
+/**
+ * Composes the marketing description every network's post body is built
+ * around: an optional user-typed caption, the AI hook sentence, what
+ * prompt made the video, and hashtags — clamped to `limit` characters by
+ * dropping/truncating the LOWEST-priority part first, never by cutting the
+ * hook (the actual marketing message) mid-sentence.
+ *
+ * Priority (highest to lowest): user caption > hook > hashtags > "prompt
+ * used" line. On every network this app supports (280 chars and up) the
+ * hook + hashtags comfortably fit; the prompt-used line is the one most
+ * likely to get shortened or dropped on the tightest limits (X, Dribbble).
+ */
+function composeDescription(
+  args: { userCaption: string; hook: string; prompt?: string | null; tags: string[] },
+  limit: number,
+): string {
+  const hook = (args.hook || '').trim() || FALLBACK_HOOK;
+  const userCaption = (args.userCaption || '').trim();
+  const hashtags = buildHashtagString(args.tags);
+
+  const base = [userCaption, hook].filter(Boolean).join('\n\n');
+  const withTags = hashtags ? `${base}\n\n${hashtags}` : base;
+
+  if (args.prompt && args.prompt.trim()) {
+    const promptText = args.prompt.trim().replace(/\s+/g, ' ');
+    const prefix = 'Prompt used: "';
+    const suffix = '"';
+    const reserved = withTags.length + 2 + prefix.length + suffix.length; // +2 for the joining blank line
+    const room = limit - reserved;
+    if (room >= 15) {
+      const truncatedPrompt = truncateAtWordBoundary(promptText, room);
+      const withPrompt = `${base}\n\nPrompt used: "${truncatedPrompt}"${hashtags ? `\n\n${hashtags}` : ''}`;
+      if (withPrompt.length <= limit) return withPrompt;
+    }
+  }
+
+  if (withTags.length <= limit) return withTags;
+  if (base.length <= limit) return base; // drop hashtags before touching the hook/caption
+  return truncateAtWordBoundary(base, limit);
+}
+
 export interface SettingsContext {
   network: string;
+  /** The user's own typed caption, if any - kept as-is, never overwritten by the generated copy. */
   caption: string;
-  /** Pre-computed once per publish request by createPost - undefined for networks that don't need it. */
+  /** Pre-computed once per publish request by createPost. */
   copy?: GeneratedCopy;
+  /** The video's original creation prompt, if known - surfaced in the description as "Prompt used: ...". */
+  prompt?: string | null;
   /** Public URL of the uploaded video (from Vantly's own /upload-from-url — a real public URL on Vantly's storage, not a path needing a domain prefix). Only used by buildNetworkContent, for networks that can embed a playable video directly in the post body. */
   mediaUrl?: string;
+  /** Whether to append PROMO_LINE as the last line of the body (the "promote my platforms" checkbox). */
+  addPromoLinks?: boolean;
 }
 
 function escapeHtml(s: string): string {
@@ -173,35 +287,50 @@ function escapeHtml(s: string): string {
  * Builds the post BODY (Postiz's `value[].content`) per network — separate
  * from buildNetworkSettings, which only builds the `settings` object.
  *
- * Every network except WordPress just gets the caption back unchanged —
- * that's the correct, already-working behavior for a short-form caption
- * (X, Instagram, TikTok, etc. all render `content` as the literal post
- * text/caption).
+ * Every network gets the same AI-composed marketing description (the hook
+ * + what prompt made the video + hashtags), clamped to that network's real
+ * character limit via composeDescription() above — not the bare caption
+ * verbatim, which previously meant a network could end up publishing
+ * nothing but an empty caption, or (when the promote-my-platforms checkbox
+ * was on and the caption box was empty) the promo line alone with nothing
+ * else, since the promo line used to be pre-merged into the caption on the
+ * frontend and there was no other source of body text.
  *
- * WordPress is different: it's a full blog post, not a caption, and
- * WordpressProvider.post() (vantly's backend) has NO video-upload support
- * at all — it only ever uploads `settings.main_image` as a featured image.
- * A WordPress post published through this app would otherwise contain the
- * caption as the entire body with no video and no real description. So for
- * WordPress specifically, build real HTML: an embedded <video> tag pointing
- * at the video's own public URL (playable directly in the post, since
- * `wp_kses_post` — WordPress's REST API content sanitizer — allows
- * video/source/track tags for any authenticated user, not just admins),
- * followed by the LLM-generated description, followed by the original
- * caption as its own paragraph.
+ * WordPress is further special-cased: it's a full blog post, not a
+ * caption, and WordpressProvider.post() (vantly's backend) has NO
+ * video-upload support at all — it only ever uploads `settings.main_image`
+ * as a featured image. So WordPress gets real HTML: an embedded <video>
+ * tag pointing at the video's own public URL (playable directly in the
+ * post, since `wp_kses_post` — WordPress's REST API content sanitizer —
+ * allows video/source/track tags for any authenticated user, not just
+ * admins), followed by the same composed description, one <p> per
+ * paragraph.
  */
 export function buildNetworkContent(ctx: SettingsContext): string {
-  if (ctx.network !== 'wordpress') return ctx.caption;
-
   const copy = ctx.copy ?? EMPTY_COPY;
-  const description = (copy.subtitle || '').trim();
+  const limit = PLATFORM_BODY_LIMITS[ctx.network] ?? DEFAULT_BODY_LIMIT;
+  // Reserve room for the promo line up front so it's never the part that
+  // gets dropped when the description is composed — it's a single short,
+  // explicit opt-in from the user, not optional filler.
+  const promoReserve = ctx.addPromoLinks ? PROMO_LINE.length + 2 : 0;
+  const description = composeDescription(
+    { userCaption: ctx.caption, hook: copy.hook, prompt: ctx.prompt, tags: copy.tags },
+    Math.max(limit - promoReserve, 40),
+  );
+  const withPromo = ctx.addPromoLinks ? `${description}\n\n${PROMO_LINE}` : description;
+
+  if (ctx.network !== 'wordpress') return withPromo;
+
   const videoBlock = ctx.mediaUrl
     ? `<p><video controls preload="metadata" style="max-width:100%;height:auto;" src="${escapeHtml(ctx.mediaUrl)}"></video></p>`
     : '';
-  const descriptionBlock = description ? `<p>${escapeHtml(description)}</p>` : '';
-  const captionBlock = ctx.caption ? `<p>${escapeHtml(ctx.caption).replace(/\n/g, '<br>')}</p>` : '';
+  const descriptionBlock = withPromo
+    .split('\n\n')
+    .filter(Boolean)
+    .map((para) => `<p>${escapeHtml(para).replace(/\n/g, '<br>')}</p>`)
+    .join('\n');
 
-  return [videoBlock, descriptionBlock, captionBlock].filter(Boolean).join('\n') || ctx.caption;
+  return [videoBlock, descriptionBlock].filter(Boolean).join('\n') || withPromo;
 }
 
 // Networks with genuinely no required settings fields beyond `__type`.
@@ -210,7 +339,7 @@ const NO_SETTINGS_NETWORKS = new Set([
   'threads', 'mastodon', 'bluesky', 'telegram', 'nostr', 'vk',
 ]);
 
-// Networks whose required settings need generated title/subtitle/tag copy.
+// Networks whose required settings need a generated title.
 export const COPY_NEEDED_NETWORKS = new Set(['youtube', 'wordpress', 'dribbble', 'medium', 'devto']);
 
 export function buildNetworkSettings(ctx: SettingsContext): Record<string, unknown> {
@@ -295,7 +424,7 @@ export function buildNetworkSettings(ctx: SettingsContext): Record<string, unkno
       return {
         ...base,
         title: clampTitle(copy.title, fallbackTitle, 2, 100),
-        subtitle: clampTitle(copy.subtitle, fallbackTitle, 2, 150),
+        subtitle: clampTitle(copy.hook, fallbackTitle, 2, 150),
         ...(copy.tags.length > 0
           ? { tags: copy.tags.slice(0, 4).map((t) => ({ value: t, label: t })) }
           : {}),

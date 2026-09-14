@@ -22,7 +22,7 @@
  *   - apps/backend/src/api/routes/no.auth.integrations.controller.ts (catalog)
  */
 
-import { buildNetworkSettings, buildNetworkContent, generateSocialCopy, COPY_NEEDED_NETWORKS } from './social-post-settings.js';
+import { buildNetworkSettings, buildNetworkContent, generateSocialCopy } from './social-post-settings.js';
 
 const VANTLY_PUBLIC_API_BASE = (
   process.env.VANTLY_API_BASE_URL || 'https://vantly.social/api/public/v1'
@@ -185,23 +185,29 @@ export interface VantlyCreateResult {
  */
 export async function createPost(
   token: string,
-  args: { type: 'now' | 'schedule'; date?: string; posts: VantlyPostInput[] },
+  args: {
+    type: 'now' | 'schedule';
+    date?: string;
+    posts: VantlyPostInput[];
+    /** Append PROMO_LINE (the "promote my platforms" checkbox) to every post's body. */
+    addPromoLinks?: boolean;
+  },
 ): Promise<VantlyCreateResult> {
   const date = args.date ?? new Date().toISOString();
+  const prompt = args.posts.find((p) => p.prompt)?.prompt;
 
-  // Derive title/subtitle/tags AT MOST ONCE per publish request — never per
-  // network — and only when some requested network actually needs it.
-  // Computed fresh per call (never cached across requests): this is
-  // one user's content for one publish click, so nothing here may leak
-  // into a concurrent different user's request.
-  const needsCopy = args.posts.some((p) => COPY_NEEDED_NETWORKS.has(p.network));
-  const copy = needsCopy
-    ? await generateSocialCopy({
-        caption: args.posts[0]?.content ?? '',
-        title: args.posts.find((p) => p.title)?.title,
-        prompt: args.posts.find((p) => p.prompt)?.prompt,
-      })
-    : undefined;
+  // Derive title/hook/tags AT MOST ONCE per publish request — never per
+  // network. Every network's body is now built from this (see
+  // buildNetworkContent), not just the handful that need a formal `title`
+  // settings field, so this always runs, not just when COPY_NEEDED_NETWORKS
+  // is involved. Computed fresh per call (never cached across requests):
+  // this is one user's content for one publish click, so nothing here may
+  // leak into a concurrent different user's request.
+  const copy = await generateSocialCopy({
+    caption: args.posts[0]?.content ?? '',
+    title: args.posts.find((p) => p.title)?.title,
+    prompt,
+  });
 
   const raw = await pjson<unknown>('/posts', token, {
     method: 'POST',
@@ -213,7 +219,14 @@ export async function createPost(
       posts: args.posts.map((p) => ({
         integration: { id: p.integrationId },
         value: [{
-          content: buildNetworkContent({ network: p.network, caption: p.content, copy, mediaUrl: p.media?.[0]?.path }),
+          content: buildNetworkContent({
+            network: p.network,
+            caption: p.content,
+            copy,
+            prompt,
+            mediaUrl: p.media?.[0]?.path,
+            addPromoLinks: args.addPromoLinks,
+          }),
           image: p.media ?? [],
         }],
         settings: buildNetworkSettings({ network: p.network, caption: p.content, copy }),

@@ -196,7 +196,6 @@ export default function SocialPage() {
 
   const selectedVideo = (videos ?? []).find((x) => x.id === selectedVideoId) ?? null;
   const hasInFlightForSelected = !!publishStatuses?.some((s) => IN_FLIGHT_STATUSES.has(s.status));
-  const effectiveCaption = addPromoLinks ? `${caption}\n\n${PROMO_LINE}` : caption;
 
   // Step 1 of 2: just validates + shows the inline confirm row. No network
   // call yet — this is what stops an accidental single click from
@@ -224,16 +223,20 @@ export default function SocialPage() {
         body: JSON.stringify({
           video_url: videoUrl,
           channel_ids,
-          caption: effectiveCaption,
+          caption,
           type: 'now',
           run_id: selectedVideo?.run_id,
           source: selectedVideo?.source,
-          // Source material for networks that need a real title/subtitle
-          // (YouTube, WordPress, Dribbble, Medium, DevTo) — the backend
-          // derives it via LLM from these when present, caption alone
-          // otherwise.
+          // Source material every network's title/marketing description is
+          // built from (see buildNetworkContent/buildNetworkSettings in
+          // services/api-v2) — the backend derives real copy via LLM from
+          // these when present, caption alone otherwise.
           title: selectedVideo?.title,
           prompt: selectedVideo?.prompt,
+          // "Promote my platforms" checkbox — the backend appends
+          // PROMO_LINE itself so it's never the only thing in an empty
+          // caption's post body.
+          add_promo_links: addPromoLinks,
         }),
       });
       const j = await r.json();

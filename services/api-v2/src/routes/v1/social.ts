@@ -238,6 +238,12 @@ export async function publishSocialRoute(req: Request, res: Response): Promise<v
   // still work, just with a caption-derived fallback title.
   const title = body.title ? String(body.title).slice(0, 500) : null;
   const prompt = body.prompt ? String(body.prompt).slice(0, 2000) : null;
+  // "Promote my platforms" checkbox — appended server-side (see
+  // buildNetworkContent in lib/social-post-settings.ts) rather than
+  // pre-merged into `caption` on the frontend, so it can never end up being
+  // the ONLY thing in a post body when the caption box was left empty, and
+  // never contaminates what the LLM sees as the caption to write copy from.
+  const addPromoLinks = body.add_promo_links === true;
 
   // SSRF guard: only our own R2-hosted videos.
   if (!videoUrl.startsWith(R2_PUBLIC + '/')) {
@@ -351,6 +357,7 @@ export async function publishSocialRoute(req: Request, res: Response): Promise<v
       created = await createPost(token, {
         type,
         date,
+        addPromoLinks,
         posts: publishChannelIds.map((integrationId) => ({
           integrationId,
           network: byId.get(integrationId)!.identifier,

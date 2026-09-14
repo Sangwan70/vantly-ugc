@@ -187,6 +187,8 @@ interface PublishResult {
   status: 'published' | 'failed' | 'already_in_progress';
   publication_id?: string;
   error?: string;
+  /** Only set when status is 'already_in_progress' — lets the caller decide whether "publish anyway" makes sense (both do; this is just for a clearer message). */
+  reason?: 'in_progress' | 'recent';
 }
 
 /** Mark every still-tracked channel's row failed after an upload/post-time exception. Best-effort — a logging failure here must never mask the original error. */
@@ -244,6 +246,17 @@ export async function publishSocialRoute(req: Request, res: Response): Promise<v
   // the ONLY thing in a post body when the caption box was left empty, and
   // never contaminates what the LLM sees as the caption to write copy from.
   const addPromoLinks = body.add_promo_links === true;
+  // Channels the user explicitly confirmed a re-publish for, past the
+  // "already publishing or recently published" guard below. Never implicit
+  // — the frontend only ever sends a channel here after showing the user
+  // that exact channel's skip reason and getting an explicit click. This
+  // does NOT bypass the actual concurrency guard (the DB insert's unique
+  // constraint further down) — a truly-concurrent duplicate request still
+  // gets caught there; this only lifts the soft "you already did this
+  // recently, are you sure" precheck for the channels the user confirmed.
+  const forceChannelIds = new Set<string>(
+    Array.isArray(body.force_channel_ids) ? body.force_channel_ids.map(String) : [],
+  );
 
   // SSRF guard: only our own R2-hosted videos.
   if (!videoUrl.startsWith(R2_PUBLIC + '/')) {
@@ -293,18 +306,25 @@ export async function publishSocialRoute(req: Request, res: Response): Promise<v
         .eq('user_id', userId)
         .eq('run_id', runId)
         .in('integration_id', channelIds);
-      const blocked = new Set<string>();
+      // Never skip a channel implicitly without telling the user why — every
+      // blocked channel comes back in `results` with a `reason` so the UI
+      // can show it and offer "publish anyway" one channel at a time,
+      // rather than silently dropping it from the batch.
+      const blocked = new Map<string, 'in_progress' | 'recent'>();
       for (const row of existingRows ?? []) {
+        const cid = row.integration_id as string;
+        if (forceChannelIds.has(cid)) continue; // user already confirmed this one — don't block it again
         const st = row.status as string;
         if (st === 'pending' || st === 'uploaded') {
-          blocked.add(row.integration_id as string);
+          blocked.set(cid, 'in_progress');
         } else if (st === 'published') {
           const publishedAtMs = row.published_at ? new Date(row.published_at as string).getTime() : 0;
-          if (Date.now() - publishedAtMs < RECENT_PUBLISH_WINDOW_MS) blocked.add(row.integration_id as string);
+          if (Date.now() - publishedAtMs < RECENT_PUBLISH_WINDOW_MS) blocked.set(cid, 'recent');
         }
       }
       for (const cid of channelIds) {
-        if (blocked.has(cid)) results.push({ channel_id: cid, status: 'already_in_progress' });
+        const reason = blocked.get(cid);
+        if (reason) results.push({ channel_id: cid, status: 'already_in_progress', reason });
       }
       publishChannelIds = channelIds.filter((cid) => !blocked.has(cid));
 

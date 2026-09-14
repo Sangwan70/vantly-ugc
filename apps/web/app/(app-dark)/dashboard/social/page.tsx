@@ -43,6 +43,8 @@ interface PublishStatus {
   status: 'pending' | 'uploaded' | 'published' | 'failed' | 'already_in_progress';
   error_message?: string | null;
   release_url?: string | null;
+  /** Why 'already_in_progress' was returned — lets the UI offer "Publish anyway" instead of a dead-end message. */
+  reason?: 'in_progress' | 'recent';
 }
 
 const IN_FLIGHT_STATUSES = new Set(['pending', 'uploaded']);
@@ -101,6 +103,7 @@ export default function SocialPage() {
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [confirming, setConfirming] = useState(false);
   const [publishStatuses, setPublishStatuses] = useState<PublishStatus[] | null>(null);
+  const [retryingChannels, setRetryingChannels] = useState<Set<string>>(new Set());
   const resolveAttempts = useRef<Map<string, number>>(new Map());
 
   const loadChannels = useCallback(async () => {
@@ -209,6 +212,60 @@ export default function SocialPage() {
 
   function cancelPublish() { setConfirming(false); }
 
+  // Shared by the normal confirm flow AND a per-channel "Publish anyway"
+  // retry. `forceChannelIds` bypasses the backend's recent/in-progress
+  // dedup guard ONLY for those specific channels — see force_channel_ids in
+  // routes/v1/social.ts. Upserts into publishStatuses by channel_id rather
+  // than replacing the array, so retrying one channel doesn't clear the
+  // live status of every other channel already in this batch.
+  async function doPublish(channelIdsToPublish: string[], forceChannelIds: string[] = []) {
+    const r = await fetch('/api/v1/social/publish', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        video_url: videoUrl,
+        channel_ids: channelIdsToPublish,
+        caption,
+        type: 'now',
+        run_id: selectedVideo?.run_id,
+        source: selectedVideo?.source,
+        // Source material every network's title/marketing description is
+        // built from (see buildNetworkContent/buildNetworkSettings in
+        // services/api-v2) — the backend derives real copy via LLM from
+        // these when present, caption alone otherwise.
+        title: selectedVideo?.title,
+        prompt: selectedVideo?.prompt,
+        // "Promote my platforms" checkbox — the backend appends
+        // PROMO_LINE itself so it's never the only thing in an empty
+        // caption's post body.
+        add_promo_links: addPromoLinks,
+        // Channels the user explicitly confirmed a re-publish for, past
+        // the "already publishing or recently published" guard.
+        force_channel_ids: forceChannelIds,
+      }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j?.detail || j?.error || `publish ${r.status}`);
+    const results = Array.isArray(j?.results)
+      ? (j.results as Array<{ channel_id: string; status: PublishStatus['status']; publication_id?: string; error?: string; reason?: 'in_progress' | 'recent' }>)
+      : [];
+    if (results.length === 0) throw new Error('Vantly accepted the request but nothing was published.');
+    setPublishStatuses((prev) => {
+      const byChannel = new Map((prev ?? []).map((s) => [s.channel_id, s]));
+      for (const res of results) {
+        byChannel.set(res.channel_id, {
+          publication_id: res.publication_id ?? null,
+          channel_id: res.channel_id,
+          status: res.status,
+          error_message: res.error ?? null,
+          release_url: null,
+          reason: res.reason,
+        });
+      }
+      return Array.from(byChannel.values());
+    });
+  }
+
   // Step 2 of 2: the actual publish, only reachable via the confirm row.
   async function confirmPublish() {
     setConfirming(false);
@@ -216,47 +273,29 @@ export default function SocialPage() {
     const channel_ids = Object.entries(picked).filter(([, v]) => v).map(([k]) => k);
     if (!videoUrl || channel_ids.length === 0) { setError('Pick a video URL and at least one channel.'); return; }
     setBusy('publish');
+    resolveAttempts.current.clear();
     try {
-      const r = await fetch('/api/v1/social/publish', {
-        method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          video_url: videoUrl,
-          channel_ids,
-          caption,
-          type: 'now',
-          run_id: selectedVideo?.run_id,
-          source: selectedVideo?.source,
-          // Source material every network's title/marketing description is
-          // built from (see buildNetworkContent/buildNetworkSettings in
-          // services/api-v2) — the backend derives real copy via LLM from
-          // these when present, caption alone otherwise.
-          title: selectedVideo?.title,
-          prompt: selectedVideo?.prompt,
-          // "Promote my platforms" checkbox — the backend appends
-          // PROMO_LINE itself so it's never the only thing in an empty
-          // caption's post body.
-          add_promo_links: addPromoLinks,
-        }),
-      });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j?.detail || j?.error || `publish ${r.status}`);
-      const results = Array.isArray(j?.results)
-        ? (j.results as Array<{ channel_id: string; status: PublishStatus['status']; publication_id?: string; error?: string }>)
-        : [];
-      if (results.length === 0) throw new Error('Vantly accepted the request but nothing was published.');
-      resolveAttempts.current.clear();
-      setPublishStatuses(
-        results.map((res) => ({
-          publication_id: res.publication_id ?? null,
-          channel_id: res.channel_id,
-          status: res.status,
-          error_message: res.error ?? null,
-          release_url: null,
-        })),
-      );
+      await doPublish(channel_ids);
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(null); }
+  }
+
+  // A channel came back "already publishing or recently published" —
+  // the user was shown that explicitly and chose to publish anyway, one
+  // channel at a time (never implicitly for the whole batch).
+  async function forcePublishChannel(channelId: string) {
+    setError(null);
+    setRetryingChannels((prev) => new Set(prev).add(channelId));
+    try {
+      await doPublish([channelId], [channelId]);
+    } catch (e) { setError((e as Error).message); }
+    finally {
+      setRetryingChannels((prev) => {
+        const next = new Set(prev);
+        next.delete(channelId);
+        return next;
+      });
+    }
   }
 
   // Live status: keep each channel's row in sync with vantly_publications as
@@ -540,7 +579,19 @@ export default function SocialPage() {
                       </span>
                     )
                   ) : s.status === 'already_in_progress' ? (
-                    <span className="text-xs" style={{ color: 'rgba(255,255,255,0.5)' }}>Already publishing or recently published — skipped</span>
+                    <span className="inline-flex items-center gap-2 text-xs" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                      {s.reason === 'in_progress' ? "Already publishing this video — didn't publish again." : "Already published this video recently — didn't publish again."}
+                      <button
+                        type="button"
+                        onClick={() => forcePublishChannel(s.channel_id)}
+                        disabled={retryingChannels.has(s.channel_id)}
+                        className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-medium disabled:opacity-60"
+                        style={{ background: 'rgba(167,139,250,0.15)', color: '#A78BFA' }}
+                      >
+                        {retryingChannels.has(s.channel_id) ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                        Publish anyway
+                      </button>
+                    </span>
                   ) : (
                     <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: '#FCA5A5' }} title={s.error_message ?? undefined}>
                       <AlertCircle className="h-3.5 w-3.5" /> Failed{s.error_message ? `: ${s.error_message}` : ''}

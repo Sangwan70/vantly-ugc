@@ -232,6 +232,15 @@ function buildHashtagString(tags: string[]): string {
  * hook + hashtags comfortably fit; the prompt-used line is the one most
  * likely to get shortened or dropped on the tightest limits (X, Dribbble).
  */
+/** Loose equality for "is this prompt already visible in the caption" — case/whitespace-insensitive, and also true if one fully contains the other (the caption is very often the prompt verbatim, or the prompt with a couple words trimmed). */
+function isRedundantWithCaption(promptText: string, userCaption: string): boolean {
+  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+  const p = norm(promptText);
+  const c = norm(userCaption);
+  if (!p || !c) return false;
+  return p === c || c.includes(p) || p.includes(c);
+}
+
 function composeDescription(
   args: { userCaption: string; hook: string; prompt?: string | null; tags: string[] },
   limit: number,
@@ -243,8 +252,12 @@ function composeDescription(
   const base = [userCaption, hook].filter(Boolean).join('\n\n');
   const withTags = hashtags ? `${base}\n\n${hashtags}` : base;
 
-  if (args.prompt && args.prompt.trim()) {
-    const promptText = args.prompt.trim().replace(/\s+/g, ' ');
+  // The caption box is auto-filled from the same prompt whenever the user
+  // hasn't edited it (see apps/web/.../social/page.tsx), so "Prompt used:
+  // ..." would otherwise repeat the caption verbatim right underneath it —
+  // only show it when it actually adds information beyond the caption.
+  const promptText = (args.prompt || '').trim().replace(/\s+/g, ' ');
+  if (promptText && !isRedundantWithCaption(promptText, userCaption)) {
     const prefix = 'Prompt used: "';
     const suffix = '"';
     const reserved = withTags.length + 2 + prefix.length + suffix.length; // +2 for the joining blank line

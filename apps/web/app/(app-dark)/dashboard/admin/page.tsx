@@ -217,7 +217,14 @@ export default function AdminPage() {
     setBusy(u.id);
     try {
       const r = await fetch('/api/admin/grant-subscription', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: u.id, plan_slug }) });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); alert(`Failed: ${j.error ?? r.status}${j.details ? ` — ${j.details}` : ''}`); return; }
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { alert(`Failed: ${j.error ?? r.status}${j.details ? ` — ${j.details}` : ''}`); return; }
+      // The dropdown that triggers this always resets to its blank option
+      // (see its `value=""` below) and nothing else in this row visibly
+      // changes right away, so without an explicit confirmation a
+      // successful assignment and a silent failure look identical. This
+      // is what the plan_slug badge should now read.
+      alert(`✓ ${u.email ?? u.id} is now on the "${j.plan_slug ?? plan_slug}" plan.`);
       await load();
     } finally { setBusy(null); }
   }

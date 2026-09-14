@@ -107,23 +107,45 @@ export async function POST(req: NextRequest) {
   }
   const monthlyCredits = plan.monthly_credits;
 
-  // Upsert subscription record
+  // Write the subscription record. NOT a `.upsert(..., {onConflict:
+  // 'user_id'})` -- that requires a real unique/exclusion constraint on
+  // `user_id`, which `subscriptions` has never had (only a plain index;
+  // see 20260216000002_subscriptions.sql), so that upsert always failed
+  // outright with Postgres error 42P10 ("no unique or exclusion
+  // constraint matching the ON CONFLICT specification") -- this is what
+  // actually produced the generic "Failed to update subscription" error.
+  // Every other write path in this codebase (see e.g. the
+  // checkout.session.completed handler in
+  // services/api-v2/.../webhook-stripe.ts) already avoids this by
+  // selecting the existing row first and branching to update-by-id or
+  // insert, so this mirrors that instead of adding a schema migration.
   const now = new Date();
   const periodEnd = new Date(now);
   periodEnd.setMonth(periodEnd.getMonth() + 1);
 
-  const { error: subError } = await admin
+  const { data: existingSub, error: existingSubError } = await admin
     .from('subscriptions')
-    .upsert(
-      {
-        user_id,
-        plan_slug,
-        status: 'active',
-        current_period_start: now.toISOString(),
-        current_period_end: periodEnd.toISOString(),
-      },
-      { onConflict: 'user_id' },
+    .select('id')
+    .eq('user_id', user_id)
+    .maybeSingle();
+
+  if (existingSubError) {
+    return NextResponse.json(
+      { error: 'Failed to look up existing subscription', details: existingSubError.message },
+      { status: 500 },
     );
+  }
+
+  const subFields = {
+    plan_slug,
+    status: 'active',
+    current_period_start: now.toISOString(),
+    current_period_end: periodEnd.toISOString(),
+  };
+
+  const { error: subError } = existingSub
+    ? await admin.from('subscriptions').update(subFields).eq('id', existingSub.id)
+    : await admin.from('subscriptions').insert({ user_id, ...subFields });
 
   if (subError) {
     return NextResponse.json(

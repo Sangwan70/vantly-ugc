@@ -207,7 +207,7 @@ export default function AdminPage() {
     setBusy(u.id);
     try {
       const r = await fetch('/api/admin/add-credits', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: u.id, amount }) });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); alert(`Failed: ${j.error ?? r.status}`); return; }
+      if (!r.ok) { const j = await r.json().catch(() => ({})); alert(`Failed: ${j.error ?? r.status}${j.details ? ` — ${j.details}` : ''}`); return; }
       await load();
     } finally { setBusy(null); }
   }
@@ -217,7 +217,7 @@ export default function AdminPage() {
     setBusy(u.id);
     try {
       const r = await fetch('/api/admin/grant-subscription', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: u.id, plan_slug }) });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); alert(`Failed: ${j.error ?? r.status}`); return; }
+      if (!r.ok) { const j = await r.json().catch(() => ({})); alert(`Failed: ${j.error ?? r.status}${j.details ? ` — ${j.details}` : ''}`); return; }
       await load();
     } finally { setBusy(null); }
   }
@@ -240,7 +240,7 @@ export default function AdminPage() {
     setBusy(u.id);
     try {
       const r = await fetch('/api/admin/block-user', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: u.id, blocked, reason: reason || undefined }) });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); alert(`Failed: ${j.error ?? r.status}`); return; }
+      if (!r.ok) { const j = await r.json().catch(() => ({})); alert(`Failed: ${j.error ?? r.status}${j.details ? ` — ${j.details}` : ''}`); return; }
       await load();
     } finally { setBusy(null); }
   }
@@ -256,7 +256,7 @@ export default function AdminPage() {
       const failures: string[] = [];
       for (const id of ids) {
         const r = await fetch('/api/admin/block-user', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: id, blocked }) });
-        if (!r.ok) { const j = await r.json().catch(() => ({})); failures.push(`${id}: ${j.error ?? r.status}`); }
+        if (!r.ok) { const j = await r.json().catch(() => ({})); failures.push(`${id}: ${j.error ?? r.status}${j.details ? ` — ${j.details}` : ''}`); }
       }
       if (failures.length) alert(`${ids.length - failures.length} succeeded, ${failures.length} failed:\n${failures.join('\n')}`);
       await load();
@@ -270,7 +270,7 @@ export default function AdminPage() {
     try {
       const r = await fetch('/api/admin/bulk-delete-users', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_ids: ids }) });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) { alert(`Failed: ${j.error ?? r.status}`); return; }
+      if (!r.ok) { alert(`Failed: ${j.error ?? r.status}${j.details ? ` — ${j.details}` : ''}`); return; }
       setConfirmDeleteIds(null);
       if (j.error_count > 0) {
         const details = (j.errors ?? []).map((e: { user_id: string; error: string }) => `${e.user_id}: ${e.error}`).join('\n');

@@ -143,13 +143,18 @@ export default function AdminPage() {
     })();
   }, [isAdmin]);
 
-  const load = useCallback(async () => {
+  // Accepts an explicit view-filter override so a caller that just changed
+  // `viewFilter` (e.g. grantPlan, below) can refetch with the NEW value
+  // immediately, rather than this callback's memoized closure still
+  // reading the stale one from before that state update lands.
+  const load = useCallback(async (viewFilterOverride?: typeof viewFilter) => {
+    const vf = viewFilterOverride ?? viewFilter;
     try {
       setSelected(new Set());
       // Users list + growth funnel + ops metrics + signups trend load in
       // parallel; a metrics/signups hiccup must not block the user table,
       // so those failures are swallowed (their panels just hide).
-      const usersUrl = viewFilter === 'subscribers' ? '/api/admin/users' : '/api/admin/users?all=1';
+      const usersUrl = vf === 'subscribers' ? '/api/admin/users' : '/api/admin/users?all=1';
       const [r, m, s] = await Promise.all([
         fetch(usersUrl, { credentials: 'include' }),
         fetch('/api/admin/metrics', { credentials: 'include' }).catch(() => null),
@@ -225,7 +230,20 @@ export default function AdminPage() {
       // successful assignment and a silent failure look identical. This
       // is what the plan_slug badge should now read.
       alert(`✓ ${u.email ?? u.id} is now on the "${j.plan_slug ?? plan_slug}" plan.`);
-      await load();
+      // A successful assignment can move this user OUT of the currently
+      // active tab's filter: "Free (no subscription)" only shows users
+      // with no subscription row at all, so granting one makes the row
+      // disappear from that tab with no visible sign anything happened;
+      // "Subscribers" only fetches subscribed users, so downgrading to
+      // 'free' has the same effect in reverse. Switch to "All" in either
+      // case so the just-updated row (and its new plan badge) stays
+      // visible right where the admin can see it, instead of silently
+      // vanishing from view.
+      const leavesFreeView = viewFilter === 'free' && plan_slug !== 'free';
+      const leavesSubscribersView = viewFilter === 'subscribers' && plan_slug === 'free';
+      const nextView = leavesFreeView || leavesSubscribersView ? 'all' : viewFilter;
+      if (nextView !== viewFilter) setViewFilter(nextView);
+      await load(nextView);
     } finally { setBusy(null); }
   }
 

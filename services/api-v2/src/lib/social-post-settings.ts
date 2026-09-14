@@ -154,9 +154,26 @@ export async function generateSocialCopy(input: PostCopyInput): Promise<Generate
       .map((b) => b.text as string)
       .join('')
       .trim();
+    if (!raw) {
+      // A 200 with no usable text block — different providers/models shape
+      // this differently (refusal, empty content, a non-text block only).
+      // Never silently swallowed: this is what actually happened when
+      // "no error, no message" showed up in the logs after a real
+      // failure, since only the !upstream.ok and catch branches logged
+      // anything before this.
+      console.error(`[social-post-settings] generateSocialCopy: 200 OK but no text content: ${JSON.stringify(data).slice(0, 500)}`);
+      return EMPTY_COPY;
+    }
     const titleMatch = raw.match(/^TITLE:\s*(.+)$/m);
     const hookMatch = raw.match(/^HOOK:\s*(.+)$/m);
     const tagsMatch = raw.match(/^TAGS:\s*(.+)$/m);
+    if (!titleMatch && !hookMatch) {
+      // The call succeeded and returned text, but not in the TITLE:/HOOK:
+      // format the prompt asked for (a weaker/free model ignoring format
+      // instructions is the most likely cause) — log the actual text so
+      // this is diagnosable instead of just quietly falling back.
+      console.error(`[social-post-settings] generateSocialCopy: response didn't match the expected TITLE:/HOOK: format: ${raw.slice(0, 500)}`);
+    }
     const tags = (tagsMatch?.[1] ?? '')
       .split(',')
       .map((t) => t.trim().replace(/^#/, ''))

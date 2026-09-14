@@ -61,9 +61,9 @@ export interface GeneratedCopy {
 
 const EMPTY_COPY: GeneratedCopy = { title: '', subtitle: '', tags: [] };
 
-const SYSTEM_PROMPT = `You write short titles and metadata for a social/video post, from its caption and (if given) its original creation prompt. Output EXACTLY this format, nothing else, no surrounding quotes on any line:
-TITLE: <a punchy title, 3-12 words>
-SUBTITLE: <a one-sentence subtitle/summary, worded differently from the title>
+const SYSTEM_PROMPT = `You write short titles and metadata for a social/video post, from its caption and (if given) its original creation prompt or working title. The "working title" you're given is often actually the video's full script or lyrics, not a real title - never copy it, the caption, or the prompt verbatim into TITLE or SUBTITLE; always write new, original, short text in your own words, however long the input is. Output EXACTLY this format, nothing else, no surrounding quotes on any line:
+TITLE: <a punchy original title, 3-12 words, never a copy of the input text>
+SUBTITLE: <a one-sentence original subtitle/summary, worded differently from the title and from the input>
 TAGS: <3-6 short topical tags, comma separated, no # symbol, lowercase>`;
 
 /**
@@ -94,7 +94,11 @@ export async function generateSocialCopy(input: PostCopyInput): Promise<Generate
       },
       { signal: AbortSignal.timeout(20_000) },
     );
-    if (!upstream.ok) return EMPTY_COPY;
+    if (!upstream.ok) {
+      const text = await upstream.text().catch(() => '');
+      console.error(`[social-post-settings] generateSocialCopy: model call failed HTTP ${upstream.status}: ${text.slice(0, 300)}`);
+      return EMPTY_COPY;
+    }
     const data = (await upstream.json()) as { content?: Array<{ type?: string; text?: string }> };
     const raw = (data.content ?? [])
       .filter((b) => b.type === 'text' && typeof b.text === 'string')
@@ -113,7 +117,8 @@ export async function generateSocialCopy(input: PostCopyInput): Promise<Generate
       subtitle: stripQuotes(subtitleMatch?.[1]),
       tags,
     };
-  } catch {
+  } catch (err) {
+    console.error('[social-post-settings] generateSocialCopy threw:', err instanceof Error ? err.message : err);
     return EMPTY_COPY;
   }
 }
@@ -140,10 +145,11 @@ function clampTitle(preferred: string, fallback: string, min: number, max: numbe
   return t.slice(0, max);
 }
 
-/** A short, caption-derived fallback title for when the model call fails or returns nothing. */
+/** A short, caption-derived fallback title for when the model call fails or returns nothing — always just the first few words, never the full caption verbatim (captions are often one long unbroken line, e.g. lyrics joined with "/" rather than real line breaks). */
 function captionFallbackTitle(caption: string): string {
-  const firstLine = (caption || '').split(/\r?\n/, 1)[0]?.trim() ?? '';
-  return firstLine || 'New video';
+  const flat = (caption || '').replace(/\s+/g, ' ').trim();
+  if (!flat) return 'New video';
+  return flat.split(' ').slice(0, 8).join(' ');
 }
 
 export interface SettingsContext {
@@ -151,6 +157,51 @@ export interface SettingsContext {
   caption: string;
   /** Pre-computed once per publish request by createPost - undefined for networks that don't need it. */
   copy?: GeneratedCopy;
+  /** Public URL of the uploaded video (from Vantly's own /upload-from-url — a real public URL on Vantly's storage, not a path needing a domain prefix). Only used by buildNetworkContent, for networks that can embed a playable video directly in the post body. */
+  mediaUrl?: string;
+}
+
+function escapeHtml(s: string): string {
+  return (s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * Builds the post BODY (Postiz's `value[].content`) per network — separate
+ * from buildNetworkSettings, which only builds the `settings` object.
+ *
+ * Every network except WordPress just gets the caption back unchanged —
+ * that's the correct, already-working behavior for a short-form caption
+ * (X, Instagram, TikTok, etc. all render `content` as the literal post
+ * text/caption).
+ *
+ * WordPress is different: it's a full blog post, not a caption, and
+ * WordpressProvider.post() (vantly's backend) has NO video-upload support
+ * at all — it only ever uploads `settings.main_image` as a featured image.
+ * A WordPress post published through this app would otherwise contain the
+ * caption as the entire body with no video and no real description. So for
+ * WordPress specifically, build real HTML: an embedded <video> tag pointing
+ * at the video's own public URL (playable directly in the post, since
+ * `wp_kses_post` — WordPress's REST API content sanitizer — allows
+ * video/source/track tags for any authenticated user, not just admins),
+ * followed by the LLM-generated description, followed by the original
+ * caption as its own paragraph.
+ */
+export function buildNetworkContent(ctx: SettingsContext): string {
+  if (ctx.network !== 'wordpress') return ctx.caption;
+
+  const copy = ctx.copy ?? EMPTY_COPY;
+  const description = (copy.subtitle || '').trim();
+  const videoBlock = ctx.mediaUrl
+    ? `<p><video controls preload="metadata" style="max-width:100%;height:auto;" src="${escapeHtml(ctx.mediaUrl)}"></video></p>`
+    : '';
+  const descriptionBlock = description ? `<p>${escapeHtml(description)}</p>` : '';
+  const captionBlock = ctx.caption ? `<p>${escapeHtml(ctx.caption).replace(/\n/g, '<br>')}</p>` : '';
+
+  return [videoBlock, descriptionBlock, captionBlock].filter(Boolean).join('\n') || ctx.caption;
 }
 
 // Networks with genuinely no required settings fields beyond `__type`.

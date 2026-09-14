@@ -22,7 +22,7 @@
  *   - apps/backend/src/api/routes/no.auth.integrations.controller.ts (catalog)
  */
 
-import { buildNetworkSettings, generateSocialCopy, COPY_NEEDED_NETWORKS } from './social-post-settings.js';
+import { buildNetworkSettings, buildNetworkContent, generateSocialCopy, COPY_NEEDED_NETWORKS } from './social-post-settings.js';
 
 const VANTLY_PUBLIC_API_BASE = (
   process.env.VANTLY_API_BASE_URL || 'https://vantly.social/api/public/v1'
@@ -212,7 +212,10 @@ export async function createPost(
       tags: [],
       posts: args.posts.map((p) => ({
         integration: { id: p.integrationId },
-        value: [{ content: p.content, image: p.media ?? [] }],
+        value: [{
+          content: buildNetworkContent({ network: p.network, caption: p.content, copy, mediaUrl: p.media?.[0]?.path }),
+          image: p.media ?? [],
+        }],
         settings: buildNetworkSettings({ network: p.network, caption: p.content, copy }),
       })),
     }),

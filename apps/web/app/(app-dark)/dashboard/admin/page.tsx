@@ -361,18 +361,45 @@ export default function AdminPage() {
         ))}
       </div>
 
-      {/* Stats */}
+      {/* Stats — Users/Active subs use the global, filter-independent counts from
+          /api/admin/metrics (growth.signups.total / growth.subscriptions.active_total),
+          not the currently-fetched/filtered `users` list, so they always reflect every
+          signed-up user regardless of which tab (Subscribers/Free/All) is active.
+          Creations/Credits used have no global equivalent yet, so they stay view-scoped. */}
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { label: 'Users', value: stats.users },
-          { label: 'Active subs', value: stats.active },
+          {
+            label: 'Users',
+            value: growth?.signups.total ?? stats.users,
+            onClick: () => {
+              setViewFilter('all');
+              void load('all');
+              document.getElementById('user-list')?.scrollIntoView({ behavior: 'smooth' });
+            },
+          },
+          {
+            label: 'Active subs',
+            value: growth?.subscriptions.active_total ?? stats.active,
+            onClick: () => {
+              setViewFilter('subscribers');
+              void load('subscribers');
+              document.getElementById('user-list')?.scrollIntoView({ behavior: 'smooth' });
+            },
+          },
           { label: 'Creations', value: stats.creations },
           { label: 'Credits used', value: stats.creditsUsed.toLocaleString() },
         ].map((s) => (
-          <div key={s.label} className="rounded-2xl px-4 py-3" style={CARD}>
+          <button
+            key={s.label}
+            type="button"
+            onClick={s.onClick}
+            disabled={!s.onClick}
+            className={`rounded-2xl px-4 py-3 text-left transition-colors ${s.onClick ? 'cursor-pointer hover:bg-white/[0.04]' : 'cursor-default'}`}
+            style={CARD}
+          >
             <div className="text-2xl font-semibold" style={{ color: '#E9E9F0' }}>{s.value}</div>
             <div className="text-[11px] uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.45)' }}>{s.label}</div>
-          </div>
+          </button>
         ))}
       </div>
 
@@ -488,7 +515,7 @@ export default function AdminPage() {
       <OpsPanels metrics={metrics} signups={signups} />
 
       {/* Controls */}
-      <div className="mt-6 flex flex-wrap items-center gap-3">
+      <div id="user-list" className="mt-6 flex flex-wrap items-center gap-3">
         <div className="relative flex-1" style={{ minWidth: 220 }}>
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: 'rgba(255,255,255,0.35)' }} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by email or name…" className="h-10 w-full rounded-xl pl-9 pr-3 text-sm outline-none" style={{ background: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }} />

@@ -597,8 +597,28 @@ export default function AdminPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <button type="button" disabled={busy === u.id} onClick={() => giveCredits(u)} className="rounded-lg px-2.5 py-1.5 text-[12px]" style={{ background: '#1B1C2A', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }}>{busy === u.id ? '…' : '+ Credits'}</button>
-                      <select disabled={busy === u.id} value="" onChange={(e) => { if (e.target.value === 'free' && !window.confirm(`Downgrade ${u.email ?? u.id} to free? Their monthly allowance zeroes out immediately (purchased credits are kept).`)) return; grantPlan(u, e.target.value); }} className="rounded-lg px-2 py-1.5 text-[12px]" style={{ background: '#1B1C2A', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }}>
-                        <option value="">Plan…</option>
+                      <select
+                        disabled={busy === u.id}
+                        value={u.subscription?.plan_slug ?? ''}
+                        onChange={(e) => {
+                          if (e.target.value === u.subscription?.plan_slug) return;
+                          if (e.target.value === 'free' && !window.confirm(`Downgrade ${u.email ?? u.id} to free? Their monthly allowance zeroes out immediately (purchased credits are kept).`)) return;
+                          grantPlan(u, e.target.value);
+                        }}
+                        className="rounded-lg px-2 py-1.5 text-[12px]"
+                        style={{ background: '#1B1C2A', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.1)' }}
+                      >
+                        {!u.subscription ? <option value="">Plan…</option> : null}
+                        {/* A user can be sitting on a deprecated/inactive plan (the `plans`
+                            dropdown source deliberately excludes those so they can't be handed
+                            to someone new). Without this, the <select>'s value wouldn't match
+                            any <option> and the browser would silently default to whichever
+                            plan happens to be first in the list -- showing the wrong plan as
+                            "selected" for that user. This option only ever appears for the
+                            user who already holds that plan, so re-selecting it is a no-op. */}
+                        {u.subscription && u.subscription.plan_slug !== 'free' && !plans.some((p) => p.slug === u.subscription!.plan_slug)
+                          ? <option value={u.subscription.plan_slug}>{u.subscription.plan_slug} (legacy)</option>
+                          : null}
                         {plans.map((p) => <option key={p.slug} value={p.slug}>{p.display_name}</option>)}
                         <option value="free">Downgrade to free</option>
                       </select>

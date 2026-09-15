@@ -329,12 +329,29 @@ function escapeHtml(s: string): string {
  * WordPress is further special-cased: it's a full blog post, not a
  * caption, and WordpressProvider.post() (vantly's backend) has NO
  * video-upload support at all — it only ever uploads `settings.main_image`
- * as a featured image. So WordPress gets real HTML: an embedded <video>
- * tag pointing at the video's own public URL (playable directly in the
- * post, since `wp_kses_post` — WordPress's REST API content sanitizer —
- * allows video/source/track tags for any authenticated user, not just
- * admins), followed by the same composed description, one <p> per
- * paragraph.
+ * as a featured image. So WordPress needs the video embedded in the body
+ * itself.
+ *
+ * A literal `<video src="...">` tag does NOT survive this: WordPress's
+ * REST API runs posted content through `wp_kses_post()` before saving
+ * (any account without the `unfiltered_html` capability — which the REST
+ * API never grants — is sanitized), and core's default allowed-tags list
+ * does NOT include video/source/track, so the whole tag is silently
+ * stripped at save time. This was tried and is exactly why a post could
+ * show the caption/description with no video and no error anywhere.
+ *
+ * The fix is WordPress's own documented "built-in embed" convention: a
+ * bare media-file URL (mp4/m4v/webm/ogv/wmv/flv) on its own line — or,
+ * as generated here, alone inside its own `<p>` — is left untouched by
+ * kses (it's plain text, not markup) and is then turned into a real
+ * HTML5 player by WP_Embed::autoembed() via wp_video_shortcode(), which
+ * runs on the `the_content` filter at *display* time, i.e. entirely
+ * after and unrelated to the save-time sanitization. This works for any
+ * externally-hosted URL, not just WordPress's own media library.
+ * See: https://wordpress.org/documentation/article/video-shortcode/
+ * and wp-includes/class-wp-embed.php's autoembed()/autoembed_callback().
+ *
+ * Followed by the same composed description, one <p> per paragraph.
  */
 export function buildNetworkContent(ctx: SettingsContext): string {
   const copy = ctx.copy ?? EMPTY_COPY;
@@ -351,9 +368,12 @@ export function buildNetworkContent(ctx: SettingsContext): string {
 
   if (ctx.network !== 'wordpress') return withPromo;
 
-  const videoBlock = ctx.mediaUrl
-    ? `<p><video controls preload="metadata" style="max-width:100%;height:auto;" src="${escapeHtml(ctx.mediaUrl)}"></video></p>`
-    : '';
+  // Deliberately NOT a literal <video> tag -- see the comment above this
+  // function. A bare URL alone inside its own <p> matches WP_Embed's
+  // autoembed regex (`<p>\s*(https?://...)\s*<\/p>`) and WordPress
+  // renders it as a real player at display time; kses never touches it
+  // because it's plain text, not an HTML tag.
+  const videoBlock = ctx.mediaUrl ? `<p>${escapeHtml(ctx.mediaUrl)}</p>` : '';
   const descriptionBlock = withPromo
     .split('\n\n')
     .filter(Boolean)

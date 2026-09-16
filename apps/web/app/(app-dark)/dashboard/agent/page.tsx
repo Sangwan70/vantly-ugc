@@ -794,6 +794,24 @@ export default function AgentPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [pendingSpend]);
 
+  /** A skill-input validation failure comes back as zod's `.flatten()` shape
+   *  ({ formErrors: string[], fieldErrors: Record<string, string[]> }) --
+   *  readable to a person as raw JSON, but not meant to be shown as one. Turn
+   *  it into the plain sentence(s) it's actually built from wherever we can,
+   *  falling back to a truncated JSON dump for anything else. */
+  function describeFailureDetail(detail: unknown): string {
+    if (typeof detail === 'string') return detail;
+    if (detail && typeof detail === 'object' && ('fieldErrors' in detail || 'formErrors' in detail)) {
+      const d = detail as { fieldErrors?: Record<string, string[]>; formErrors?: string[] };
+      const messages = [
+        ...Object.values(d.fieldErrors ?? {}).flat(),
+        ...(d.formErrors ?? []),
+      ].filter(Boolean);
+      if (messages.length > 0) return messages.join('; ');
+    }
+    return JSON.stringify(detail).slice(0, 200);
+  }
+
   /** Submit a skill then poll it. Records runId so a refresh can resume. Returns
    *  the tool_result text + the run linkage to stamp on the persisted message. */
   type RunResult = { text: string; runId?: string; runKind?: 'skill' | 'primitive' };
@@ -808,8 +826,9 @@ export default function AgentPage() {
     });
     const subJson = await sub.json();
     if (!sub.ok) {
-      const detail = subJson?.detail ?? subJson?.error ?? `run ${sub.status}`;
-      setToolRuns((p) => ({ ...p, [tu.id]: { skill: tu.name, status: 'failed', note: typeof detail === 'string' ? detail : JSON.stringify(detail).slice(0, 200) } }));
+      const rawDetail = subJson?.detail ?? subJson?.error ?? `run ${sub.status}`;
+      const detail = describeFailureDetail(rawDetail);
+      setToolRuns((p) => ({ ...p, [tu.id]: { skill: tu.name, status: 'failed', note: detail } }));
       return { text: JSON.stringify({ status: 'failed', error: detail }) };
     }
     const composed = Boolean(subJson.skill_run_id);

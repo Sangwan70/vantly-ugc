@@ -60,6 +60,9 @@ export const MakeUgcVideoSkillInputSchema = z
     voice_ref_audio_url: z.string().url().optional(),
     // Optional watermark text burned onto the final output (after subtitles).
     watermark_text: z.string().max(60).optional(),
+    // BCP-47 language hint for Whisper transcription / captions.
+    language: z.string().max(10).optional(),
+    background_music: z.union([z.boolean(), z.string().max(120)]).optional(),
   })
   .refine(
     (d) => {
@@ -168,6 +171,15 @@ export const MakeUgcSkillInputSchema = z
       .string()
       .max(60)
       .describe('Optional watermark text burned onto the final video (small, semi-transparent, bottom-center).')
+      .optional(),
+    background_music: z
+      .boolean()
+      .describe('Add ambient background music. OFF unless set true.')
+      .optional(),
+    music_preference: z
+      .string()
+      .max(120)
+      .describe('A music direction, e.g. "lo-fi jazz" or "upbeat pop". Only used when background_music is true.')
       .optional(),
   })
   .refine((d) => Boolean(d.script) || Boolean(d.scene_action), {

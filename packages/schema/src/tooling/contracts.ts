@@ -433,6 +433,9 @@ export const BrollTalkingHeadToolInputSchema = z
     voice_ref_audio_url: z.string().url().optional(),
     // Optional watermark text burned onto the final composed output.
     watermark_text: z.string().max(60).optional(),
+    // BCP-47 language hint for Whisper transcription / captions.
+    language: z.string().max(10).optional(),
+    background_music: z.union([z.boolean(), z.string().max(120)]).optional(),
   })
   .refine((d) => Boolean(d.script) || Boolean(d.audio_url), {
     message: 'provide either script (Seedance voice) or audio_url (your own speech track)',

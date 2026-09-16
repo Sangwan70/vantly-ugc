@@ -793,6 +793,8 @@ async function dispatchMakeUgcVideo(
     subtitles_style: body.subtitles_style ?? 'hormozi',
     voice_ref_audio_url: body.voice_ref_audio_url,
     watermark_text: body.watermark_text,
+    language: body.language,
+    background_music: body.background_music,
   };
 
   let cfg: ReturnType<typeof getTemporalConfig>;
@@ -887,6 +889,8 @@ async function dispatchBrollTalkingHead(
     broll_fade_out: body.broll_fade_out,
     voice_ref_audio_url: body.voice_ref_audio_url,
     watermark_text: body.watermark_text,
+    language: body.language,
+    background_music: body.background_music,
   };
 
   let cfg: ReturnType<typeof getTemporalConfig>;

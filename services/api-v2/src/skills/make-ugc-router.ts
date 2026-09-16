@@ -32,7 +32,6 @@ export interface MakeUgcProps {
   caption_style?: 'hormozi' | 'tiktok' | 'minimal';
   look?: 'natural' | 'commercial' | 'raw_iphone';
   aspect_ratio?: '9:16' | '1:1';
-  music?: boolean | string;
   /** An ElevenLabs voice id. Resolved (synthesized + uploaded) by the async
    *  run path into a voice_ref_audio_url on the routed body -- never touched
    *  here, since this function stays pure/sync for the shared quote path. */
@@ -43,6 +42,15 @@ export interface MakeUgcProps {
    *  make_broll_talking_head routes (see decideMakeUgcRoute) -- the reused-
    *  character and product routes don't have a watermark step yet. */
   watermark_text?: string;
+  /** Simple on/off toggle -- the composer's "Background Music" control. */
+  background_music?: boolean;
+  /** A music direction/genre, e.g. "lo-fi jazz" -- only applied when
+   *  background_music is true. The composer's "Music Preference" control. */
+  music_preference?: string;
+  /** Legacy combined field (boolean or a direction string) some older
+   *  callers still send. resolveMusic() prefers background_music /
+   *  music_preference when either is set. */
+  music?: boolean | string;
 }
 
 /** Placeholder for an identity URL the run path resolves before delegating; it
@@ -64,6 +72,21 @@ export function isLongScript(script?: string): boolean {
   if (!script) return false;
   if (/(?:^|\n)\s*---\s*(?:\n|$)/.test(script)) return true;
   return countWords(script) > SINGLE_CLIP_MAX_WORDS;
+}
+
+/**
+ * Compose the friendlier { background_music, music_preference } composer
+ * fields (and the legacy `music` field, for older callers) into the single
+ * boolean|string shape every underlying skill's `background_music` prop
+ * expects. Pure -- used by both the run path and the credit quote.
+ */
+export function resolveMusic(props: MakeUgcProps): boolean | string | undefined {
+  if (typeof props.background_music !== 'undefined') {
+    if (props.background_music === false) return false;
+    return props.music_preference || true;
+  }
+  if (props.music_preference) return props.music_preference;
+  return props.music;
 }
 
 /**
@@ -104,6 +127,8 @@ export function decideMakeUgcRoute(props: MakeUgcProps): {
       body.scene_action = props.scene_action;
       body.duration = props.duration && [5, 10, 15].includes(props.duration) ? props.duration : 10;
     }
+    const productMusic = resolveMusic(props);
+    if (typeof productMusic !== 'undefined') body.background_music = productMusic;
     return { slug: 'make_product_in_hands', body };
   }
 
@@ -121,6 +146,8 @@ export function decideMakeUgcRoute(props: MakeUgcProps): {
         subtitles,
         aspect_ratio: aspect,
         ...(props.watermark_text ? { watermark_text: props.watermark_text } : {}),
+        ...(props.language ? { language: props.language.slice(0, 2) } : {}),
+        ...(typeof resolveMusic(props) !== 'undefined' ? { background_music: resolveMusic(props) } : {}),
       },
     };
   }
@@ -142,8 +169,9 @@ export function decideMakeUgcRoute(props: MakeUgcProps): {
     } else {
       body.scene_action = props.scene_action;
       body.duration = props.duration && [5, 10, 15].includes(props.duration) ? props.duration : 10;
-      if (typeof props.music !== 'undefined') body.background_music = props.music;
     }
+    const selfieMusic = resolveMusic(props);
+    if (typeof selfieMusic !== 'undefined') body.background_music = selfieMusic;
     return { slug: 'make_simple_selfie', body };
   }
 
@@ -166,5 +194,8 @@ export function decideMakeUgcRoute(props: MakeUgcProps): {
     body.description = props.person && props.person.length >= 8 ? props.person : DEFAULT_PERSON;
   }
   if (props.watermark_text) body.watermark_text = props.watermark_text;
+  if (props.language) body.language = props.language.slice(0, 2);
+  const defaultMusic = resolveMusic(props);
+  if (typeof defaultMusic !== 'undefined') body.background_music = defaultMusic;
   return { slug: 'make_ugc_video', body };
 }

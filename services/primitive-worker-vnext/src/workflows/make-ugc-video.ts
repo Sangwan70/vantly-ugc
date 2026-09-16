@@ -49,6 +49,9 @@ export interface MakeUgcVideoWorkflowInput {
   /** Optional watermark text burned onto the FINAL output (after subtitles,
    *  if any) as a small semi-transparent bottom-center line. */
   watermark_text?: string;
+  /** 2-letter language hint for Whisper transcription / captions. */
+  language?: string;
+  background_music?: boolean | string;
 }
 
 export interface MakeUgcVideoWorkflowResult {
@@ -240,6 +243,7 @@ async function makeUgcVideoImpl(
       location: input.location,
       pose: input.pose,
       aspect_ratio: input.aspect_ratio,
+      background_music: input.background_music,
     },
   };
   const video: SimpleSelfieActivityResult = await simpleSelfie(selfieInput);
@@ -261,6 +265,7 @@ async function makeUgcVideoImpl(
         transcript: input.script,
         style: input.subtitles_style ?? 'hormozi',
         aspect_ratio: input.aspect_ratio,
+        language: input.language,
       },
     };
     const subs: SubtitlesActivityResult = await subtitles(subsInput);

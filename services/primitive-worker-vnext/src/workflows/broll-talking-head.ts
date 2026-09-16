@@ -72,6 +72,9 @@ export interface BrollTalkingHeadWorkflowInput {
   /** Optional watermark text burned onto the FINAL composed output (after
    *  subtitles, if any) as a small semi-transparent bottom-center line. */
   watermark_text?: string;
+  /** 2-letter language hint for Whisper transcription / captions. */
+  language?: string;
+  background_music?: boolean | string;
 }
 
 export interface BrollTalkingHeadWorkflowResult {
@@ -273,6 +276,7 @@ export async function brollTalkingHeadWorkflow(
           duration: take.duration,
           script: take.script,
           aspect_ratio: selfieAspect,
+          background_music: input.background_music,
         },
       };
       const r: SimpleSelfieActivityResult = await simpleSelfie(selfieInput);
@@ -353,6 +357,7 @@ export async function brollTalkingHeadWorkflow(
         // Caption canvas must match the COMPOSITE's aspect (may be 16:9), not the
         // 9:16/1:1 of the raw selfie clips — otherwise captions are mis-placed.
         aspect_ratio: input.aspect_ratio,
+        language: input.language,
       },
     };
     const subs: SubtitlesActivityResult = await subtitles(subsInput);

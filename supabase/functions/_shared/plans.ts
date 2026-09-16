@@ -41,6 +41,8 @@ export interface PlanDefinition {
   readonly hasApiAccess: boolean;
   /** Maximum concurrent generation jobs */
   readonly maxConcurrentJobs: number;
+  /** Gates any model the catalog marks tier: 'premium' (packages/schema/src/v2/models.ts) -- kept generic, not tied to a specific model id, so the next model to earn 'premium' is gated the same way. */
+  readonly hasLatestModels: boolean;
 }
 
 export interface PaygPackDefinition {
@@ -64,6 +66,7 @@ export const PLANS: Record<string, PlanDefinition> = {
     hasPriority: false,
     hasApiAccess: false,
     maxConcurrentJobs: 1,
+    hasLatestModels: false,
   },
   newby: {
     slug: "newby",
@@ -73,6 +76,7 @@ export const PLANS: Record<string, PlanDefinition> = {
     hasPriority: false,
     hasApiAccess: false,
     maxConcurrentJobs: 2,
+    hasLatestModels: false,
   },
   starter: {
     slug: "starter",
@@ -82,6 +86,7 @@ export const PLANS: Record<string, PlanDefinition> = {
     hasPriority: false,
     hasApiAccess: false,
     maxConcurrentJobs: 3,
+    hasLatestModels: false,
   },
   creator: {
     slug: "creator",
@@ -91,6 +96,7 @@ export const PLANS: Record<string, PlanDefinition> = {
     hasPriority: true,
     hasApiAccess: false,
     maxConcurrentJobs: 5,
+    hasLatestModels: false,
   },
   pro_plus: {
     slug: "pro_plus",
@@ -100,6 +106,7 @@ export const PLANS: Record<string, PlanDefinition> = {
     hasPriority: true,
     hasApiAccess: true,
     maxConcurrentJobs: 10,
+    hasLatestModels: true,
   },
 };
 

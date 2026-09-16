@@ -53,7 +53,7 @@ const PLANS: Plan[] = [
     tagline: 'For creators shipping UGC consistently.',
     features: [
       'Up to 15s videos',
-      'All AI models + presets',
+      'All standard models + presets',
     ],
   },
   {
@@ -65,7 +65,7 @@ const PLANS: Plan[] = [
     popular: true,
     features: [
       'Up to 15s videos',
-      'All AI models + presets',
+      'All standard models + presets',
       'Priority queue',
     ],
   },
@@ -77,7 +77,8 @@ const PLANS: Plan[] = [
     tagline: 'For high-volume teams and agencies.',
     features: [
       'Up to 15s videos',
-      'All AI models + presets',
+      'All standard models + presets',
+      'Use the latest, most powerful video model',
       'Early access to new tools',
     ],
   },

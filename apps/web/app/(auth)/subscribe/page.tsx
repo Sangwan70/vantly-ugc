@@ -102,7 +102,7 @@ const PLANS: PlanOption[] = [
     credits: '12,900 credits / month',
     features: [
       'Up to 15s videos',
-      'Early access to newest models and higher quality',
+      'Use the latest, most powerful video model',
       'Batch generation via CLI or API',
       'Auto-publishing to social channels',
       '1080p exports with no watermark',

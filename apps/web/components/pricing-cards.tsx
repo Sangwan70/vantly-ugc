@@ -48,6 +48,7 @@ export const plans = [
     features: [
       '12,900 credits/month',
       'Up to 15s videos',
+      'Use the latest, most powerful video model',
       'Early access to improved UGC tools',
     ],
     popular: false,

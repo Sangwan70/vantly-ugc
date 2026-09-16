@@ -39,12 +39,14 @@ import type { Request, Response } from 'express';
 import {
   quoteAny,
   deriveVideoMode,
+  V2_MODELS,
   type GenerateKind,
   type ModelStatsMap,
 } from '@vantly-ugc/schema/v2';
 import { supabase } from '../../server.js';
 import { getOrchestratorEngine } from '../../orchestrator/temporal/config.js';
 import { dispatchGenerateToHttpWorker, probeMediaDurations } from './dispatch-http.js';
+import { PLANS } from '../../lib/billing/plans.js';
 
 const WORKER_V2_URL = process.env.WORKER_V2_URL;
 const WORKER_SECRET = process.env.WORKER_SECRET;
@@ -114,6 +116,24 @@ async function markDispatchFailureAndRefund(
   }
 }
 
+/**
+ * Resolve the caller's current plan slug the same way routes/generate.ts
+ * (the v1 fixed-generator route) does: latest active/trialing subscription
+ * row, defaulting to 'free' with none. Not exported from lib/billing/plans.ts
+ * as a shared helper today -- see that file's comment on the two live
+ * plan-lookup patterns in this codebase -- so this mirrors it locally.
+ */
+async function getUserPlanSlug(userId: string): Promise<string> {
+  const { data: subscription } = await supabase
+    .from('subscriptions')
+    .select('plan_slug, status')
+    .eq('user_id', userId)
+    .in('status', ['active', 'trialing'])
+    .order('created_at', { ascending: false })
+    .maybeSingle();
+  return subscription?.plan_slug ?? 'free';
+}
+
 /** Video-only: measure video_refs durations via the worker so the quote bills them. */
 async function videoQuoteExtras(kind: GenerateKind, body: unknown): Promise<{ inputVideoSeconds?: number }> {
   if (kind !== 'video' || !WORKER_V2_URL || !WORKER_SECRET) return {};
@@ -163,6 +183,24 @@ export async function generateRoute(req: Request, res: Response): Promise<void> 
     return;
   }
   const { quote, input } = result;
+
+  // ── 1b. Plan gate: the catalog's 'premium' tier is a Pro Plus perk ──
+  // Deliberately keyed off V2_MODELS[quote.model].tier, never a specific
+  // model id -- whichever model earns 'premium' next (the catalog's own
+  // succession as providers ship new models) is gated the same way with
+  // no code change here. See lib/billing/plans.ts's hasLatestModels.
+  if (V2_MODELS[quote.model]?.tier === 'premium') {
+    const planSlug = await getUserPlanSlug(userId);
+    if (!PLANS[planSlug]?.hasLatestModels) {
+      res.status(403).json({
+        error: {
+          code: 'PLAN_REQUIRED',
+          message: `The "${quote.model}" model is a Pro Plus perk (the latest, most powerful tier). Upgrade to Pro Plus to use it -- you're currently on the '${planSlug}' plan.`,
+        },
+      });
+      return;
+    }
+  }
 
   // ── 2. Worker preflight ────────────────────────────────────────────
   const engine = getOrchestratorEngine();

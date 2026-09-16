@@ -22,6 +22,12 @@ export interface PlanDefinition {
   readonly hasPriority: boolean;
   readonly hasApiAccess: boolean;
   readonly maxConcurrentJobs: number;
+  // Gates any model the catalog marks tier: 'premium' (packages/schema/src/v2/
+  // models.ts's V2_MODELS -- currently seedance-2.5, but deliberately NOT
+  // keyed to a specific model id here: whichever model earns 'premium' next
+  // is gated the same way with no code change). Enforced in
+  // routes/v2/generate.ts's model-tier check.
+  readonly hasLatestModels: boolean;
 }
 
 export interface PaygPackDefinition {
@@ -34,22 +40,27 @@ export const PLANS: Record<string, PlanDefinition> = {
   free: {
     slug: 'free', monthlyCredits: 0, maxResolution: '720p',
     hasWatermark: true, hasPriority: false, hasApiAccess: false, maxConcurrentJobs: 1,
+    hasLatestModels: false,
   },
   newby: {
     slug: 'newby', monthlyCredits: 1300, maxResolution: '1080p',
     hasWatermark: false, hasPriority: false, hasApiAccess: false, maxConcurrentJobs: 2,
+    hasLatestModels: false,
   },
   starter: {
     slug: 'starter', monthlyCredits: 3900, maxResolution: '1080p',
     hasWatermark: false, hasPriority: false, hasApiAccess: false, maxConcurrentJobs: 3,
+    hasLatestModels: false,
   },
   creator: {
     slug: 'creator', monthlyCredits: 6900, maxResolution: '2k',
     hasWatermark: false, hasPriority: true, hasApiAccess: false, maxConcurrentJobs: 5,
+    hasLatestModels: false,
   },
   pro_plus: {
     slug: 'pro_plus', monthlyCredits: 12900, maxResolution: '2k',
     hasWatermark: false, hasPriority: true, hasApiAccess: true, maxConcurrentJobs: 10,
+    hasLatestModels: true,
   },
 };
 

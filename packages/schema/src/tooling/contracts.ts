@@ -431,6 +431,8 @@ export const BrollTalkingHeadToolInputSchema = z
     // synthesis of the script in a chosen voice). Only meaningful on the
     // `script` path -- audio_url already IS the final speech track.
     voice_ref_audio_url: z.string().url().optional(),
+    // Optional watermark text burned onto the final composed output.
+    watermark_text: z.string().max(60).optional(),
   })
   .refine((d) => Boolean(d.script) || Boolean(d.audio_url), {
     message: 'provide either script (Seedance voice) or audio_url (your own speech track)',

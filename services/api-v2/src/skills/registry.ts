@@ -58,6 +58,8 @@ export const MakeUgcVideoSkillInputSchema = z
     // synthesis of the script in a chosen voice). When set, Seedance speaks in
     // this voice instead of its own default.
     voice_ref_audio_url: z.string().url().optional(),
+    // Optional watermark text burned onto the final output (after subtitles).
+    watermark_text: z.string().max(60).optional(),
   })
   .refine(
     (d) => {
@@ -161,6 +163,11 @@ export const MakeUgcSkillInputSchema = z
       .string()
       .max(10)
       .describe('BCP-47 language code (e.g. "en", "hi", "es") for the spoken voice and captions. Omit for the default (English).')
+      .optional(),
+    watermark_text: z
+      .string()
+      .max(60)
+      .describe('Optional watermark text burned onto the final video (small, semi-transparent, bottom-center).')
       .optional(),
   })
   .refine((d) => Boolean(d.script) || Boolean(d.scene_action), {

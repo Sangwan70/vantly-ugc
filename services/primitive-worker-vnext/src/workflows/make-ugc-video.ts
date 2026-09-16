@@ -25,6 +25,7 @@ import type { PortraitGpt2ActivityInput, PortraitGpt2ActivityResult } from '../a
 import type { CharacterSheetGpt2ActivityInput, CharacterSheetGpt2ActivityResult } from '../activities/character-sheet-gpt2.js';
 import type { SimpleSelfieActivityInput, SimpleSelfieActivityResult } from '../activities/simple-selfie.js';
 import type { SubtitlesActivityInput, SubtitlesActivityResult } from '../activities/subtitles.js';
+import type { WatermarkActivityInput, WatermarkActivityResult } from '../activities/watermark.js';
 
 export interface MakeUgcVideoWorkflowInput {
   /** API mints this before workflow start, identifies the composed skill_run row. */
@@ -45,6 +46,9 @@ export interface MakeUgcVideoWorkflowInput {
   /** Optional voice-timbre reference (R2 .mp3, e.g. an ElevenLabs synthesis)
    *  so Seedance speaks in this voice instead of its own default. */
   voice_ref_audio_url?: string;
+  /** Optional watermark text burned onto the FINAL output (after subtitles,
+   *  if any) as a small semi-transparent bottom-center line. */
+  watermark_text?: string;
 }
 
 export interface MakeUgcVideoWorkflowResult {
@@ -111,6 +115,10 @@ const { subtitles } = proxyActivities<PrimitiveActivities>({
 const { composedSkillState } = proxyActivities<PrimitiveActivities>({
   startToCloseTimeout: '30 seconds',
   retry: { maximumAttempts: 3 },
+});
+const { applyWatermark } = proxyActivities<PrimitiveActivities>({
+  startToCloseTimeout: '5 minutes',
+  retry: { initialInterval: '5s', maximumInterval: '30s', backoffCoefficient: 2, maximumAttempts: 3 },
 });
 
 // Terminal-failure compensation: refund every charged child run and mark the
@@ -260,6 +268,24 @@ async function makeUgcVideoImpl(
     finalVideoUrl = subs.video_url;
   }
 
+  // Step 5 (optional): burn a watermark onto the final output. Runs LAST so
+  // it overlays subtitles too, not just the raw selfie.
+  if (input.watermark_text) {
+    await composedSkillState({
+      skill_run_id: input.skill_run_id,
+      current_step: 'watermark',
+    });
+    const wmInput: WatermarkActivityInput = {
+      primitive_run_id: makeChildRunId(input.skill_run_id, 'watermark'),
+      user_id: input.user_id,
+      video_url: finalVideoUrl,
+      text: input.watermark_text,
+      aspect_ratio: input.aspect_ratio,
+    };
+    const wm: WatermarkActivityResult = await applyWatermark(wmInput);
+    finalVideoUrl = wm.video_url;
+  }
+
   const finalOutput = {
     portrait_url: portraitUrl,
     character_sheet_url: sheet.character_sheet_url,
@@ -292,7 +318,7 @@ async function makeUgcVideoImpl(
  */
 function makeChildRunId(
   skillRunId: string,
-  step: 'portrait' | 'sheet' | 'selfie' | 'subtitles',
+  step: 'portrait' | 'sheet' | 'selfie' | 'subtitles' | 'watermark',
 ): string {
   // Replace the last 12 hex chars of the skill_run_id with the step
   // hash, keeping the uuid shape and remaining deterministic.
@@ -301,6 +327,7 @@ function makeChildRunId(
     sheet: '22222222bbbb',
     selfie: '33333333cccc',
     subtitles: '44444444dddd',
+    watermark: '55555555eeee',
   };
   const base = skillRunId.replace(/[^a-f0-9-]/gi, '').toLowerCase();
   return base.slice(0, base.length - 12) + stepHash[step];

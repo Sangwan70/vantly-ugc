@@ -42,6 +42,7 @@ import type { LipSyncActivityInput, LipSyncActivityResult } from '../activities/
 import type { ExtractAudioActivityResult } from '../activities/extract-audio.js';
 import type { ComposeBrollOverlayInput, ComposeBrollOverlayResult } from '../activities/compose-broll-overlay.js';
 import type { SubtitlesActivityInput, SubtitlesActivityResult } from '../activities/subtitles.js';
+import type { WatermarkActivityInput, WatermarkActivityResult } from '../activities/watermark.js';
 
 type SelfieAspect = '9:16' | '1:1';
 
@@ -68,6 +69,9 @@ export interface BrollTalkingHeadWorkflowInput {
    *  for take 0 (the existing default), which is then carried into later
    *  takes exactly as before. */
   voice_ref_audio_url?: string;
+  /** Optional watermark text burned onto the FINAL composed output (after
+   *  subtitles, if any) as a small semi-transparent bottom-center line. */
+  watermark_text?: string;
 }
 
 export interface BrollTalkingHeadWorkflowResult {
@@ -102,6 +106,7 @@ const { lipSync } = proxyActivities<PrimitiveActivities>(videoRetry);
 const { composeBrollOverlay } = proxyActivities<PrimitiveActivities>(videoRetry);
 const { extractAudio } = proxyActivities<PrimitiveActivities>(utilRetry);
 const { subtitles } = proxyActivities<PrimitiveActivities>(utilRetry);
+const { applyWatermark } = proxyActivities<PrimitiveActivities>(utilRetry);
 const { composedSkillState } = proxyActivities<PrimitiveActivities>({
   startToCloseTimeout: '30 seconds',
   retry: { maximumAttempts: 3 },
@@ -353,6 +358,21 @@ export async function brollTalkingHeadWorkflow(
     const subs: SubtitlesActivityResult = await subtitles(subsInput);
     totalCredits += subs.credits_actual_usd;
     finalUrl = subs.video_url;
+  }
+
+  // Optional: burn a watermark onto the final output. Runs LAST so it
+  // overlays subtitles too, not just the raw composite.
+  if (input.watermark_text) {
+    await composedSkillState({ skill_run_id: input.skill_run_id, current_step: 'watermark' });
+    const wmInput: WatermarkActivityInput = {
+      primitive_run_id: makeChildRunId(input.skill_run_id, 'watermark'),
+      user_id: input.user_id,
+      video_url: finalUrl,
+      text: input.watermark_text,
+      aspect_ratio: input.aspect_ratio,
+    };
+    const wm: WatermarkActivityResult = await applyWatermark(wmInput);
+    finalUrl = wm.video_url;
   }
 
   const finalOutput = {

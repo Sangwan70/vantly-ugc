@@ -39,6 +39,10 @@ export interface MakeUgcProps {
   voice_id?: string;
   /** BCP-47 language code, used for ElevenLabs synthesis + subtitle language. */
   language?: string;
+  /** Optional watermark text. Only threaded through on the make_ugc_video and
+   *  make_broll_talking_head routes (see decideMakeUgcRoute) -- the reused-
+   *  character and product routes don't have a watermark step yet. */
+  watermark_text?: string;
 }
 
 /** Placeholder for an identity URL the run path resolves before delegating; it
@@ -116,6 +120,7 @@ export function decideMakeUgcRoute(props: MakeUgcProps): {
         script: props.script,
         subtitles,
         aspect_ratio: aspect,
+        ...(props.watermark_text ? { watermark_text: props.watermark_text } : {}),
       },
     };
   }
@@ -160,5 +165,6 @@ export function decideMakeUgcRoute(props: MakeUgcProps): {
     // a person description (or a default) → the quote includes portrait gen.
     body.description = props.person && props.person.length >= 8 ? props.person : DEFAULT_PERSON;
   }
+  if (props.watermark_text) body.watermark_text = props.watermark_text;
   return { slug: 'make_ugc_video', body };
 }

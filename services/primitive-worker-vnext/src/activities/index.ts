@@ -19,6 +19,7 @@ import { makeStorybookCharacterActivity } from './storybook-character.js';
 import { makeStorybookTakeActivity } from './storybook-take.js';
 import { makeRefundCreditsActivity } from './refund-credits.js';
 import { makeMarkPrimitiveRunFailedActivity } from './mark-run-failed.js';
+import { makeWatermarkActivity } from './watermark.js';
 
 export function createActivities(cfg: WorkerConfig) {
   return {
@@ -40,6 +41,7 @@ export function createActivities(cfg: WorkerConfig) {
     podcastReframe: makePodcastReframeActivity(cfg),
     storybookCharacter: makeStorybookCharacterActivity(cfg),
     storybookTake: makeStorybookTakeActivity(cfg),
+    applyWatermark: makeWatermarkActivity(cfg),
   };
 }
 

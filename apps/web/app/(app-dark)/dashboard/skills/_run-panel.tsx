@@ -85,6 +85,39 @@ export interface RunResult {
   error?: { code: string; message: string | null } | null;
 }
 
+// Tentative wall-clock estimate for make_ugc_video (character_sheet_gpt2 +
+// simple_selfie on the standard seedance-2.0 tier -- the enforced default,
+// see services/primitive-worker-vnext/src/config.ts). Extrapolated from the
+// only real data point in the model catalog (packages/schema/src/v2/
+// models.ts): seedance-2.0 renders "about 3 minutes for a 5s clip at
+// 720p"; character-sheet generation (gpt-image-2.5-sunburst) adds roughly
+// another 30-45s. This is a rough guide for setting expectations, not a
+// guarantee -- queueing, retries, and provider variance can push it either
+// way, hence the range rather than a single number.
+function estimateMakeUgcVideoEta(durationSeconds: number): string {
+  const perSecondOfVideo = 36; // seconds of render time per second of output video
+  const sheetSeconds = 45;
+  const midSeconds = sheetSeconds + durationSeconds * perSecondOfVideo;
+  const lowMinutes = Math.max(2, Math.round((midSeconds * 0.75) / 60));
+  const highMinutes = Math.max(lowMinutes + 1, Math.round((midSeconds * 1.4) / 60));
+  return `about ${lowMinutes}\u2013${highMinutes} minutes`;
+}
+
+// Skills we don't have per-model timing data for yet fall back to this
+// honest, non-specific guide rather than guessing a wrong number.
+const GENERIC_ETA = 'a few minutes \u2014 sometimes longer for video';
+
+export function estimateSkillEta(skillSlug: string, body: Record<string, unknown>): string {
+  if (skillSlug === 'make_ugc_video') {
+    const raw = body.duration;
+    const duration = typeof raw === 'number' ? raw : Number(raw);
+    if (Number.isFinite(duration) && duration > 0) return estimateMakeUgcVideoEta(duration);
+  }
+  return GENERIC_ETA;
+}
+
+const TERMINAL_RUN_STATUSES = new Set(['succeeded', 'failed', 'canceled', 'error']);
+
 export function RunPanel({
   skill,
   form,
@@ -111,6 +144,7 @@ export function RunPanel({
   const [values, setValues] = useState<Record<string, unknown>>(initial);
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState<string | null>(null);
+  const [launchEta, setLaunchEta] = useState<string | null>(null);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,6 +191,7 @@ export function RunPanel({
       }
       const id = (data.skill_run_id ?? data.run_id) as string | undefined;
       if (!id) { setSubmitErr('no run id returned'); return; }
+      setLaunchEta(estimateSkillEta(skill.slug, body));
       onLaunched({ composed: form.composed, id, status: 'submitted' });
     } catch (err) {
       setSubmitErr((err as Error).message);
@@ -189,6 +224,16 @@ export function RunPanel({
         <p className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>
           No form configured for this skill. Call <code>POST /v1/skills/{skill.slug}/run</code> directly.
         </p>
+      )}
+
+      {activeRun && launchEta && !TERMINAL_RUN_STATUSES.has(activeRun.status) && (
+        <div className="mt-3 rounded-xl px-4 py-3 text-sm" style={{ border: '1px solid rgba(52,211,153,0.25)', backgroundColor: 'rgba(52,211,153,0.06)', color: '#E9E9F0' }}>
+          You&apos;re all set — this is submitted and rendering now. It usually takes{' '}
+          <strong>{launchEta}</strong>. Feel free to do something else in the meantime — you can check on it anytime{' '}
+          <Link href={`/dashboard/skills/runs/${encodeURIComponent(activeRun.id)}${activeRun.composed ? '?composed=1' : ''}`} className="underline" style={{ color: '#34D399' }}>
+            here
+          </Link>.
+        </div>
       )}
 
       {activeRun && (

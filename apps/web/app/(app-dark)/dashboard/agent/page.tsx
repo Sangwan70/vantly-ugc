@@ -23,7 +23,7 @@ import { Loader2, Send, Square, Sparkles, Wrench, Check, AlertCircle, ArrowDown,
 import { invokeFn } from '@/lib/supabase/fn-proxy';
 
 import { SAMPLE_PROMPTS } from '@/lib/sample-prompts';
-import { RunPanel, type SkillEntry as SkillCatalogEntry, type RunResult as SkillLaunchResult } from '../skills/_run-panel';
+import { RunPanel, estimateSkillEta, type SkillEntry as SkillCatalogEntry, type RunResult as SkillLaunchResult } from '../skills/_run-panel';
 import { FORMS as SKILL_FORMS } from '../skills/_forms';
 
 type Block =
@@ -1889,7 +1889,7 @@ export default function AgentPage() {
                         : b.name === 'list_my_characters' ? 'loading…'
                         : run?.note ? run.note
                         : run?.currentStep && run.currentStep !== 'done' ? `${run.currentStep.replace(/_/g, ' ')}…`
-                        : 'generating… · usually 1–2 min';
+                        : `generating… · ${estimateSkillEta(b.name, (b.input as Record<string, unknown>) ?? {})}`;
                       return (
                         <div key={j} className="inline-flex max-w-full flex-col gap-2">
                           <div className="inline-flex items-center gap-2 self-start rounded-xl px-3 py-2 text-[13px]" style={{ background: '#14151F', border: '1px solid rgba(255,255,255,0.08)' }}>

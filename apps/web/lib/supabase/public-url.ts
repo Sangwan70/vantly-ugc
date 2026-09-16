@@ -32,7 +32,17 @@ export function toPublicStorageUrl(url: string): string {
     const target = new URL(url);
     const pub = new URL(publicBase);
     target.protocol = pub.protocol;
-    target.host = pub.host;
+    target.hostname = pub.hostname;
+    // IMPORTANT: `target.host = pub.host` looks equivalent but isn't -- the
+    // WHATWG URL `host` setter only updates the port when the assigned
+    // string itself contains one. NEXT_PUBLIC_SUPABASE_URL is a bare
+    // "https://auth.vantly-ugc.com" with no port, so `pub.host` also has no
+    // port, and the setter then leaves `target`'s ORIGINAL port (:3000,
+    // from the internal http://gateway:3000 URL) untouched -- producing
+    // "https://auth.vantly-ugc.com:3000/...", which is just as unreachable
+    // and CSP-blocked as the internal hostname was. Set `.port` explicitly
+    // (to pub.port, which is '' here) so it's actually cleared.
+    target.port = pub.port;
     return target.toString();
   } catch {
     return url;

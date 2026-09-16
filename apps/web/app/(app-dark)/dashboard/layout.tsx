@@ -81,6 +81,24 @@ export default function DashboardDarkLayout({
     })();
   }, []);
 
+  // Guard against the browser's back/forward cache (bfcache) showing a
+  // frozen, already-rendered snapshot of this page from BEFORE a sign-out +
+  // different sign-in in the same tab -- e.g. someone signs out, signs in as
+  // someone else, then hits Back: bfcache can restore the previous user's
+  // already-fetched gallery/credits DOM without re-running data fetches,
+  // which looks exactly like one account seeing another's private data even
+  // though every fetch on this page is correctly scoped server-side. The
+  // 'pageshow' event fires with persisted:true only on a bfcache restore
+  // (never on a normal load), so force a real reload to re-fetch as
+  // whoever is actually signed in now.
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) window.location.reload();
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, []);
+
   // Credit balance — refreshed periodically so it reflects new runs / top-ups.
   useEffect(() => {
     let cancelled = false;

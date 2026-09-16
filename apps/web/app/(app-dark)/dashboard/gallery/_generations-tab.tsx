@@ -55,7 +55,7 @@ export function GenerationsTab() {
     async (offset: number): Promise<{ videos: GenerationJob[]; rawCount: number; hasMore: boolean } | null> => {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset), filter: 'all' });
       try {
-        const resp = await fetch(`/api/v1/me/gallery?${params.toString()}`, { credentials: 'include' });
+        const resp = await fetch(`/api/v1/me/gallery?${params.toString()}`, { credentials: 'include', cache: 'no-store' });
         if (!resp.ok) {
           if (resp.status !== 401) setError(`gallery ${resp.status}`);
           return null;

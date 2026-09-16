@@ -68,7 +68,7 @@ export default function DashboardHomePage() {
   // still in progress, instead of only ever fetching once on load.
   async function refreshGallery() {
     try {
-      const resp = await fetch('/api/v1/me/gallery?limit=60', { credentials: 'include' });
+      const resp = await fetch('/api/v1/me/gallery?limit=60', { credentials: 'include', cache: 'no-store' });
       if (!mountedRef.current) return;
       if (!resp.ok) {
         if (resp.status !== 401) {

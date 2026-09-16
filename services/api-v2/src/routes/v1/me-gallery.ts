@@ -356,5 +356,11 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
   filtered.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
   const total = filtered.length;
   const page = filtered.slice(offset, offset + limit);
+  // Per-user private data -- never let a browser or intermediate proxy/CDN
+  // cache this by URL alone (every user hits the exact same default URL,
+  // '/v1/me/gallery?limit=40&offset=0', so a URL-keyed cache that ignores
+  // the Authorization header would silently serve one user's gallery to
+  // the next person who loads the page in a shared/cached path).
+  res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate');
   res.status(200).json({ items: page, offset, limit, returned: page.length, total, has_more: total > offset + limit });
 }

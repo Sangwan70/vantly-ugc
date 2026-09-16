@@ -107,7 +107,7 @@ export default function JobsPage() {
 
   async function load() {
     try {
-      const r = await fetch('/api/v1/me/gallery?filter=all&limit=100', { credentials: 'include' });
+      const r = await fetch('/api/v1/me/gallery?filter=all&limit=100', { credentials: 'include', cache: 'no-store' });
       if (!r.ok) {
         setError(`jobs ${r.status}`);
         setJobs([]);

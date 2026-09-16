@@ -8,6 +8,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+// Per-user private data proxied through here -- see the matching comment on
+// api-v2's GET /v1/me/gallery. Force dynamic (never statically/route-cached)
+// and tell the browser/any intermediate proxy never to cache this response,
+// so one signed-in user's gallery can never be served to the next person who
+// hits the same URL (e.g. the default '/api/v1/me/gallery?limit=60' every
+// dashboard load requests) in a shared browser or behind a CDN.
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 const API_V2_URL = process.env.API_V2_URL?.replace(/\/+$/, '')
   ?? 'https://api.vantly-ugc.com';
 
@@ -45,7 +54,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     } catch {
       data = { error: { code: 'upstream_error', message: text.slice(0, 400) } };
     }
-    return NextResponse.json(data, { status: upstream.status });
+    return NextResponse.json(data, {
+      status: upstream.status,
+      headers: { 'Cache-Control': 'private, no-store, no-cache, must-revalidate' },
+    });
   } catch (err) {
     return NextResponse.json(
       { error: { code: 'upstream_unreachable', message: (err as Error).message } },

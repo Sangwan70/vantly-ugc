@@ -262,6 +262,14 @@ export default function AgentPage() {
   const [hydrated, setHydrated] = useState(false);
   const [attachedImage, setAttachedImage] = useState<{ url: string; name: string } | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  // Auto-save-as-Character (see createCharacterFromUpload below): the
+  // character row created from the most recently attached chat upload,
+  // its auto-generated friendly name (editable inline), and save state.
+  const [attachedCharacter, setAttachedCharacter] = useState<{ id: string; name: string; thumbnail_url?: string | null } | null>(null);
+  const [characterSaving, setCharacterSaving] = useState(false);
+  const [characterNameDraft, setCharacterNameDraft] = useState('');
+  const [characterNameSaving, setCharacterNameSaving] = useState(false);
+  const [characterRenameError, setCharacterRenameError] = useState<string | null>(null);
   const [composerMenuOpen, setComposerMenuOpen] = useState(false);
   const [promptPickerOpen, setPromptPickerOpen] = useState(false);
   const [savedPrompts, setSavedPrompts] = useState<AgentSavedPrompt[] | null>(null);
@@ -884,6 +892,9 @@ export default function AgentPage() {
     setError(null); setInput(''); setAtBottom(true);
     const img = attachedImage;
     setAttachedImage(null);
+    setAttachedCharacter(null);
+    setCharacterNameDraft('');
+    setCharacterRenameError(null);
     const base = text.trim() || 'Use this product image in a product video.';
     const content = img ? `${base}\n\n[product_image_url: ${img.url}]` : base;
     const userMsg: Msg = { role: 'user', content, cmid: genId() };
@@ -1227,11 +1238,61 @@ export default function AgentPage() {
       const signed = await signedResp.json();
       if (!signedResp.ok || !signed?.signed_url) throw new Error(signed?.error?.message ?? 'Failed to sign uploaded image');
       setAttachedImage({ url: signed.signed_url as string, name: safeName });
+      void createCharacterFromUpload(signed.signed_url as string);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Upload failed');
     } finally {
       setUploadingImage(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  // Mirrors a chat upload into permanent R2 storage and saves it as a
+  // reusable Character (source_kind: 'upload') with an auto-generated
+  // friendly name -- the raw upload is a private, 6h-expiring Supabase
+  // Storage URL, not something a Character's identity URL can point at
+  // long-term. Failure here is non-fatal: the image stays attached and
+  // usable in chat even if the auto-save-as-Character step fails.
+  async function createCharacterFromUpload(imageUrl: string) {
+    setAttachedCharacter(null);
+    setCharacterRenameError(null);
+    setCharacterSaving(true);
+    try {
+      const { data, error: fnErr } = await invokeFn('character-from-upload', { body: { image_url: imageUrl } });
+      if (fnErr) throw new Error(fnErr.message ?? 'Failed to save character');
+      const c = (data as { character?: { id: string; name: string; thumbnail_url?: string | null } } | null)?.character;
+      if (!c) throw new Error('Character response was missing fields');
+      setAttachedCharacter({ id: c.id, name: c.name, thumbnail_url: c.thumbnail_url });
+      setCharacterNameDraft(c.name);
+    } catch (e) {
+      setCharacterRenameError(e instanceof Error ? e.message : 'Failed to save as character');
+    } finally {
+      setCharacterSaving(false);
+    }
+  }
+
+  // Immediate rename of the just-auto-saved character (PATCH is the same
+  // route the Characters page uses; `name` is a plain mutable field there).
+  async function renameAttachedCharacter(nextName: string) {
+    const trimmed = nextName.trim();
+    if (!attachedCharacter || !trimmed || trimmed === attachedCharacter.name) return;
+    setCharacterNameSaving(true);
+    setCharacterRenameError(null);
+    try {
+      const r = await fetch(`/api/dashboard/characters/${attachedCharacter.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error?.message ?? 'Failed to rename character');
+      const savedName = j?.character?.name ?? trimmed;
+      setAttachedCharacter((prev) => (prev ? { ...prev, name: savedName } : prev));
+      setCharacterNameDraft(savedName);
+    } catch (e) {
+      setCharacterRenameError(e instanceof Error ? e.message : 'Failed to rename character');
+    } finally {
+      setCharacterNameSaving(false);
     }
   }
 
@@ -1261,11 +1322,35 @@ export default function AgentPage() {
     <form onSubmit={(e) => { e.preventDefault(); void send(input); }} className="w-full">
       <div className="rounded-[26px] px-4 py-3" style={{ background: '#1A1B23', border: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 8px 30px rgba(0,0,0,0.25)' }}>
         {attachedImage && (
-          <div className="mb-2 inline-flex items-center gap-2 rounded-lg py-1 pl-1 pr-2 text-[12px]" style={{ background: '#14151F', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.8)' }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={attachedImage.url} alt={attachedImage.name} className="h-7 w-7 rounded object-cover" />
-            <span className="max-w-[160px] truncate">{attachedImage.name}</span>
-            <button type="button" aria-label="Remove image" onClick={() => setAttachedImage(null)} className="ml-1 opacity-60 hover:opacity-100"><X className="h-3.5 w-3.5" /></button>
+          <div className="mb-2 flex flex-col gap-1">
+            <div className="inline-flex items-center gap-2 rounded-lg py-1 pl-1 pr-2 text-[12px]" style={{ background: '#14151F', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.8)' }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={attachedImage.url} alt={attachedCharacter?.name ?? attachedImage.name} className="h-7 w-7 rounded object-cover" />
+              {characterSaving ? (
+                <span className="max-w-[160px] truncate italic" style={{ color: 'rgba(255,255,255,0.5)' }}>Saving as character…</span>
+              ) : attachedCharacter ? (
+                <input
+                  value={characterNameDraft}
+                  onChange={(e) => setCharacterNameDraft(e.target.value)}
+                  onBlur={() => void renameAttachedCharacter(characterNameDraft)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
+                    if (e.key === 'Escape') { setCharacterNameDraft(attachedCharacter.name); (e.target as HTMLInputElement).blur(); }
+                  }}
+                  disabled={characterNameSaving}
+                  aria-label="Character name"
+                  title="Saved as a Character — click to rename"
+                  className="max-w-[160px] shrink-0 truncate bg-transparent outline-none"
+                  style={{ color: '#E9E9F0' }}
+                />
+              ) : (
+                <span className="max-w-[160px] truncate">{attachedImage.name}</span>
+              )}
+              <button type="button" aria-label="Remove image" onClick={() => { setAttachedImage(null); setAttachedCharacter(null); setCharacterNameDraft(''); setCharacterRenameError(null); }} className="ml-1 opacity-60 hover:opacity-100"><X className="h-3.5 w-3.5" /></button>
+            </div>
+            {characterRenameError && (
+              <span className="pl-1 text-[11px]" style={{ color: '#F87171' }}>{characterRenameError}</span>
+            )}
           </div>
         )}
         <textarea

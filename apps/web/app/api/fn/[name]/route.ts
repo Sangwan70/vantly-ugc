@@ -22,6 +22,7 @@ const API_V2_ROUTES: Record<string, string> = {
   'stripe-portal': '/v1/billing/stripe-portal',
   'billing-history': '/v1/billing/billing-history',
   'auto-topup': '/v1/billing/auto-topup',
+  'character-from-upload': '/v1/characters/from-upload',
 };
 
 async function proxyToApiV2(name: string, method: 'GET' | 'POST', body?: unknown): Promise<NextResponse> {
@@ -115,6 +116,7 @@ const ALLOWED_FUNCTIONS = new Set([
   'billing-history',
   'feedback',
   'invite-redeem',
+  'character-from-upload',
 ]);
 
 const AUTH_REQUIRED_FUNCTIONS = new Set([
@@ -137,6 +139,7 @@ const AUTH_REQUIRED_FUNCTIONS = new Set([
   'subtitle-video',
   'billing-history',
   'invite-redeem',
+  'character-from-upload',
 ]);
 
 async function edgeFunctionErrorResponse(error: unknown, fallbackStatus = 502) {

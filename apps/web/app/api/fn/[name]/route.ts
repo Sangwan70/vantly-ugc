@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { randomUUID } from 'node:crypto';
 
 // This self-hosted stack's gateway (supabase/self-host-gateway/nginx.conf)
 // only proxies /auth/v1, /rest/v1, /storage/v1 — there is no Edge Functions
@@ -53,6 +54,43 @@ async function proxyToApiV2(name: string, method: 'GET' | 'POST', body?: unknown
       { status: 502 },
     );
   }
+}
+
+// upload-url is fundamentally a Supabase Storage operation (create a
+// signed upload URL for a user-owned object in the private
+// `generation-inputs` bucket) -- and /storage/v1 IS proxied by this
+// self-hosted gateway, unlike the Edge Functions runtime. So instead of
+// routing this through api-v2 (like API_V2_ROUTES above) or falling
+// through to the always-404ing supabase.functions.invoke(...), handle it
+// directly here with the per-request, user-authenticated Supabase client.
+async function handleUploadUrl(body: unknown): Promise<NextResponse> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json(
+      { error: 'unauthorized', error_description: 'Please sign in again before continuing.' },
+      { status: 401 },
+    );
+  }
+
+  const filename = typeof (body as { filename?: unknown })?.filename === 'string'
+    ? (body as { filename: string }).filename
+    : 'upload';
+  const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 200) || 'upload';
+  const storagePath = `${user.id}/${randomUUID()}-${safeName}`;
+
+  const { data, error } = await supabase.storage
+    .from('generation-inputs')
+    .createSignedUploadUrl(storagePath);
+
+  if (error || !data?.signedUrl) {
+    return NextResponse.json(
+      { error: 'sign_failed', error_description: error?.message ?? 'Failed to create upload URL' },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json({ upload_url: data.signedUrl, storage_path: data.path });
 }
 
 const ALLOWED_FUNCTIONS = new Set([
@@ -175,6 +213,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ nam
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
   const body = await req.json().catch(() => ({}));
+  if (name === 'upload-url') {
+    return handleUploadUrl(body);
+  }
   if (name in API_V2_ROUTES) {
     return proxyToApiV2(name, 'POST', body);
   }

@@ -172,6 +172,11 @@ export const SimpleSelfieToolInputSchema = z
     location: z.string().max(120).optional(),
     pose: z.string().max(120).optional(),
     aspect_ratio: z.enum(['9:16', '1:1']).default('9:16'),
+    // Optional voice-timbre reference (an R2-hosted .mp3, e.g. an ElevenLabs
+    // synthesis of the script in a chosen voice). When set, Seedance speaks in
+    // this voice (@Audio1) instead of its own default. Internally this is also
+    // how broll_talking_head carries take 1's native voice into later takes.
+    voice_ref_audio_url: z.string().url().optional(),
   })
   .refine((d) => Boolean(d.script) || Boolean(d.scene_action), {
     message: 'provide either script (what they say) or scene_action (what they do)',
@@ -422,6 +427,10 @@ export const BrollTalkingHeadToolInputSchema = z
     broll_start_time: z.number().min(0).max(25).optional(),
     // Fade the b-roll out (dissolve into the actor) at its end. Default false.
     broll_fade_out: z.boolean().optional(),
+    // Optional voice-timbre reference (an R2-hosted .mp3, e.g. an ElevenLabs
+    // synthesis of the script in a chosen voice). Only meaningful on the
+    // `script` path -- audio_url already IS the final speech track.
+    voice_ref_audio_url: z.string().url().optional(),
   })
   .refine((d) => Boolean(d.script) || Boolean(d.audio_url), {
     message: 'provide either script (Seedance voice) or audio_url (your own speech track)',

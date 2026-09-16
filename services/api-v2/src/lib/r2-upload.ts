@@ -229,6 +229,48 @@ export async function uploadUserImageBase64(
   };
 }
 
+export interface UploadedAudio {
+  url: string;
+  key: string;
+  bytes: number;
+  mime: 'audio/mpeg';
+}
+
+const MAX_AUDIO_UPLOAD_BYTES = 15 * 1024 * 1024; // 15 MB -- generous for a spoken-script mp3.
+
+/**
+ * Upload raw audio bytes (e.g. an ElevenLabs text-to-speech result) to R2 and
+ * return the public URL. No content-moderation gate here -- this is
+ * synthesized audio, not a user-supplied image, and the script text that
+ * produced it already flows through normal skill-input validation.
+ */
+export async function uploadUserAudioBuffer(
+  userId: string,
+  bytes: Buffer,
+  mime: 'audio/mpeg' = 'audio/mpeg',
+): Promise<UploadedAudio> {
+  if (bytes.byteLength === 0) throw new Error('r2: audio buffer is empty');
+  if (bytes.byteLength > MAX_AUDIO_UPLOAD_BYTES) {
+    throw new Error(`r2: audio too large (${bytes.byteLength} bytes, max ${MAX_AUDIO_UPLOAD_BYTES})`);
+  }
+  const env = readEnv();
+  const key = `vnext/uploads/${userId}/${randomUUID()}.mp3`;
+  await getClient().send(
+    new PutObjectCommand({
+      Bucket: env.bucket,
+      Key: key,
+      Body: bytes,
+      ContentType: mime,
+    }),
+  );
+  return {
+    url: `${env.publicUrl.replace(/\/+$/, '')}/${key}`,
+    key,
+    bytes: bytes.byteLength,
+    mime,
+  };
+}
+
 // ── SSRF-hardened fetch for user-supplied URLs ────────────────────────────────
 // A string/hostname blocklist is NOT enough: an attacker-controlled hostname can
 // resolve (via DNS A-record or a 302 redirect) to a private/internal address —

@@ -41,6 +41,7 @@ import { crazyLookRoute } from './routes/v2/crazy-look.js';
 import { characterCreateRoute, listCharactersRoute, updateCharacterRoute } from './routes/v2/characters.js';
 import { listMyCharactersRoute } from './routes/v1/characters.js';
 import { createCharacterFromUploadRoute } from './routes/v1/characters-from-upload.js';
+import { listElevenLabsVoicesRoute } from './routes/v1/voices.js';
 import { subtitleRoute } from './routes/v2/subtitle.js';
 import { jobStreamRoute } from './routes/v2/job-stream.js';
 import { generateRoute as looseGenerateRoute, quoteGenerateRoute } from './routes/v2/generate.js';
@@ -952,6 +953,7 @@ if (isPrimitivesRouteEnabled()) {
   app.delete('/v1/runs/:id', generateLimiter, authMiddleware, asyncHandler(deleteRunRoute));
   app.post('/v1/runs/purge-failed', generateLimiter, authMiddleware, asyncHandler(purgeFailedRunsRoute));
   app.get('/v1/characters', readLimiter, authMiddleware, listMyCharactersRoute);
+app.get('/v1/voices/elevenlabs', readLimiter, authMiddleware, listElevenLabsVoicesRoute);
   app.post('/v1/characters/from-upload', generateLimiter, authMiddleware, asyncHandler(createCharacterFromUploadRoute));
   app.get('/v1/me/api-keys', readLimiter, authMiddleware, listApiKeysRoute);
   app.post('/v1/me/api-keys', generateLimiter, authMiddleware, createApiKeyRoute);

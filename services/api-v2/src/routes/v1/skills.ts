@@ -9,6 +9,8 @@ import { getTemporalClient } from '../../orchestrator/temporal/client.js';
 import { getTemporalConfig } from '../../orchestrator/temporal/config.js';
 import { withTimeout } from '../../orchestrator/temporal/timeout.js';
 import { uploadUserImageBase64, uploadUserImageFromUrl, uploadUserVideoFromUrl } from '../../lib/r2-upload.js';
+import { uploadUserAudioBuffer } from '../../lib/r2-upload.js';
+import { synthesizeElevenLabsSpeech } from '../../lib/elevenlabs.js';
 import { ModerationError } from '../../lib/image-moderation.js';
 import { quoteSkillCredits, quoteInFlightPrimitiveRun } from '../../skills/credit-quotes.js';
 import { decideMakeUgcRoute, type MakeUgcProps } from '../../skills/make-ugc-router.js';
@@ -399,6 +401,27 @@ async function dispatchMakeUgc(
     return;
   }
 
+  // Voice Actor: synthesize a reference clip in the chosen ElevenLabs voice so
+  // Seedance speaks the script in that voice (voice_ref_audio_url) instead of
+  // its own default. make_product_in_hands has no such field yet, so it's
+  // skipped there rather than wasting an ElevenLabs call that would be dropped.
+  // Best-effort: a synthesis failure falls back to Seedance's default voice
+  // rather than failing the whole generation over a voiceover nicety.
+  if (props.voice_id && slug !== 'make_product_in_hands') {
+    const textForVoice = props.script ?? props.scene_action;
+    if (textForVoice) {
+      try {
+        const audioBytes = await synthesizeElevenLabsSpeech(props.voice_id, textForVoice, {
+          languageCode: props.language,
+        });
+        const uploaded = await uploadUserAudioBuffer(userId, audioBytes);
+        (body as Record<string, unknown>).voice_ref_audio_url = uploaded.url;
+      } catch (err) {
+        console.error(`[make_ugc] voice_id "${props.voice_id}" synthesis failed, falling back to default voice: ${errorMessage(err)}`);
+      }
+    }
+  }
+
   // Delegate to the normal flow with the resolved underlying slug + body.
   req.params.slug = slug;
   req.body = body;
@@ -768,6 +791,7 @@ async function dispatchMakeUgcVideo(
     aspect_ratio: body.aspect_ratio ?? '9:16',
     subtitles: body.subtitles ?? true,
     subtitles_style: body.subtitles_style ?? 'hormozi',
+    voice_ref_audio_url: body.voice_ref_audio_url,
   };
 
   let cfg: ReturnType<typeof getTemporalConfig>;
@@ -860,6 +884,7 @@ async function dispatchBrollTalkingHead(
     broll_width_rate: body.broll_width_rate,
     broll_start_time: body.broll_start_time,
     broll_fade_out: body.broll_fade_out,
+    voice_ref_audio_url: body.voice_ref_audio_url,
   };
 
   let cfg: ReturnType<typeof getTemporalConfig>;

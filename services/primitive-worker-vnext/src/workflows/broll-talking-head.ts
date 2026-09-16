@@ -63,6 +63,11 @@ export interface BrollTalkingHeadWorkflowInput {
   broll_width_rate?: number;
   broll_start_time?: number;
   broll_fade_out?: boolean;
+  /** Optional voice-timbre reference (R2 .mp3, e.g. an ElevenLabs synthesis) to
+   *  seed take 0's voice. Omit to let Seedance generate its own native voice
+   *  for take 0 (the existing default), which is then carried into later
+   *  takes exactly as before. */
+  voice_ref_audio_url?: string;
 }
 
 export interface BrollTalkingHeadWorkflowResult {
@@ -229,7 +234,10 @@ export async function brollTalkingHeadWorkflow(
   // Voice carry-over: take 0 generates a natural voice (Seedance native audio);
   // we extract it once and feed it to every later take as a timbre reference so
   // the SAME voice speaks throughout — consistent across cuts, no TTS.
-  let voiceRefAudioUrl: string | undefined;
+  // Seed with the caller-supplied voice reference (a chosen Voice Actor), if
+  // any -- otherwise take 0 falls back to Seedance's own native voice exactly
+  // as before, and that gets carried into later takes below.
+  let voiceRefAudioUrl: string | undefined = input.voice_ref_audio_url;
   // Clean, CONSISTENT face: every take is generated PRISTINE — purely from the
   // same references (portrait-led + character sheet) + one render-wide seed, with
   // NO frame/video conditioning between takes. Feeding a prior take's frame/clip

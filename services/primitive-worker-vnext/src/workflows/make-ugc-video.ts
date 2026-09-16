@@ -42,6 +42,9 @@ export interface MakeUgcVideoWorkflowInput {
   aspect_ratio: '9:16' | '1:1';
   subtitles?: boolean;
   subtitles_style?: 'hormozi' | 'tiktok' | 'minimal';
+  /** Optional voice-timbre reference (R2 .mp3, e.g. an ElevenLabs synthesis)
+   *  so Seedance speaks in this voice instead of its own default. */
+  voice_ref_audio_url?: string;
 }
 
 export interface MakeUgcVideoWorkflowResult {
@@ -221,6 +224,7 @@ async function makeUgcVideoImpl(
     user_id: input.user_id,
     skill_run_id: input.skill_run_id,
     portrait_url: portraitUrl,
+    voice_ref_audio_url: input.voice_ref_audio_url,
     input: {
       character_sheet_url: sheet.character_sheet_url,
       duration: input.duration,

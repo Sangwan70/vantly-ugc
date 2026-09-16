@@ -181,7 +181,11 @@ export function makeSimpleSelfieActivity(cfg: WorkerConfig) {
     // Voice carry-over: when a timbre reference is supplied, instruct Seedance to
     // SPEAK THE SCRIPT in that voice (not lip-sync to the literal track). The
     // @Audio1 tag is how Seedance 2.0 binds the reference audio in the prompt.
-    const voiceRef = activityInput.voice_ref_audio_url;
+    // Accept the voice reference either as the internal, workflow-driven
+    // sibling field (continuity across broll/podcast/storybook takes) or as
+    // a caller-supplied field in the validated schema body (the public
+    // make_ugc "Voice Actor" path) -- the sibling wins if somehow both are set.
+    const voiceRef = activityInput.voice_ref_audio_url ?? input.voice_ref_audio_url;
     if (voiceRef) {
       if (!voiceRef.startsWith(allowedPrefix)) {
         throw ApplicationFailure.nonRetryable(

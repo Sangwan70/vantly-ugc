@@ -54,6 +54,10 @@ export const MakeUgcVideoSkillInputSchema = z
     aspect_ratio: z.enum(['9:16', '1:1']).default('9:16'),
     subtitles: z.boolean().default(true),
     subtitles_style: z.enum(['hormozi', 'tiktok', 'minimal']).default('hormozi'),
+    // Optional voice-timbre reference (an R2-hosted .mp3, e.g. an ElevenLabs
+    // synthesis of the script in a chosen voice). When set, Seedance speaks in
+    // this voice instead of its own default.
+    voice_ref_audio_url: z.string().url().optional(),
   })
   .refine(
     (d) => {
@@ -148,6 +152,16 @@ export const MakeUgcSkillInputSchema = z
     look: z.enum(['natural', 'commercial', 'raw_iphone']).default('natural'),
     aspect_ratio: z.enum(['9:16', '1:1']).default('9:16'),
     music: z.union([z.boolean(), z.string().max(120)]).optional(),
+    voice_id: z
+      .string()
+      .max(64)
+      .describe('An ElevenLabs voice id to speak the script in that voice instead of the default. Call list_voices to get one.')
+      .optional(),
+    language: z
+      .string()
+      .max(10)
+      .describe('BCP-47 language code (e.g. "en", "hi", "es") for the spoken voice and captions. Omit for the default (English).')
+      .optional(),
   })
   .refine((d) => Boolean(d.script) || Boolean(d.scene_action), {
     message: 'provide either script (what they say) or scene_action (a silent clip)',

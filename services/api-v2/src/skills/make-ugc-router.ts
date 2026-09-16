@@ -33,6 +33,12 @@ export interface MakeUgcProps {
   look?: 'natural' | 'commercial' | 'raw_iphone';
   aspect_ratio?: '9:16' | '1:1';
   music?: boolean | string;
+  /** An ElevenLabs voice id. Resolved (synthesized + uploaded) by the async
+   *  run path into a voice_ref_audio_url on the routed body -- never touched
+   *  here, since this function stays pure/sync for the shared quote path. */
+  voice_id?: string;
+  /** BCP-47 language code, used for ElevenLabs synthesis + subtitle language. */
+  language?: string;
 }
 
 /** Placeholder for an identity URL the run path resolves before delegating; it

@@ -40,7 +40,11 @@ export interface LipSyncActivityResult {
 
 // Seedance reference-to-video with a provided audio track; comparable cost to
 // a short selfie clip.
-const ESTIMATED_USD = 1.2;
+// Roughly doubled from the prior mini-tier estimate now that the default
+// model (see EVOLINK_SEEDANCE_MODEL) is seedance-2.0-reference-to-video
+// (standard), not seedance-2.0-mini -- still an ESTIMATE for the budget
+// cap, not an exact EvoLink invoice number. Verify against real spend.
+const ESTIMATED_USD = 2.4;
 
 export function makeLipSyncActivity(cfg: WorkerConfig) {
   return async function lipSync(
@@ -241,7 +245,10 @@ export function makeLipSyncActivity(cfg: WorkerConfig) {
           mime: 'video/mp4',
           metadata: {
             provider: 'seedance-2-0',
-            model: process.env.EVOLINK_SEEDANCE_MODEL || 'seedance-2.0-mini-reference-to-video',
+            // Standard tier by default -- 'mini' is a draft/preview model (see the
+            // model catalog) that visibly loses identity fidelity vs the portrait/
+            // character-sheet references. Override via EVOLINK_SEEDANCE_MODEL.
+            model: process.env.EVOLINK_SEEDANCE_MODEL || 'seedance-2.0-reference-to-video',
             simulated: cfg.openai.simulate,
             aspect_ratio: input.aspect_ratio,
             source_image_url: input.image_url,

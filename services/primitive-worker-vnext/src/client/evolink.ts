@@ -155,7 +155,7 @@ export function extractEvolinkVideoUrl(task: Record<string, unknown>): string | 
 export async function generateSimpleSelfieEvolink(
   params: EvolinkVideoParams,
 ): Promise<{ videoUrl: string; taskId: string; raw: Record<string, unknown> }> {
-  const model = process.env.EVOLINK_SEEDANCE_MODEL || 'seedance-2.0-mini-reference-to-video';
+  const model = process.env.EVOLINK_SEEDANCE_MODEL || 'seedance-2.0-reference-to-video';
   // Hold a pooled provider slot for the WHOLE job (submit → completion) so we
   // never exceed a key's concurrent-task ceiling — the source of the submit 500s.
   return withEvolinkSlot(async (apiKey) => {
@@ -183,7 +183,7 @@ export async function generateLipSyncEvolink(
     duration?: 5 | 10 | 15;
   },
 ): Promise<{ videoUrl: string; taskId: string; raw: Record<string, unknown> }> {
-  const model = process.env.EVOLINK_SEEDANCE_MODEL || 'seedance-2.0-mini-reference-to-video';
+  const model = process.env.EVOLINK_SEEDANCE_MODEL || 'seedance-2.0-reference-to-video';
   const prompt =
     'The person in the reference image speaks directly to the camera, mouth lip-synced precisely to the speech in @audio1. Natural head movement and micro-expressions. Flat, soft, even everyday indoor light — no studio lighting, no glare, no glossy or shiny sheen on the skin, matte natural skin texture. Vertical close-up, candid phone-camera look.';
   return withEvolinkSlot(async (apiKey) => {

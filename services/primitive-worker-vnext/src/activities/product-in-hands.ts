@@ -26,10 +26,15 @@ export interface ProductInHandsActivityResult {
   duration_seconds: 5 | 10 | 15;
 }
 
+// Roughly doubled from the prior mini-tier estimate now that the default
+// model (see EVOLINK_SEEDANCE_MODEL) is seedance-2.0-reference-to-video
+// (standard), not seedance-2.0-mini -- these are still ESTIMATES for the
+// per-render/per-day budget cap, not exact EvoLink invoice numbers. Verify
+// against real spend after the model-tier change and tighten if it drifts.
 const PER_DURATION_USD: Record<5 | 10 | 15, number> = {
-  5: 0.6,
-  10: 1.2,
-  15: 1.8,
+  5: 1.2,
+  10: 2.4,
+  15: 3.6,
 };
 
 export function makeProductInHandsActivity(cfg: WorkerConfig) {
@@ -231,7 +236,10 @@ export function makeProductInHandsActivity(cfg: WorkerConfig) {
         mime: 'video/mp4',
         metadata: {
           provider: 'seedance-2-0',
-          model: process.env.EVOLINK_SEEDANCE_MODEL || 'seedance-2.0-mini-reference-to-video',
+          // Standard tier by default -- 'mini' is a draft/preview model (see the
+          // model catalog) that visibly loses identity fidelity vs the portrait/
+          // character-sheet references. Override via EVOLINK_SEEDANCE_MODEL.
+          model: process.env.EVOLINK_SEEDANCE_MODEL || 'seedance-2.0-reference-to-video',
           simulated: cfg.openai.simulate,
           aspect_ratio: input.aspect_ratio,
           duration_seconds: input.duration,

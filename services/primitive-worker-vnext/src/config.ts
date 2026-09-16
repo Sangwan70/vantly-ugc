@@ -99,7 +99,12 @@ export function getConfig(): WorkerConfig {
       // In simulate mode the key is not required — keep an empty placeholder
       // so type stays string and the activity short-circuits before any call.
       apiKey: simulate ? (optional('OPENAI_API_KEY') ?? 'simulate') : required('OPENAI_API_KEY'),
-      imageModel: optional('OPENAI_IMAGE_MODEL') ?? 'gpt-image-2',
+      // gpt-image-2.5 is the platform's current default per the model
+      // catalog (packages/schema/src/v2/models.ts) and holds identity
+      // better than gpt-image-2 -- portrait/character-sheet generation
+      // is what every downstream video render conditions on, so a weaker
+      // image model here compounds into a weaker video.
+      imageModel: optional('OPENAI_IMAGE_MODEL') ?? 'gpt-image-2.5',
       simulate,
       // The worker's own egress to api.openai.com is broken (persistent
       // HeadersTimeout from this container). gpt-image calls are proxied through

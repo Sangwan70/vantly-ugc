@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { randomUUID } from 'node:crypto';
+import { toPublicStorageUrl } from '@/lib/supabase/public-url';
 
 // This self-hosted stack's gateway (supabase/self-host-gateway/nginx.conf)
 // only proxies /auth/v1, /rest/v1, /storage/v1 — there is no Edge Functions
@@ -91,7 +92,10 @@ async function handleUploadUrl(body: unknown): Promise<NextResponse> {
     );
   }
 
-  return NextResponse.json({ upload_url: data.signedUrl, storage_path: data.path });
+  // signedUrl is built from the server client's base URL, which is the
+  // internal docker-network address (see toPublicStorageUrl's comment) --
+  // rewrite it to the public origin before handing it to the browser.
+  return NextResponse.json({ upload_url: toPublicStorageUrl(data.signedUrl), storage_path: data.path });
 }
 
 const ALLOWED_FUNCTIONS = new Set([

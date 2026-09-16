@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { toPublicStorageUrl } from '@/lib/supabase/public-url';
 
 const SIGNED_URL_TTL_SECONDS = 6 * 60 * 60;
 
@@ -59,5 +60,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  return NextResponse.json({ signed_url: data.signedUrl, expires_in: SIGNED_URL_TTL_SECONDS });
+  // signedUrl is built from the server client's internal docker-network
+  // base URL -- rewrite to the public origin before handing it to the
+  // browser (see toPublicStorageUrl's comment for why).
+  return NextResponse.json({ signed_url: toPublicStorageUrl(data.signedUrl), expires_in: SIGNED_URL_TTL_SECONDS });
 }

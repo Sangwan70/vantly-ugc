@@ -27,8 +27,31 @@ export function makeComposedSkillStateActivity(cfg: WorkerConfig) {
     if (input.error_code) patch.error_code = input.error_code;
     if (input.error_message) patch.error_message = input.error_message;
     if (Object.keys(patch).length === 0) return;
-    const { error } = await db.from('skill_runs').update(patch).eq('id', input.skill_run_id);
+
+    // Guard against resurrecting a run some OTHER writer already finalized.
+    // The dispatch route races (does not cancel) workflow.start() against a
+    // short RPC timeout (routes/v1/skills.ts's withTimeout); if that races
+    // out, markSkillRunDispatchFailed (routes/v1/runs.ts) marks the row
+    // 'failed' even though the workflow actually started server-side. That
+    // workflow's very first activity call here is an unconditional
+    // {status:'running'} -- without this guard it silently stomps the
+    // 'failed' row back to 'running', and the run appears stuck forever on
+    // the run-detail page even though the jobs list already (correctly)
+    // reported it failed. Skip the write entirely when the row is already
+    // terminal, UNLESS this update is itself finalizing it to a terminal
+    // status (a genuine late failure/success report is always allowed).
+    const TERMINAL_STATUSES = ['succeeded', 'failed', 'canceled'];
+    const finalizingToTerminal = input.status !== undefined && TERMINAL_STATUSES.includes(input.status);
+    let query = db.from('skill_runs').update(patch).eq('id', input.skill_run_id);
+    if (!finalizingToTerminal) {
+      query = query.not('status', 'in', `(${TERMINAL_STATUSES.join(',')})`);
+    }
+    const { error, data } = await query.select('id');
     if (error) throw new Error(`skill_runs update failed: ${error.message}`);
+    if (!finalizingToTerminal && (!data || data.length === 0)) {
+      // Guard suppressed the write -- the row was already terminal. Benign.
+      return;
+    }
 
     // #40: surface persisted run failures in Sentry. Activity throws are
     // already captured (#38), but a run RECORDED as failed (with a classified

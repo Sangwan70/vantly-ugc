@@ -99,12 +99,18 @@ export function getConfig(): WorkerConfig {
       // In simulate mode the key is not required — keep an empty placeholder
       // so type stays string and the activity short-circuits before any call.
       apiKey: simulate ? (optional('OPENAI_API_KEY') ?? 'simulate') : required('OPENAI_API_KEY'),
-      // gpt-image-2.5 is the platform's current default per the model
-      // catalog (packages/schema/src/v2/models.ts) and holds identity
-      // better than gpt-image-2 -- portrait/character-sheet generation
-      // is what every downstream video render conditions on, so a weaker
-      // image model here compounds into a weaker video.
-      imageModel: optional('OPENAI_IMAGE_MODEL') ?? 'gpt-image-2.5',
+      // NOTE: this is the LITERAL OpenAI API model string, sent as-is to
+      // images.generate/.edit -- NOT the model catalog's friendly id.
+      // packages/schema/src/v2/models.ts's 'gpt-image-2.5' catalog entry
+      // maps to providerModel 'gpt-image-2.5-sunburst'; OpenAI has no bare
+      // "gpt-image-2.5" model and 400s on it (confirmed against OpenAI's
+      // own docs: the two real ids are gpt-image-2.5-sunburst and
+      // gpt-image-2.5-flare). Default to sunburst, the higher-fidelity of
+      // the two -- portrait/character-sheet generation is what every
+      // downstream video render conditions on, so a weaker image model
+      // here compounds into a weaker video; flare trades some of that
+      // fidelity for ~50% faster generation.
+      imageModel: optional('OPENAI_IMAGE_MODEL') ?? 'gpt-image-2.5-sunburst',
       simulate,
       // The worker's own egress to api.openai.com is broken (persistent
       // HeadersTimeout from this container). gpt-image calls are proxied through

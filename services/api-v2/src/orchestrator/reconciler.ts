@@ -27,6 +27,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import * as Sentry from '@sentry/node';
 import { getReconcilerConfig, type ReconcilerConfig } from './temporal/config.js';
 
 const DISPATCH_FAILED_PENDING_REFUND = 'DISPATCH_FAILED_PENDING_REFUND';
@@ -259,6 +260,14 @@ export function startReconciler(opts: StartReconcilerOptions): ReconcilerHandle 
           alreadyRefunded: fastPath.alreadyRefunded,
           refundFailures: fastPath.refundFailures,
         });
+        // Milestone 1, item 3 (reliability spec audit): this reconciler was
+        // the one of the three (generation_jobs/primitive_runs/skill_runs)
+        // with no Sentry alert at all -- the other two fire on both a sweep
+        // error and a genuine recovery. Matching that here closes the gap.
+        Sentry.captureMessage(
+          `reconciler: submitted fast-path encountered errors (${fastPath.error})`,
+          { level: 'error', extra: { thresholdMinutes: cfg.thresholdMinutes, ...fastPath } },
+        );
       } else if (fastPath.recovered > 0 || fastPath.alreadyRefunded > 0) {
         log('submitted fast-path settled jobs', {
           recovered: fastPath.recovered,
@@ -266,6 +275,10 @@ export function startReconciler(opts: StartReconcilerOptions): ReconcilerHandle 
           alreadyRefunded: fastPath.alreadyRefunded,
           thresholdMinutes: cfg.thresholdMinutes,
         });
+        Sentry.captureMessage(
+          `reconciler: settled ${fastPath.recovered} stuck generation_jobs past ${cfg.thresholdMinutes}min (refunded ${fastPath.refunded}, already_refunded ${fastPath.alreadyRefunded}, refund_failures ${fastPath.refundFailures})`,
+          { level: 'warning', extra: { thresholdMinutes: cfg.thresholdMinutes, ...fastPath } },
+        );
       }
 
       const result = await reconcileStuckJobs(opts.supabase, cfg.processingThresholdMinutes);
@@ -274,11 +287,19 @@ export function startReconciler(opts: StartReconcilerOptions): ReconcilerHandle 
           error: result.error,
           thresholdMinutes: cfg.processingThresholdMinutes,
         });
+        Sentry.captureMessage(
+          `reconciler: recover_stuck_jobs RPC failed (${result.error})`,
+          { level: 'error', extra: { thresholdMinutes: cfg.processingThresholdMinutes } },
+        );
       } else if (result.recovered > 0) {
         log('recovered stuck jobs', {
           recovered: result.recovered,
           thresholdMinutes: cfg.processingThresholdMinutes,
         });
+        Sentry.captureMessage(
+          `reconciler: recovered ${result.recovered} stuck generation_jobs past ${cfg.processingThresholdMinutes}min via recover_stuck_jobs RPC`,
+          { level: 'warning', extra: { thresholdMinutes: cfg.processingThresholdMinutes, recovered: result.recovered } },
+        );
       }
       return { recovered: fastPath.recovered + result.recovered, ...(result.error ? { error: result.error } : {}) };
     } catch (err) {

@@ -16,6 +16,7 @@ import { quoteSkillCredits, quoteInFlightPrimitiveRun } from '../../skills/credi
 import { decideMakeUgcRoute, type MakeUgcProps } from '../../skills/make-ugc-router.js';
 import { isAdminEmail } from '../../lib/admin-allowlist.js';
 import { recordSkillRunStatusEvent } from '../../lib/skill-run-status-events.js';
+import { deriveEffectiveSkillRunStatus } from '../../lib/skill-run-status.js';
 
 /**
  * Credits already COMMITTED to the user's in-flight (submitted/running) jobs.
@@ -1288,19 +1289,24 @@ export async function getSkillRunRoute(req: Request, res: Response): Promise<voi
     res.status(500).json({ error: 'steps_lookup_failed', detail: stepsErr.message });
     return;
   }
+  const stepRows = steps ?? [];
+  const { status: effectiveStatus, error: effectiveError } = deriveEffectiveSkillRunStatus(
+    { status: run.status, error_code: run.error_code, error_message: run.error_message },
+    stepRows,
+  );
   res.status(200).json({
     skill_run_id: run.id,
     skill: run.skill_slug,
     skill_version: run.skill_version,
-    status: run.status,
+    status: effectiveStatus,
     current_step: run.current_step,
     started_at: run.started_at,
     finished_at: run.finished_at,
     created_at: run.created_at,
-    error: run.error_code ? { code: run.error_code, message: run.error_message } : null,
+    error: effectiveError,
     // Strip our internal provider USD cost — users only ever see credit cost.
     final_output: stripUsdFields(run.final_output),
-    steps: (steps ?? []).map((s) => ({
+    steps: stepRows.map((s) => ({
       primitive_run_id: s.id,
       primitive: s.primitive_id,
       status: s.status,

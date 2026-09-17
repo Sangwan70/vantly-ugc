@@ -196,6 +196,11 @@ export function RunPanel({
     e.preventDefault();
     if (!form) return;
     setSubmitErr(null);
+    // Safety net: the button is already disabled while this is non-null
+    // (see liveValidationMsg below), but re-check here too in case values
+    // changed between render and click.
+    const preflightMsg = form.validate?.(values);
+    if (preflightMsg) { setSubmitErr(preflightMsg); return; }
     setSubmitting(true);
     const body: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(values)) {
@@ -274,6 +279,10 @@ export function RunPanel({
   // normal stacked layout.
   const pillFields = form?.fields.filter((f) => f.kind === 'toggle' || f.kind === 'expandable') ?? [];
   const stackedFields = form?.fields.filter((f) => f.kind !== 'toggle' && f.kind !== 'expandable') ?? [];
+  // Recomputed every render (cheap, plain string checks) so the Generate
+  // button disables itself the instant an unmet requirement appears,
+  // rather than only after a failed submit. See SkillForm.validate.
+  const liveValidationMsg = form?.validate ? form.validate(values) : null;
 
   return (
     <div className="flex flex-col gap-4 rounded-2xl p-5" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#14151F' }}>
@@ -290,13 +299,18 @@ export function RunPanel({
               ))}
             </div>
           )}
+          {!submitErr && liveValidationMsg && (
+            <div className="rounded-lg px-3 py-2 text-xs" style={{ border: '1px solid rgba(251,191,36,0.35)', backgroundColor: 'rgba(251,191,36,0.08)', color: '#FCD34D' }}>
+              {liveValidationMsg}
+            </div>
+          )}
           {submitErr && (
             <div className="rounded-lg px-3 py-2 text-xs" style={{ border: '1px solid rgba(255,79,79,0.3)', backgroundColor: 'rgba(255,79,79,0.08)', color: '#FCA5A5' }}>
               {submitErr}
             </div>
           )}
           <div className="flex items-center justify-end">
-            <button type="submit" disabled={submitting} className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors" style={{ backgroundColor: submitting ? 'rgba(167,139,250,0.4)' : '#A78BFA', color: '#0F1015' }}>
+            <button type="submit" disabled={submitting || Boolean(liveValidationMsg)} title={liveValidationMsg ?? undefined} className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50" style={{ backgroundColor: submitting || liveValidationMsg ? 'rgba(167,139,250,0.4)' : '#A78BFA', color: '#0F1015' }}>
               {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
               {submitLabel}
             </button>

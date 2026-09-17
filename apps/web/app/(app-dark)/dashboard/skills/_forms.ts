@@ -73,12 +73,75 @@ export interface SkillForm {
    *  a typed Person description AND an attached photo 400'd with "pass at
    *  most one of person, image, or character"). */
   exclusiveGroups?: string[][];
+  /** Cross-field check for backend invariants too conditional for a
+   *  static `required` flag (e.g. make_ugc's "a long script needs a real
+   *  face, not just a text description" — only true once the script gets
+   *  long, or once a b-roll URL / product photo is set). Returns a
+   *  message to show and block submit on, or null once satisfied.
+   *  RunPanel re-runs it on every change so the Generate button disables
+   *  itself live instead of letting the user hit a 400 first. */
+  validate?: (values: Record<string, unknown>) => string | null;
+}
+
+// Mirrors SINGLE_CLIP_MAX_WORDS / isLongScript in
+// services/api-v2/src/skills/make-ugc-router.ts — a script this long needs
+// the multi-take engine, which (per dispatchMakeUgc in
+// services/api-v2/src/routes/v1/skills.ts) requires a real face (a photo
+// or a saved character), not just a text description. Keep both in sync.
+const SINGLE_CLIP_MAX_WORDS = 33;
+function isLongScript(script: string): boolean {
+  if (!script) return false;
+  if (/(?:^|\n)\s*---\s*(?:\n|$)/.test(script)) return true;
+  return script.trim().split(/\s+/).filter(Boolean).length > SINGLE_CLIP_MAX_WORDS;
+}
+
+/**
+ * Mirrors the identity requirements decideMakeUgcRoute()
+ * (services/api-v2/src/skills/make-ugc-router.ts) actually enforces per
+ * route, so the composer can require the right thing BEFORE submit
+ * instead of surfacing whatever 400 the server happens to send back:
+ *  - a product photo routes to make_product_in_hands, which only ever
+ *    resolves a SAVED CHARACTER as the holder — an attached photo or a
+ *    person description is silently useless there.
+ *  - a b-roll URL, or a script long enough to need multiple takes, routes
+ *    to make_broll_talking_head, which needs a consistent face across
+ *    takes — a photo or a saved character, never just a text description.
+ *  - a silent clip (scene_action, no script) only reaches an engine that
+ *    plays it when a saved character is attached; without one the action
+ *    is silently dropped rather than rejected, which is worse than a 400.
+ */
+function validateMakeUgc(v: Record<string, unknown>): string | null {
+  const script = String(v.script ?? '').trim();
+  const sceneAction = String(v.scene_action ?? '').trim();
+  const character = String(v.character ?? '').trim();
+  const image = String(v.image ?? '').trim();
+  const productImage = String(v.product_image ?? '').trim();
+  const brollUrl = String(v.broll_url ?? '').trim();
+  const hasFace = Boolean(image) || Boolean(character);
+
+  if (!script && !sceneAction) {
+    return 'Add a script (what they say) or a silent-clip action before generating.';
+  }
+  if (productImage && !character) {
+    return 'A product video needs a saved character to hold it — pick one under "Use Saved Characters".';
+  }
+  if (brollUrl && !hasFace) {
+    return 'A b-roll video needs a face to narrate it — attach a photo (the + on the script box) or pick a saved character.';
+  }
+  if (script && isLongScript(script) && !hasFace) {
+    return 'This script is long enough to need multiple takes, which needs a consistent face — a text description alone isn\u2019t enough. Attach a photo (the + on the script box) or pick a saved character.';
+  }
+  if (sceneAction && !script && !character) {
+    return 'A silent clip needs a saved character to perform it — pick one under "Use Saved Characters".';
+  }
+  return null;
 }
 
 export const FORMS: Record<string, SkillForm> = {
   make_ugc: {
     composed: true,
     exclusiveGroups: [['person', 'image', 'character']],
+    validate: validateMakeUgc,
     fields: [
       { kind: 'script-ai', name: 'script', label: 'Script — what they say', placeholder: 'Paste your script here, or type your idea and click the sparkle to generate one…', help: 'Any length — a line makes one clip, a monologue makes a multi-take video. Never trimmed.', photoFieldName: 'image' },
       { kind: 'text', name: 'scene_action', label: '…or a silent clip (instead of a script)', placeholder: 'dancing freestyle, smiling at camera', help: 'Use instead of a script for a non-speech clip. Needs a saved character.' },

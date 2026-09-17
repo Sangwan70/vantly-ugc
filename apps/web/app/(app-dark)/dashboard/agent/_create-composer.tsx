@@ -58,8 +58,6 @@ const IDENTITY_FIELDS_BY_TYPE: Record<VideoType, string[]> = {
 
 const ALL_IDENTITY_FIELDS = ['script', 'scene_action', 'person', 'product_image', 'broll_url'];
 
-const REQUIRED_CHARACTER_TYPES = new Set<VideoType>(['product', 'silent_action']);
-
 export const MAKE_UGC_ENTRY: SkillEntry = {
   slug: 'make_ugc',
   name: 'Vantly UGC Video',
@@ -95,7 +93,7 @@ export function CreateComposer({ onGenerate, onUseSavedPrompt, onRunDifferentSki
       if (ALL_IDENTITY_FIELDS.includes(f.name)) return allowedIdentity.has(f.name);
       return true;
     });
-    return { fields, composed: FORMS.make_ugc.composed, exclusiveGroups: FORMS.make_ugc.exclusiveGroups };
+    return { fields, composed: FORMS.make_ugc.composed, exclusiveGroups: FORMS.make_ugc.exclusiveGroups, validate: FORMS.make_ugc.validate };
   }, [videoType]);
 
   return (
@@ -111,12 +109,6 @@ export function CreateComposer({ onGenerate, onUseSavedPrompt, onRunDifferentSki
         </select>
         <span>using exactly this script..</span>
       </div>
-
-      {REQUIRED_CHARACTER_TYPES.has(videoType) && (
-        <p className="text-[12.5px]" style={{ color: 'rgba(255,255,255,0.5)' }}>
-          This type needs a saved character — pick one under &quot;Use Saved Characters&quot; below.
-        </p>
-      )}
 
       <RunPanel
         key={`${videoType}-${platform}`}

@@ -284,15 +284,32 @@ export async function agentRoute(req: Request, res: Response): Promise<void> {
     return { ok: true, stop_reason: d.stop_reason ?? 'end_turn', content };
   }
 
-  try {
-    let result = await callOnce();
-    // A 200 with an empty content[] is rare and (per the investigation above)
-    // often transient — retry once before surfacing an error, so a one-off
-    // provider hiccup self-heals instead of dead-ending the chat.
-    if (!result.ok && result.body.error === 'agent_empty_response') {
-      console.warn('[agent] retrying once after empty content[]');
-      result = await callOnce();
+  // Milestone 1, item 2 (Video Generation Flow audit): generalizes what was
+  // a narrow "retry once on empty content[]" into "retry once on any
+  // transient failure of the first attempt" -- a genuine gap before this:
+  // a 60s timeout or a 5xx/network drop on the FIRST call went straight to
+  // the client with zero retry, unlike the empty-content case a few lines
+  // above which already self-healed. Deliberately NOT a cross-model
+  // fallback like assist.ts's -- this call carries a large tool-calling
+  // system prompt and an ask_user card convention a faster/cheaper model
+  // isn't validated against mid-conversation, so staying on the same MODEL
+  // and retrying once is the safer generalization of the pattern here; see
+  // the Milestone 1 model-fallback audit doc for the full per-call
+  // reasoning across every external AI call in this codebase.
+  async function callWithRetry(): Promise<Awaited<ReturnType<typeof callOnce>>> {
+    try {
+      const first = await callOnce();
+      if (first.ok) return first;
+      console.warn(`[agent] retrying once after ${first.body.error}`);
+      return await callOnce();
+    } catch (err) {
+      console.warn(`[agent] retrying once after thrown error: ${(err as Error).message}`);
+      return await callOnce();
     }
+  }
+
+  try {
+    const result = await callWithRetry();
     if (!result.ok) {
       res.status(result.status).json(result.body);
       return;

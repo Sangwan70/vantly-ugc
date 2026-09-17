@@ -35,7 +35,14 @@ export type Field =
   // right edge. Treats the CURRENT text as a one-line pitch, drafts a full
   // script via POST /v1/assist/draft-script, and replaces the box's
   // content with the result (still editable afterward).
-  | { kind: 'script-ai'; name: string; label: string; placeholder?: string; help?: string }
+  | {
+      kind: 'script-ai'; name: string; label: string; placeholder?: string; help?: string;
+      // Name of a sibling `image` field this box's "+" menu can also set
+      // (reads a file straight to a base64 data URL, same as the `image`
+      // kind) — lets the photo-upload path live inside the script box's
+      // own corner button instead of a separate always-visible drop-zone.
+      photoFieldName?: string;
+    }
   // Voice Actor picker: lists ElevenLabs voices (GET /v1/voices/elevenlabs)
   // with a play-preview per voice. Value is a bare ElevenLabs voice_id, or
   // '' for the default AI voice.
@@ -65,11 +72,9 @@ export const FORMS: Record<string, SkillForm> = {
   make_ugc: {
     composed: true,
     fields: [
-      { kind: 'script-ai', name: 'script', label: 'Script — what they say', placeholder: 'Paste your script here, or type your idea and click the sparkle to generate one…', help: 'Any length — a line makes one clip, a monologue makes a multi-take video. Never trimmed.' },
+      { kind: 'script-ai', name: 'script', label: 'Script — what they say', placeholder: 'Paste your script here, or type your idea and click the sparkle to generate one…', help: 'Any length — a line makes one clip, a monologue makes a multi-take video. Never trimmed.', photoFieldName: 'image' },
       { kind: 'text', name: 'scene_action', label: '…or a silent clip (instead of a script)', placeholder: 'dancing freestyle, smiling at camera', help: 'Use instead of a script for a non-speech clip. Needs a saved character.' },
-      { kind: 'text', name: 'person', label: 'Person (describe in words)', placeholder: 'a friendly young woman, soft daylight', help: 'OR upload a photo / reuse a saved character below — at most one.' },
-      { kind: 'image', name: 'image', label: '…or upload a photo of the person', help: 'The face is locked to it.' },
-      { kind: 'character-picker', name: 'character', label: '…or reuse a saved character', placeholder: 'char_… or a character_sheet_url', help: 'Pick a saved character or stock actor, or paste an id/URL.' },
+      { kind: 'text', name: 'person', label: 'Person (describe in words)', placeholder: 'a friendly young woman, soft daylight', help: 'OR attach a photo (the + on the script box) / use a saved character below — at most one.' },
       { kind: 'image', name: 'product_image', label: 'Product photo', help: 'A photo of the product to show/hold — turns this into a product ad. Needs a character above to hold it.' },
       { kind: 'text', name: 'broll_url', label: 'B-roll video URL', placeholder: 'https://…mp4 — narrated overlay / review', help: 'The person narrates over this footage.' },
       { kind: 'text', name: 'name', label: 'Name / vibe hint (optional)', placeholder: 'Sophia, 28' },
@@ -77,6 +82,9 @@ export const FORMS: Record<string, SkillForm> = {
       // RunPanel), matching the "Background music +", "Language +", …
       // reference layout: tap a pill to reveal just that one setting,
       // tap again to collapse it. Order matches the original spec list.
+      { kind: 'expandable', name: '_character_exp', label: 'Use Saved Characters',
+        child: { kind: 'character-picker', name: 'character', label: 'Saved character / stock actor', placeholder: 'char_… or a character_sheet_url', help: 'Pick a saved character or stock actor, or paste an id/URL.' },
+      },
       { kind: 'toggle', name: 'background_music', label: 'Background Music', defaultValue: false },
       { kind: 'expandable', name: '_language_exp', label: 'Language',
         child: { kind: 'select', name: 'language', label: 'Language', options: ['en', 'es', 'hi', 'fr', 'de', 'pt', 'ar', 'ja', 'ko', 'zh'], defaultValue: 'en', help: 'Spoken-voice and subtitle language.' },

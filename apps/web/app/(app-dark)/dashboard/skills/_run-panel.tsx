@@ -20,7 +20,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Loader2, Play, Sparkles, Volume2 } from 'lucide-react';
+import { Loader2, Play, Plus, Sparkles, UploadCloud, Volume2, Wand2, Wrench, X } from 'lucide-react';
 import type { Field } from './_forms';
 
 interface CharacterItem { name: string; description: string; ref: string; ref_base64: string }
@@ -134,6 +134,8 @@ export function RunPanel({
   initialValues,
   submitLabel = 'Run skill',
   hideHeading,
+  onUseSavedPrompt,
+  onRunDifferentSkill,
 }: {
   skill: SkillEntry;
   form?: { fields: Field[]; composed: boolean };
@@ -151,6 +153,10 @@ export function RunPanel({
    *  the agent composer) that already has its own prominent title above
    *  this panel, so a second generic heading doesn't compete with it. */
   hideHeading?: boolean;
+  /** Wired into the script-ai field's "+" menu, alongside its built-in
+   *  photo upload — omit either to just not show that menu item. */
+  onUseSavedPrompt?: () => void;
+  onRunDifferentSkill?: () => void;
 }) {
   const initial = useMemo(() => {
     const o: Record<string, unknown> = {};
@@ -241,16 +247,13 @@ export function RunPanel({
       {form ? (
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           {stackedFields.map((f) => (
-            <FieldRow key={f.name} field={f} value={values[f.name]} allValues={values} onChange={(v) => onChangeAny(f.name, v)} onChangeAny={onChangeAny} />
+            <FieldRow key={f.name} field={f} value={values[f.name]} allValues={values} onChange={(v) => onChangeAny(f.name, v)} onChangeAny={onChangeAny} onUseSavedPrompt={onUseSavedPrompt} onRunDifferentSkill={onRunDifferentSkill} />
           ))}
           {pillFields.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>Settings</span>
-              <div className="flex flex-wrap items-start gap-2">
-                {pillFields.map((f) => (
-                  <FieldRow key={f.name} field={f} value={values[f.name]} allValues={values} onChange={(v) => onChangeAny(f.name, v)} onChangeAny={onChangeAny} />
-                ))}
-              </div>
+            <div className="flex flex-wrap items-start gap-2">
+              {pillFields.map((f) => (
+                <FieldRow key={f.name} field={f} value={values[f.name]} allValues={values} onChange={(v) => onChangeAny(f.name, v)} onChangeAny={onChangeAny} />
+              ))}
             </div>
           )}
           {submitErr && (
@@ -302,7 +305,10 @@ export function RunPanel({
   );
 }
 
-function FieldRow({ field, value, onChange, allValues, onChangeAny }: { field: Field; value: unknown; onChange: (v: unknown) => void; allValues?: Record<string, unknown>; onChangeAny?: (name: string, v: unknown) => void }) {
+function FieldRow({ field, value, onChange, allValues, onChangeAny, onUseSavedPrompt, onRunDifferentSkill }: {
+  field: Field; value: unknown; onChange: (v: unknown) => void; allValues?: Record<string, unknown>; onChangeAny?: (name: string, v: unknown) => void;
+  onUseSavedPrompt?: () => void; onRunDifferentSkill?: () => void;
+}) {
   const inputStyle: React.CSSProperties = { backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 10px', fontSize: 13, width: '100%' };
   const labelEl = (
     <label className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>{field.label}{('required' in field && field.required) ? ' *' : ''}</label>
@@ -345,7 +351,7 @@ function FieldRow({ field, value, onChange, allValues, onChangeAny }: { field: F
     return <CharacterPickerField field={field} value={value} onChange={onChange} />;
   }
   if (field.kind === 'script-ai') {
-    return <ScriptAiField field={field} value={value} onChange={onChange} />;
+    return <ScriptAiField field={field} value={value} onChange={onChange} allValues={allValues} onChangeAny={onChangeAny} onUseSavedPrompt={onUseSavedPrompt} onRunDifferentSkill={onRunDifferentSkill} />;
   }
   if (field.kind === 'voice-picker') {
     return <VoicePickerField field={field} value={value} onChange={onChange} />;
@@ -649,19 +655,37 @@ function CharacterPickerField({ field, value, onChange }: { field: Extract<Field
 
 
 /**
- * A script textarea with a hover-reveal "Generate with AI" sparkle at its
- * right edge (mouse-over the field, or focus it on touch). Treats whatever
- * is currently typed as a one-line pitch/idea, drafts a full spoken script
- * via POST /v1/assist/draft-script, and replaces the box's content with the
- * result -- still a plain editable textarea afterward, so the user can
- * paste their own script here just as easily as generating one.
+ * The main script textarea. Two corner buttons live INSIDE the box itself
+ * rather than as separate rows above/below it, so this one control covers
+ * everything the reference layout asked for:
+ *  - bottom-left "+": a menu for attaching a photo of the person (reads
+ *    straight to a base64 data URL into the sibling field named by
+ *    `field.photoFieldName`, same as the old always-visible `image` drop
+ *    zone used to), plus, when the caller wired them up, jumping to "use a
+ *    saved prompt" / "run a different skill" — the same three things the
+ *    classic chat composer's own "+" offered, now reachable without
+ *    leaving this guided form.
+ *  - bottom-right sparkle: "Generate with AI" — treats whatever's typed as
+ *    a one-line pitch, drafts a full spoken script via
+ *    POST /v1/assist/draft-script, and replaces the box's content with the
+ *    result (still a plain editable textarea afterward).
  */
-function ScriptAiField({ field, value, onChange }: { field: Extract<Field, { kind: 'script-ai' }>; value: unknown; onChange: (v: unknown) => void }) {
-  const inputStyle: React.CSSProperties = { backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 40px 8px 10px', fontSize: 13, width: '100%' };
-  const [hover, setHover] = useState(false);
+function ScriptAiField({ field, value, onChange, allValues, onChangeAny, onUseSavedPrompt, onRunDifferentSkill }: {
+  field: Extract<Field, { kind: 'script-ai' }>;
+  value: unknown;
+  onChange: (v: unknown) => void;
+  allValues?: Record<string, unknown>;
+  onChangeAny?: (name: string, v: unknown) => void;
+  onUseSavedPrompt?: () => void;
+  onRunDifferentSkill?: () => void;
+}) {
+  const inputStyle: React.CSSProperties = { backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '10px 44px 40px 10px', fontSize: 13, width: '100%' };
   const [drafting, setDrafting] = useState(false);
   const [draftErr, setDraftErr] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const text = String(value ?? '');
+  const photoValue = field.photoFieldName ? String(allValues?.[field.photoFieldName] ?? '') : '';
 
   const generate = async () => {
     if (!text.trim() || drafting) return;
@@ -690,30 +714,80 @@ function ScriptAiField({ field, value, onChange }: { field: Extract<Field, { kin
     }
   };
 
+  const onPickPhoto = (file: File | null) => {
+    if (!file || !field.photoFieldName) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') onChangeAny?.(field.photoFieldName as string, reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const hasMenu = Boolean(field.photoFieldName || onUseSavedPrompt || onRunDifferentSkill);
+
   return (
     <div className="flex flex-col gap-1">
       <label className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>{field.label}</label>
-      <div className="relative" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+      {photoValue && (
+        <div className="inline-flex w-fit items-center gap-2 rounded-lg py-1 pl-1 pr-2 text-[12px]" style={{ background: '#0F1015', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.8)' }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={photoValue} alt="attached person photo" className="h-6 w-6 rounded object-cover" />
+          <span>Photo attached — face is locked to it</span>
+          <button type="button" aria-label="Remove photo" onClick={() => onChangeAny?.(field.photoFieldName as string, '')} className="opacity-60 hover:opacity-100"><X className="h-3.5 w-3.5" /></button>
+        </div>
+      )}
+      <div className="relative">
         <textarea
           rows={4}
           value={text}
           onChange={(e) => onChange(e.target.value)}
-          onFocus={() => setHover(true)}
           placeholder={field.placeholder}
           style={inputStyle}
         />
-        {(hover || drafting) && text.trim() && (
-          <button
-            type="button"
-            onClick={generate}
-            disabled={drafting}
-            title="Generate with AI"
-            className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full transition-opacity disabled:opacity-60"
-            style={{ backgroundColor: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.4)' }}
-          >
-            {drafting ? <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: '#A78BFA' }} /> : <Sparkles className="h-3.5 w-3.5" style={{ color: '#A78BFA' }} />}
-          </button>
+        {hasMenu && (
+          <div className="absolute bottom-2 left-2">
+            <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { onPickPhoto(e.target.files?.[0] ?? null); setMenuOpen(false); }} />
+            <button
+              type="button"
+              aria-label="Add"
+              title="Add"
+              onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full"
+              style={{ backgroundColor: '#1B1C2A', border: '1px solid rgba(255,255,255,0.14)', color: 'rgba(255,255,255,0.6)' }}
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+            {menuOpen && (
+              <div onMouseLeave={() => setMenuOpen(false)} className="absolute bottom-full left-0 z-20 mb-2 w-56 rounded-xl p-1.5" style={{ background: '#1B1C2A', border: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+                {field.photoFieldName && (
+                  <button type="button" onClick={() => fileInputRef.current?.click()} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors hover:bg-white/[0.06]" style={{ color: '#E9E9F0' }}>
+                    <UploadCloud className="h-4 w-4" style={{ color: 'rgba(255,255,255,0.5)' }} /> …or upload a photo of the person
+                  </button>
+                )}
+                {onUseSavedPrompt && (
+                  <button type="button" onClick={() => { setMenuOpen(false); onUseSavedPrompt(); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors hover:bg-white/[0.06]" style={{ color: '#E9E9F0' }}>
+                    <Wand2 className="h-4 w-4" style={{ color: 'rgba(255,255,255,0.5)' }} /> Use a saved prompt
+                  </button>
+                )}
+                {onRunDifferentSkill && (
+                  <button type="button" onClick={() => { setMenuOpen(false); onRunDifferentSkill(); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors hover:bg-white/[0.06]" style={{ color: '#E9E9F0' }}>
+                    <Wrench className="h-4 w-4" style={{ color: 'rgba(255,255,255,0.5)' }} /> Run a different skill
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         )}
+        <button
+          type="button"
+          onClick={generate}
+          disabled={drafting || !text.trim()}
+          title="Generate with AI"
+          className="absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full transition-opacity disabled:opacity-40"
+          style={{ backgroundColor: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.4)' }}
+        >
+          {drafting ? <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: '#A78BFA' }} /> : <Sparkles className="h-3.5 w-3.5" style={{ color: '#A78BFA' }} />}
+        </button>
       </div>
       {draftErr && <span className="text-[11px]" style={{ color: '#F87171' }}>{draftErr}</span>}
       {field.help && <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{field.help}</span>}

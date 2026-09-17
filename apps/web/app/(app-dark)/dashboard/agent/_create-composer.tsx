@@ -8,8 +8,8 @@
  * well-formed request (never the "provide either script or scene_action"
  * class of error a vague chat message could trigger from the LLM router).
  *
- * The header reads as one sentence with two inline dropdowns:
- *   "Create a [video type] video for [platform] using exactly this script.."
+ * One line at the top reads as a sentence with two inline dropdowns:
+ *   "Create a [video type] for [platform] using exactly this script.."
  * — video type picks which make_ugc identity fields are relevant (a plain
  * talking head / a product-in-hands ad / a b-roll narrated review / a
  * silent action clip) and platform sets aspect_ratio. Everything below
@@ -21,7 +21,6 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Sparkles } from 'lucide-react';
 import { RunPanel, type RunResult, type SkillEntry } from '../skills/_run-panel';
 import { FORMS, type Field } from '../skills/_forms';
 
@@ -46,15 +45,18 @@ const PLATFORM_OPTIONS: { value: Platform; label: string }[] = [
 // setting (e.g. make_product_in_hands has no watermark step yet) just
 // silently ignore that one field rather than erroring, so it's simpler and
 // more honest to keep the settings panel constant and only vary the
-// IDENTITY fields, which really do differ by type.
+// IDENTITY fields, which really do differ by type. `image` and `character`
+// aren't listed here any more -- they're reached via the script box's "+"
+// menu and the "Use Saved Characters" settings pill respectively, both of
+// which are always available regardless of video type.
 const IDENTITY_FIELDS_BY_TYPE: Record<VideoType, string[]> = {
-  talking_head: ['script', 'person', 'image', 'character'],
-  product: ['script', 'scene_action', 'product_image', 'character'],
-  broll_review: ['script', 'broll_url', 'image', 'character'],
-  silent_action: ['scene_action', 'character'],
+  talking_head: ['script', 'person'],
+  product: ['script', 'scene_action', 'product_image'],
+  broll_review: ['script', 'broll_url'],
+  silent_action: ['scene_action'],
 };
 
-const ALL_IDENTITY_FIELDS = ['script', 'scene_action', 'person', 'image', 'character', 'product_image', 'broll_url'];
+const ALL_IDENTITY_FIELDS = ['script', 'scene_action', 'person', 'product_image', 'broll_url'];
 
 const REQUIRED_CHARACTER_TYPES = new Set<VideoType>(['product', 'silent_action']);
 
@@ -76,9 +78,13 @@ const selectStyle: React.CSSProperties = {
   fontWeight: 600,
 };
 
-const titleSelectStyle: React.CSSProperties = { ...selectStyle, fontSize: 'inherit', fontWeight: 700, padding: '4px 10px' };
-
-export function CreateComposer({ onGenerate }: { onGenerate: (result: RunResult) => void }) {
+export function CreateComposer({ onGenerate, onUseSavedPrompt, onRunDifferentSkill }: {
+  onGenerate: (result: RunResult) => void;
+  /** Wired straight into the script box's own "+" menu — see ScriptAiField
+   *  in ../skills/_run-panel.tsx. Omit either to hide that menu item. */
+  onUseSavedPrompt?: () => void;
+  onRunDifferentSkill?: () => void;
+}) {
   const [videoType, setVideoType] = useState<VideoType>('talking_head');
   const [platform, setPlatform] = useState<Platform>('9:16');
 
@@ -93,15 +99,12 @@ export function CreateComposer({ onGenerate }: { onGenerate: (result: RunResult)
   }, [videoType]);
 
   return (
-    <div className="flex w-full flex-col gap-2.5">
-      <div className="flex flex-wrap items-center gap-2.5 text-[26px] font-bold" style={{ color: '#E9E9F0', letterSpacing: '-0.01em' }}>
-        <Sparkles className="h-6 w-6 shrink-0" style={{ color: '#A78BFA' }} />
+    <div className="flex w-full flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2 text-[19px] font-semibold" style={{ color: '#E9E9F0', letterSpacing: '-0.01em' }}>
         <span>Create a</span>
-        <select value={videoType} onChange={(e) => setVideoType(e.target.value as VideoType)} style={titleSelectStyle}>
+        <select value={videoType} onChange={(e) => setVideoType(e.target.value as VideoType)} style={selectStyle}>
           {VIDEO_TYPE_OPTIONS.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
         </select>
-      </div>
-      <div className="flex flex-wrap items-center gap-2 pl-[34px] text-[15px]" style={{ color: 'rgba(255,255,255,0.65)' }}>
         <span>for</span>
         <select value={platform} onChange={(e) => setPlatform(e.target.value as Platform)} style={selectStyle}>
           {PLATFORM_OPTIONS.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
@@ -111,7 +114,7 @@ export function CreateComposer({ onGenerate }: { onGenerate: (result: RunResult)
 
       {REQUIRED_CHARACTER_TYPES.has(videoType) && (
         <p className="text-[12.5px]" style={{ color: 'rgba(255,255,255,0.5)' }}>
-          This type needs a saved character below — it&apos;s who holds the product or performs the action.
+          This type needs a saved character — pick one under "Use Saved Characters" below.
         </p>
       )}
 
@@ -124,6 +127,8 @@ export function CreateComposer({ onGenerate }: { onGenerate: (result: RunResult)
         initialValues={{ aspect_ratio: platform }}
         submitLabel="Generate Video"
         hideHeading
+        onUseSavedPrompt={onUseSavedPrompt}
+        onRunDifferentSkill={onRunDifferentSkill}
       />
     </div>
   );

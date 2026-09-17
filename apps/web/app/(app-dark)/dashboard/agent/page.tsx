@@ -272,10 +272,6 @@ export default function AgentPage() {
   const [characterNameSaving, setCharacterNameSaving] = useState(false);
   const [characterRenameError, setCharacterRenameError] = useState<string | null>(null);
   const [composerMenuOpen, setComposerMenuOpen] = useState(false);
-  // The empty-chat screen defaults to the guided video composer; this lets
-  // someone drop back to the classic freeform composer (attach an image,
-  // run a different skill, reuse a saved prompt) without losing those.
-  const [useClassicComposer, setUseClassicComposer] = useState(false);
   const [promptPickerOpen, setPromptPickerOpen] = useState(false);
   const [savedPrompts, setSavedPrompts] = useState<AgentSavedPrompt[] | null>(null);
   const [promptsLoadErr, setPromptsLoadErr] = useState<string | null>(null);
@@ -1779,16 +1775,12 @@ export default function AgentPage() {
         {historyRail}
         <div className="mx-auto flex h-full min-w-0 flex-1 flex-col items-center justify-center px-6">
         <div className="w-full max-w-3xl">
-          {useClassicComposer ? composer : <CreateComposer onGenerate={(r) => void launchSkillFromPicker(MAKE_UGC_ENTRY, r)} />}
+          <CreateComposer
+            onGenerate={(r) => void launchSkillFromPicker(MAKE_UGC_ENTRY, r)}
+            onUseSavedPrompt={openPromptPicker}
+            onRunDifferentSkill={openSkillPicker}
+          />
         </div>
-        <button
-          type="button"
-          onClick={() => setUseClassicComposer((v) => !v)}
-          className="mt-3 text-[12.5px] underline"
-          style={{ color: 'rgba(255,255,255,0.45)' }}
-        >
-          {useClassicComposer ? 'Use the guided video composer instead' : 'Or type a free-form request — attach an image, run a different skill, or use a saved prompt'}
-        </button>
         {error && <div className="mt-4 rounded-xl px-4 py-2.5 text-sm" style={{ border: '1px solid rgba(255,79,79,0.3)', background: 'rgba(255,79,79,0.08)', color: '#FCA5A5' }}>{error}</div>}
         </div>
       </div>

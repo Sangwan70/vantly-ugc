@@ -131,7 +131,14 @@ export function getReconcilerConfig(): ReconcilerConfig {
  */
 export function getPrimitiveReconcilerConfig(): PrimitiveReconcilerConfig {
   const rawEnabled = process.env.ORCHESTRATOR_PRIMITIVE_RECONCILER_ENABLED?.toLowerCase().trim();
-  const defaultEnabled = getOrchestratorEngine() === 'temporal';
+  // primitive_runs dispatch (primitive-worker-vnext) is unconditionally
+  // Temporal, independent of ORCHESTRATOR_ENGINE (which only selects the
+  // legacy generation_jobs path -- see getOrchestratorEngine's own doc
+  // comment). Gating this safety net's default on that unrelated flag left
+  // it silently off in any deployment that never set ORCHESTRATOR_ENGINE=
+  // temporal, exactly the incident this reconciler exists to prevent.
+  // Default to enabled; only an explicit env var should ever turn it off.
+  const defaultEnabled = true;
   const enabled = rawEnabled === undefined || rawEnabled === ''
     ? defaultEnabled
     : !(rawEnabled === 'false' || rawEnabled === '0' || rawEnabled === 'no');
@@ -172,7 +179,16 @@ export function getPrimitiveReconcilerConfig(): PrimitiveReconcilerConfig {
  */
 export function getSkillReconcilerConfig(): SkillReconcilerConfig {
   const rawEnabled = process.env.ORCHESTRATOR_SKILL_RECONCILER_ENABLED?.toLowerCase().trim();
-  const defaultEnabled = getOrchestratorEngine() === 'temporal';
+  // Composed skill dispatch (make_ugc_video, broll_talking_head,
+  // make_podcast, make_storybook) is unconditionally Temporal, independent
+  // of ORCHESTRATOR_ENGINE (see getPrimitiveReconcilerConfig's identical
+  // note just above -- the same flaw silently disabled this reconciler in
+  // production for a week: a skill_runs row created 2026-09-10 sat at
+  // status='submitted' with zero primitive_runs children, never swept,
+  // because this defaulted to disabled whenever ORCHESTRATOR_ENGINE wasn't
+  // explicitly 'temporal'). Default to enabled; only an explicit env var
+  // should ever turn it off.
+  const defaultEnabled = true;
   const enabled = rawEnabled === undefined || rawEnabled === ''
     ? defaultEnabled
     : !(rawEnabled === 'false' || rawEnabled === '0' || rawEnabled === 'no');

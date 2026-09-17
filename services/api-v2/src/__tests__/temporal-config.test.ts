@@ -4,6 +4,7 @@ import {
   getTemporalConfig,
   getReconcilerConfig,
   getPrimitiveReconcilerConfig,
+  getSkillReconcilerConfig,
 } from '../orchestrator/temporal/config.js';
 
 const ENV_KEYS = [
@@ -24,6 +25,9 @@ const ENV_KEYS = [
   'ORCHESTRATOR_PRIMITIVE_RECONCILER_ENABLED',
   'ORCHESTRATOR_PRIMITIVE_RECONCILER_INTERVAL_MS',
   'ORCHESTRATOR_PRIMITIVE_RECONCILER_THRESHOLD_MINUTES',
+  'ORCHESTRATOR_SKILL_RECONCILER_ENABLED',
+  'ORCHESTRATOR_SKILL_RECONCILER_INTERVAL_MS',
+  'ORCHESTRATOR_SKILL_RECONCILER_THRESHOLD_MINUTES',
 ] as const;
 
 const originalEnv = new Map<string, string | undefined>();
@@ -149,9 +153,11 @@ describe('temporal config', () => {
     expect(cfg.processingThresholdMinutes).toBe(18);
   });
 
-  it('primitive reconciler defaults: off for http engine, on for temporal engine', () => {
-    expect(getPrimitiveReconcilerConfig().enabled).toBe(false);
+  it('primitive reconciler defaults to enabled regardless of ORCHESTRATOR_ENGINE (primitive_runs dispatch is unconditionally Temporal, independent of that flag)', () => {
+    expect(getPrimitiveReconcilerConfig().enabled).toBe(true);
     process.env.ORCHESTRATOR_ENGINE = 'temporal';
+    expect(getPrimitiveReconcilerConfig().enabled).toBe(true);
+    process.env.ORCHESTRATOR_ENGINE = 'http';
     expect(getPrimitiveReconcilerConfig().enabled).toBe(true);
   });
 
@@ -184,5 +190,39 @@ describe('temporal config', () => {
     const cfg = getPrimitiveReconcilerConfig();
     expect(cfg.intervalMs).toBe(30_000);
     expect(cfg.thresholdMinutes).toBe(12);
+  });
+
+  // skill_runs reconciler -- regression coverage for the 2026-09-17 incident
+  // where this defaulted to disabled whenever ORCHESTRATOR_ENGINE wasn't
+  // explicitly 'temporal', leaving skill_runs rows that never dispatched
+  // (status='submitted', zero primitive_runs children) unswept for a week.
+  it('skill reconciler defaults to enabled regardless of ORCHESTRATOR_ENGINE (composed skill dispatch is unconditionally Temporal, independent of that flag)', () => {
+    expect(getSkillReconcilerConfig().enabled).toBe(true);
+    process.env.ORCHESTRATOR_ENGINE = 'temporal';
+    expect(getSkillReconcilerConfig().enabled).toBe(true);
+    process.env.ORCHESTRATOR_ENGINE = 'http';
+    expect(getSkillReconcilerConfig().enabled).toBe(true);
+  });
+
+  it('skill reconciler respects explicit enable/disable overrides', () => {
+    process.env.ORCHESTRATOR_SKILL_RECONCILER_ENABLED = 'false';
+    expect(getSkillReconcilerConfig().enabled).toBe(false);
+
+    process.env.ORCHESTRATOR_SKILL_RECONCILER_ENABLED = 'true';
+    expect(getSkillReconcilerConfig().enabled).toBe(true);
+  });
+
+  it('skill reconciler threshold defaults to 50 minutes (above every composed dispatcher\'s hardcoded 45-minute workflowExecutionTimeout)', () => {
+    const cfg = getSkillReconcilerConfig();
+    expect(cfg.intervalMs).toBe(60_000);
+    expect(cfg.thresholdMinutes).toBe(50);
+  });
+
+  it('skill reconciler honors interval and threshold env overrides', () => {
+    process.env.ORCHESTRATOR_SKILL_RECONCILER_INTERVAL_MS = '45000';
+    process.env.ORCHESTRATOR_SKILL_RECONCILER_THRESHOLD_MINUTES = '60';
+    const cfg = getSkillReconcilerConfig();
+    expect(cfg.intervalMs).toBe(45_000);
+    expect(cfg.thresholdMinutes).toBe(60);
   });
 });

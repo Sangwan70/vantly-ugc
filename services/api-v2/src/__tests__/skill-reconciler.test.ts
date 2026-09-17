@@ -37,6 +37,17 @@ interface FakePrimitiveRun {
   finished_at?: string | null;
 }
 
+interface FakeStatusEvent {
+  id: string;
+  skill_run_id: string;
+  writer: string;
+  from_status: string | null;
+  to_status: string;
+  applied: boolean;
+  current_step?: string | null;
+  error_code?: string | null;
+}
+
 type RefundBehavior = Record<string, string | undefined>;
 
 class FakeTable<T extends { id: string }> {
@@ -52,8 +63,20 @@ class FakeTable<T extends { id: string }> {
     return (row as unknown as Record<string, unknown>)[column as string];
   }
 
+  private inserted: T[] | null = null;
+
   update(patch: Partial<T>): this {
     this.patch = patch;
+    return this;
+  }
+
+  insert(value: Partial<T> | Partial<T>[]): this {
+    const values = Array.isArray(value) ? value : [value];
+    this.inserted = values.map((v) => {
+      const row = { id: crypto.randomUUID(), ...v } as T;
+      this.rows.push(row);
+      return row;
+    });
     return this;
   }
 
@@ -83,6 +106,9 @@ class FakeTable<T extends { id: string }> {
   }
 
   private async execute(): Promise<{ data: T[] | null; error: null }> {
+    if (this.inserted) {
+      return { data: this.inserted, error: null };
+    }
     const matched = this.rows.filter((row) => this.filters.every((f) => f(row)));
     if (this.patch) {
       for (const row of matched) Object.assign(row, this.patch);
@@ -109,9 +135,11 @@ function makeSupabase(
   rpcCalls: Array<{ fn: string; args: Record<string, unknown> }>;
   skillRuns: FakeSkillRun[];
   primitiveRuns: FakePrimitiveRun[];
+  statusEvents: FakeStatusEvent[];
 } {
   const skillRuns = opts.skillRuns ?? [];
   const primitiveRuns = opts.primitiveRuns ?? [];
+  const statusEvents: FakeStatusEvent[] = [];
   const refundBehavior = opts.refundBehavior ?? {};
   const refunded = new Set<string>();
   const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
@@ -134,11 +162,12 @@ function makeSupabase(
     from: (table: string) => {
       if (table === 'skill_runs') return new FakeTable<FakeSkillRun>(skillRuns);
       if (table === 'primitive_runs') return new FakeTable<FakePrimitiveRun>(primitiveRuns);
+      if (table === 'skill_run_status_events') return new FakeTable<FakeStatusEvent>(statusEvents);
       throw new Error(`unexpected table ${table}`);
     },
   } as unknown as SupabaseClient;
 
-  return { client, rpcCalls, skillRuns, primitiveRuns };
+  return { client, rpcCalls, skillRuns, primitiveRuns, statusEvents };
 }
 
 function minutesAgo(n: number): string {
@@ -259,6 +288,40 @@ describe('reconcileStuckSkillRuns', () => {
     expect(second.claimed).toBe(0);
     expect(rpcCalls.filter((c) => c.fn === 'refund_credits')).toHaveLength(1);
     expect(skillRuns[0].status).toBe('failed');
+  });
+
+  it('logs one skill_run_status_events row per row it claims (Milestone 1: the durable audit log)', async () => {
+    const skillRunId = '00000000-0000-0000-0000-00000000e001';
+    const { client, statusEvents } = makeSupabase({
+      skillRuns: [{ id: skillRunId, status: 'running', updated_at: minutesAgo(60) }],
+    });
+
+    const result = await reconcileStuckSkillRuns(client, 50);
+    expect(result.claimed).toBe(1);
+
+    expect(statusEvents).toHaveLength(1);
+    expect(statusEvents[0]).toMatchObject({
+      skill_run_id: skillRunId,
+      writer: 'reconciler',
+      to_status: 'failed',
+      applied: true,
+      error_code: 'DISPATCH_TIMEOUT',
+    });
+  });
+
+  it('never logs an event for a row it did not claim', async () => {
+    const staleId = '00000000-0000-0000-0000-00000000e002';
+    const freshId = '00000000-0000-0000-0000-00000000e003';
+    const { client, statusEvents } = makeSupabase({
+      skillRuns: [
+        { id: staleId, status: 'running', updated_at: minutesAgo(60) },
+        { id: freshId, status: 'running', updated_at: minutesAgo(5) },
+      ],
+    });
+
+    await reconcileStuckSkillRuns(client, 50);
+
+    expect(statusEvents.map((e) => e.skill_run_id)).toEqual([staleId]);
   });
 });
 

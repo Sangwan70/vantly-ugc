@@ -54,6 +54,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import * as Sentry from '@sentry/node';
 import { getSkillReconcilerConfig, type SkillReconcilerConfig } from './temporal/config.js';
+import { recordSkillRunStatusEvent } from '../lib/skill-run-status-events.js';
 
 interface StuckSkillRow {
   id: string;
@@ -143,6 +144,28 @@ export async function reconcileStuckSkillRuns(
   if (rows.length === 0) {
     return { claimed: 0, refunded: 0, refundFailures: 0 };
   }
+
+  // One audit event per row this tick actually claimed. Best-effort: logged
+  // after the claim succeeds, never allowed to affect the refund pass below.
+  await Promise.all(
+    rows.map((row) =>
+      recordSkillRunStatusEvent(supabase, {
+        skill_run_id: row.id,
+        writer: 'reconciler',
+        // The claim filter (status IN ('submitted','running')) guarantees
+        // what it WAS, but not which of the two for this specific row --
+        // logging that precisely would need a second read racing the same
+        // window the atomic UPDATE above exists to close. Left null rather
+        // than guessed; every other writer's events for this run give the
+        // full picture around it.
+        from_status: null,
+        to_status: 'failed',
+        applied: true,
+        current_step: 'failed',
+        error_code: 'DISPATCH_TIMEOUT',
+      }),
+    ),
+  );
 
   const errors: string[] = [];
 

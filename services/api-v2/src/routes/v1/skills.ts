@@ -15,6 +15,7 @@ import { ModerationError } from '../../lib/image-moderation.js';
 import { quoteSkillCredits, quoteInFlightPrimitiveRun } from '../../skills/credit-quotes.js';
 import { decideMakeUgcRoute, type MakeUgcProps } from '../../skills/make-ugc-router.js';
 import { isAdminEmail } from '../../lib/admin-allowlist.js';
+import { recordSkillRunStatusEvent } from '../../lib/skill-run-status-events.js';
 
 /**
  * Credits already COMMITTED to the user's in-flight (submitted/running) jobs.
@@ -92,7 +93,10 @@ export function isBillingEnabled(): boolean {
  * failure is a visible, immediate 'failed' row instead of a phantom one.
  */
 async function markSkillRunDispatchFailed(skillRunId: string, userId: string, err: unknown): Promise<void> {
-  await supabase
+  // Captured for the audit event only -- see recordSkillRunStatusEvent's docstring.
+  const { data: prior } = await supabase.from('skill_runs').select('status').eq('id', skillRunId).maybeSingle();
+
+  const { data: updated } = await supabase
     .from('skill_runs')
     .update({
       status: 'failed',
@@ -102,7 +106,18 @@ async function markSkillRunDispatchFailed(skillRunId: string, userId: string, er
       finished_at: new Date().toISOString(),
     })
     .eq('id', skillRunId)
-    .eq('user_id', userId);
+    .eq('user_id', userId)
+    .select('id');
+
+  await recordSkillRunStatusEvent(supabase, {
+    skill_run_id: skillRunId,
+    writer: 'dispatch_failure',
+    from_status: (prior?.status as string | undefined) ?? null,
+    to_status: 'failed',
+    applied: Boolean(updated && updated.length > 0),
+    current_step: 'failed',
+    error_code: 'temporal_dispatch_failed',
+  });
 }
 
 /**
@@ -1384,7 +1399,7 @@ export async function cancelSkillRunRoute(req: Request, res: Response): Promise<
     return;
   }
 
-  const { error: updErr } = await supabase
+  const { error: updErr, data: canceledRows } = await supabase
     .from('skill_runs')
     .update({
       status: 'canceled',
@@ -1394,7 +1409,19 @@ export async function cancelSkillRunRoute(req: Request, res: Response): Promise<
       error_message: 'canceled by user',
     })
     .eq('id', run.id)
-    .eq('user_id', userId);
+    .eq('user_id', userId)
+    .select('id');
+
+  await recordSkillRunStatusEvent(supabase, {
+    skill_run_id: run.id,
+    writer: 'cancel',
+    from_status: run.status,
+    to_status: 'canceled',
+    applied: Boolean(!updErr && canceledRows && canceledRows.length > 0),
+    current_step: 'canceled',
+    error_code: 'canceled',
+  });
+
   if (updErr) {
     res.status(500).json({ error: 'cancel_update_failed', detail: updErr.message });
     return;

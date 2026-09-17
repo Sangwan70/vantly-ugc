@@ -21,7 +21,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Loader2, Play, Plus, Sparkles, UploadCloud, Volume2, Wand2, Wrench, X } from 'lucide-react';
-import type { Field } from './_forms';
+import type { Field, SkillForm } from './_forms';
 
 interface CharacterItem { name: string; description: string; ref: string; ref_base64: string }
 interface SceneItem { speaker: string; line: string; visual_description: string }
@@ -118,6 +118,24 @@ export function estimateSkillEta(skillSlug: string, body: Record<string, unknown
 
 const TERMINAL_RUN_STATUSES = new Set(['succeeded', 'failed', 'canceled', 'error']);
 
+// A skill-run 400 body looks like
+// {"error":"invalid_input","skill":"make_ugc","detail":{"fieldErrors":{"person":["pass at most one of person, image, or character"]},"formErrors":[]}}
+// -- the raw `error` code alone ("invalid_input") tells the user nothing
+// actionable, so pull the real per-field reason out of `detail` when it's
+// there (same shape the agent chat's own error recovery already parses).
+function describeRunError(data: unknown, status: number): string {
+  const d = data as { error?: unknown; detail?: unknown } | null;
+  const detail = d?.detail as { fieldErrors?: Record<string, string[]>; formErrors?: string[] } | undefined;
+  if (detail && (detail.fieldErrors || detail.formErrors)) {
+    const messages = [...Object.values(detail.fieldErrors ?? {}).flat(), ...(detail.formErrors ?? [])].filter(Boolean);
+    if (messages.length > 0) return messages.join('; ');
+  }
+  if (typeof d?.error === 'string') return d.error;
+  const errObj = d?.error as { message?: string } | undefined;
+  if (errObj && typeof errObj.message === 'string') return errObj.message;
+  return `HTTP ${status}`;
+}
+
 function defaultForField(f: Field): unknown {
   if (f.kind === 'select') return f.defaultValue ?? f.options[0];
   if (f.kind === 'number-select') return f.defaultValue ?? f.options[0];
@@ -138,7 +156,7 @@ export function RunPanel({
   onRunDifferentSkill,
 }: {
   skill: SkillEntry;
-  form?: { fields: Field[]; composed: boolean };
+  form?: SkillForm;
   activeRun: RunResult | null;
   onLaunched: (r: RunResult) => void;
   /** Extra values to seed into the submitted body even for fields NOT in
@@ -216,8 +234,7 @@ export function RunPanel({
       });
       const data = (await resp.json()) as Record<string, unknown>;
       if (!resp.ok) {
-        const msg = (data as any)?.error?.message ?? (data as any)?.error ?? `HTTP ${resp.status}`;
-        setSubmitErr(typeof msg === 'string' ? msg : JSON.stringify(data));
+        setSubmitErr(describeRunError(data, resp.status));
         return;
       }
       const id = (data.skill_run_id ?? data.run_id) as string | undefined;
@@ -231,7 +248,24 @@ export function RunPanel({
     }
   };
 
-  const onChangeAny = (name: string, v: unknown) => setValues((p) => ({ ...p, [name]: v }));
+  const onChangeAny = (name: string, v: unknown) => {
+    setValues((p) => {
+      const next: Record<string, unknown> = { ...p, [name]: v };
+      // Enforce form.exclusiveGroups: the instant one field in a group
+      // gets a real value, clear its groupmates so a conflicting
+      // combination (e.g. a typed Person description AND an attached
+      // photo) can never reach submit -- the backend 400s on that, and
+      // silently clearing here is friendlier than a post-submit error.
+      const isNonEmpty = typeof v === 'string' ? v.trim() !== '' : Boolean(v);
+      if (isNonEmpty) {
+        for (const group of form?.exclusiveGroups ?? []) {
+          if (!group.includes(name)) continue;
+          for (const other of group) if (other !== name) next[other] = '';
+        }
+      }
+      return next;
+    });
+  };
 
   // Toggle/expandable fields ("Background Music", "Language", …) render as
   // a wrapping row of pills rather than stacked full-width rows — tap one

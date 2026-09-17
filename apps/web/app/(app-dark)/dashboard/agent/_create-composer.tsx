@@ -95,7 +95,7 @@ export function CreateComposer({ onGenerate, onUseSavedPrompt, onRunDifferentSki
       if (ALL_IDENTITY_FIELDS.includes(f.name)) return allowedIdentity.has(f.name);
       return true;
     });
-    return { fields, composed: FORMS.make_ugc.composed };
+    return { fields, composed: FORMS.make_ugc.composed, exclusiveGroups: FORMS.make_ugc.exclusiveGroups };
   }, [videoType]);
 
   return (

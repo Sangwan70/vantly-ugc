@@ -66,11 +66,19 @@ export type Field =
 export interface SkillForm {
   fields: Field[];
   composed: boolean;
+  /** Groups of field names where the backend accepts at most one set —
+   *  e.g. make_ugc's person/image/character identity. RunPanel clears the
+   *  other names in a group the moment one of them gets a real value, so
+   *  the conflict can never reach the server (previously: submitting both
+   *  a typed Person description AND an attached photo 400'd with "pass at
+   *  most one of person, image, or character"). */
+  exclusiveGroups?: string[][];
 }
 
 export const FORMS: Record<string, SkillForm> = {
   make_ugc: {
     composed: true,
+    exclusiveGroups: [['person', 'image', 'character']],
     fields: [
       { kind: 'script-ai', name: 'script', label: 'Script — what they say', placeholder: 'Paste your script here, or type your idea and click the sparkle to generate one…', help: 'Any length — a line makes one clip, a monologue makes a multi-take video. Never trimmed.', photoFieldName: 'image' },
       { kind: 'text', name: 'scene_action', label: '…or a silent clip (instead of a script)', placeholder: 'dancing freestyle, smiling at camera', help: 'Use instead of a script for a non-speech clip. Needs a saved character.' },

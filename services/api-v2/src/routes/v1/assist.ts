@@ -50,7 +50,12 @@ Rules, in order of importance:
 4. Never mention "selfie", "phone", or "camera" — how the shot is framed is handled elsewhere in the pipeline; naming it breaks the illusion.
 5. Hit the target length exactly — it's not a suggestion. A script outside its bracket gets clipped or awkwardly padded by the renderer.
 6. Weave in real specifics from the pitch (a name, one concrete detail or benefit) rather than staying generic — specificity is what makes a UGC-style ad feel real and makes it convert.
-7. Output the script text and only the script text — nothing before or after it.`;
+7. Wrap ONLY the final spoken script in <script></script> tags, with nothing else inside them — no stage directions, no labels. If you need to reason about word count or phrasing first, do that BEFORE the tags; nothing outside the tags is read, but everything inside must be exactly what gets spoken.
+
+Respond in this exact shape:
+<script>
+(the spoken script goes here, and only here)
+</script>`;
 
 export async function draftScriptRoute(req: Request, res: ExpressResponse): Promise<void> {
   const userId = (req as { userId?: string }).userId;
@@ -85,7 +90,13 @@ export async function draftScriptRoute(req: Request, res: ExpressResponse): Prom
     upstream = await callAnthropicMessages(
       {
         model: MODEL,
-        max_tokens: 400,
+        // Generous headroom: some upstream models (esp. via
+        // MODEL_PROVIDER=openrouter) reason inline before the <script> tag
+        // rather than in a separate thinking channel, and 400 was tight
+        // enough that a request could get cut off mid-reasoning, before
+        // ever emitting the tag -- see the <script> extraction below,
+        // which is what actually keeps stray reasoning out of the result.
+        max_tokens: 700,
         system: SYSTEM_PROMPT,
         messages: [{ role: 'user', content: userMessageParts.join('\n') }],
       },
@@ -110,17 +121,41 @@ export async function draftScriptRoute(req: Request, res: ExpressResponse): Prom
     return;
   }
 
-  const script = (data.content ?? [])
+  const rawText = (data.content ?? [])
     .filter((block) => block.type === 'text' && typeof block.text === 'string')
     .map((block) => block.text as string)
-    .join('')
+    .join('');
+
+  // Pull ONLY what's inside <script>…</script> — this is what actually
+  // keeps a model's inline reasoning (word-counting, draft attempts, "Let's
+  // try...") out of the result, regardless of whether it obeyed the "only
+  // the script text" instruction on its own. A raw dump of that reasoning
+  // was reaching make_ugc's script field (>1200 chars, tripping its Zod
+  // max length) before this tag existed.
+  const tagMatch = rawText.match(/<script>([\s\S]*?)<\/script>/i);
+  const script = (tagMatch ? tagMatch[1] : rawText)
     .trim()
     // Strip a wrapping quote pair if the model added one despite instructions.
-    .replace(/^["“](.*)["”]$/s, '$1')
+    .replace(/^["“"](.*)["”"]$/s, '$1')
     .trim();
 
   if (!script) {
     res.status(502).json({ error: { code: 'EMPTY_RESULT', message: 'The model returned an empty script — try again.' } });
+    return;
+  }
+
+  // Sanity guard for the no-tag fallback path: a real script for this
+  // prompt is at most ~35 words (see WORD_BRACKET). Anything wildly longer
+  // is reasoning that leaked through without the tag, not a script — fail
+  // loudly instead of handing the caller something make_ugc will 400 on.
+  const MAX_PLAUSIBLE_SCRIPT_CHARS = 500;
+  if (!tagMatch && script.length > MAX_PLAUSIBLE_SCRIPT_CHARS) {
+    res.status(502).json({
+      error: {
+        code: 'DRAFT_LOOKS_LIKE_REASONING',
+        message: 'The draft came back malformed (looked like reasoning, not a script) — try again.',
+      },
+    });
     return;
   }
 

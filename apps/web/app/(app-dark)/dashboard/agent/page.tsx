@@ -21,6 +21,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link';
 import { Loader2, Send, Square, Sparkles, Wrench, Check, AlertCircle, ArrowDown, Plus, Trash2, X, RotateCcw, PanelRight, ListChecks, Users, Images, CornerDownLeft, Pencil, MessageSquarePlus, History, Pin, PinOff, Archive, Search, MoreHorizontal, Folder, FolderPlus, ChevronRight, ChevronDown, UploadCloud, Wand2 } from 'lucide-react';
 import { invokeFn } from '@/lib/supabase/fn-proxy';
+import { createClient } from '@/lib/supabase/client';
 
 import { SAMPLE_PROMPTS } from '@/lib/sample-prompts';
 import { RunPanel, estimateSkillEta, type SkillEntry as SkillCatalogEntry, type RunResult as SkillLaunchResult } from '../skills/_run-panel';
@@ -240,6 +241,12 @@ export default function AgentPage() {
   const notifiedRunsRef = useRef<Set<string>>(new Set());
   const [chatId, setChatId] = useState<string | null>(null);
   const chatIdRef = useRef<string | null>(null);
+  // The account id the currently-cached localStorage transcript was
+  // written under. localStorage is scoped to this browser ORIGIN, not to
+  // any one account -- without this, a second account signed in on the
+  // same browser/tab would instant-paint the previous account's chat
+  // transcript before the server-side ownership check below ever runs.
+  const userIdRef = useRef<string | null>(null);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
@@ -338,11 +345,27 @@ export default function AgentPage() {
   // session into a new server chat once — so no in-flight session is lost.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    let cached: { chatId?: string | null; messages?: Msg[]; toolRuns?: Record<string, ToolRun> } = {};
+    let cached: { userId?: string | null; chatId?: string | null; messages?: Msg[]; toolRuns?: Record<string, ToolRun> } = {};
     try { const raw = localStorage.getItem(LS_KEY); if (raw) cached = JSON.parse(raw); } catch { /* ignore */ }
     const urlChat = (() => { try { return new URL(window.location.href).searchParams.get('chat'); } catch { return null; } })();
 
     void (async () => {
+      // Resolve the current session's user id BEFORE trusting any cached
+      // transcript -- see the userIdRef comment above. getSession() reads
+      // the already-persisted Supabase session locally, so this stays fast.
+      let currentUserId: string | null = null;
+      try {
+        const { data } = await createClient().auth.getSession();
+        currentUserId = data.session?.user?.id ?? null;
+      } catch { /* best-effort -- falls through to "treat cache as untrusted" below */ }
+      userIdRef.current = currentUserId;
+      if (!currentUserId || cached.userId !== currentUserId) {
+        if (cached.chatId || (cached.messages?.length ?? 0) > 0) {
+          try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
+        }
+        cached = {};
+      }
+
       void fetchChats();
       if (urlChat) {
         const ok = await openChat(urlChat, /*resume*/ true);
@@ -368,9 +391,11 @@ export default function AgentPage() {
   }, []);
 
   // Cache the live session (incl. chatId) for instant paint + offline fallback.
+  // Tagged with the account it belongs to (see userIdRef above) so a
+  // different account on this browser never instant-paints it.
   useEffect(() => {
     if (!hydrated) return;
-    try { localStorage.setItem(LS_KEY, JSON.stringify({ chatId, messages, toolRuns })); } catch { /* ignore */ }
+    try { localStorage.setItem(LS_KEY, JSON.stringify({ userId: userIdRef.current, chatId, messages, toolRuns })); } catch { /* ignore */ }
   }, [messages, toolRuns, chatId, hydrated]);
 
   function lastUnresolvedToolUse(msgs: Msg[]): Extract<Block, { type: 'tool_use' }> | null {
@@ -417,7 +442,13 @@ export default function AgentPage() {
   async function openChat(id: string, resume: boolean): Promise<boolean> {
     try {
       const r = await fetch(`/api/v1/agent/chats/${id}`, { credentials: 'include' });
-      if (!r.ok) return false;
+      if (!r.ok) {
+        // Ownership/existence check failed -- if this chat is what's
+        // currently on screen (e.g. just instant-painted from a stale or
+        // cross-account cache), clear it rather than leaving it rendered.
+        if (chatIdRef.current === id) { setMessages([]); setToolRuns({}); setChat(null); }
+        return false;
+      }
       const j = (await r.json()) as { chat?: { project_id?: string | null }; messages?: Array<{ role: 'user' | 'assistant'; content: unknown; client_msg_id?: string | null; skill_run_id?: string | null; run_kind?: 'skill' | 'primitive' | null }> };
       const msgs: Msg[] = (j.messages ?? []).map((m) => ({
         role: m.role, content: m.content as string | Block[],
@@ -439,7 +470,10 @@ export default function AgentPage() {
       }
       if (resume) void resumeIfNeeded(msgs, tr);
       return true;
-    } catch { return false; }
+    } catch {
+      if (chatIdRef.current === id) { setMessages([]); setToolRuns({}); setChat(null); }
+      return false;
+    }
   }
 
   /** Get (or mint) the chat we're writing to. Mints with a truncated auto-title. */

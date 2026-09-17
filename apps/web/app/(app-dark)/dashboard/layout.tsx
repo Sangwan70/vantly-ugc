@@ -119,6 +119,10 @@ export default function DashboardDarkLayout({
   async function handleSignOut() {
     if (signingOut) return;
     setSigningOut(true);
+    // Clear the Agent page's per-browser transcript cache -- it's tagged by
+    // account id (see agent/page.tsx), but belt-and-suspenders: never leave
+    // it around past this account's own sign-out.
+    try { localStorage.removeItem('am_agent_session_v1'); } catch { /* ignore */ }
     const supabase = createClient();
     await supabase.auth.signOut();
     // `/` on this host bounces a signed-out visitor straight back to /login.

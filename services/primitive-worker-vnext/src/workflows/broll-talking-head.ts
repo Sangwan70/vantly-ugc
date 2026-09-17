@@ -36,6 +36,7 @@
  */
 
 import { proxyActivities, ApplicationFailure } from '@temporalio/workflow';
+import { failureInfo } from './failure-info.js';
 import type { PrimitiveActivities } from '../activities/index.js';
 import type { SimpleSelfieActivityInput, SimpleSelfieActivityResult } from '../activities/simple-selfie.js';
 import type { LipSyncActivityInput, LipSyncActivityResult } from '../activities/lip-sync.js';
@@ -399,8 +400,18 @@ export async function brollTalkingHeadWorkflow(
     // user's credits. refundCredits is idempotent and no-ops on never-charged ids,
     // so refunding a generous fixed set of segment ids (plus voiceref/compose/subs)
     // is safe even though the exact segment count isn't in catch scope.
-    const errorCode = err instanceof ApplicationFailure ? (err.type ?? 'WORKFLOW_FAILED') : 'WORKFLOW_FAILED';
-    const errorMessage = err instanceof Error ? err.message.slice(0, 500) : String(err);
+    // Temporal wraps an activity's ApplicationFailure as the `cause` of the
+    // error this workflow-level catch sees -- `err` itself is a generic
+    // ActivityFailure whose own .message is always the literal string
+    // "Activity task failed" and whose own type is never ApplicationFailure,
+    // so the old `err instanceof ApplicationFailure` check here never matched
+    // and every composed-skill failure was reported as bare WORKFLOW_FAILED /
+    // "Activity task failed" (confirmed live via a run-detail HAR capture),
+    // even though the real reason (e.g. REFERENCE_FETCH_FAILED, an OpenAI
+    // moderation rejection, EVOLINK_422, ...) was sitting right there in
+    // err.cause the whole time. failureInfo() (already used by every
+    // single-primitive workflow) unwraps it correctly.
+    const { code: errorCode, message: errorMessage } = failureInfo(err);
     const childSteps = ['voiceref', 'compose', 'subs'];
     for (let i = 0; i < 12; i += 1) childSteps.push(`seg${i}`);
     for (const step of childSteps) {

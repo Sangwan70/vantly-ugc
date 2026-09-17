@@ -28,6 +28,7 @@
  */
 
 import { proxyActivities, ApplicationFailure } from '@temporalio/workflow';
+import { failureInfo } from './failure-info.js';
 import { chunkScript, fitDuration } from '@vantly-ugc/schema';
 import type { StorybookArtStyle } from '@vantly-ugc/schema';
 import type { PrimitiveActivities } from '../activities/index.js';
@@ -306,8 +307,18 @@ export async function makeStorybookWorkflow(
     });
     return { skill_run_id: skillRunId, ...finalOutput };
   } catch (err) {
-    const errorCode = err instanceof ApplicationFailure ? (err.type ?? 'WORKFLOW_FAILED') : 'WORKFLOW_FAILED';
-    const errorMessage = err instanceof Error ? err.message.slice(0, 500) : String(err);
+    // Temporal wraps an activity's ApplicationFailure as the `cause` of the
+    // error this workflow-level catch sees -- `err` itself is a generic
+    // ActivityFailure whose own .message is always the literal string
+    // "Activity task failed" and whose own type is never ApplicationFailure,
+    // so the old `err instanceof ApplicationFailure` check here never matched
+    // and every composed-skill failure was reported as bare WORKFLOW_FAILED /
+    // "Activity task failed" (confirmed live via a run-detail HAR capture),
+    // even though the real reason (e.g. REFERENCE_FETCH_FAILED, an OpenAI
+    // moderation rejection, EVOLINK_422, ...) was sitting right there in
+    // err.cause the whole time. failureInfo() (already used by every
+    // single-primitive workflow) unwraps it correctly.
+    const { code: errorCode, message: errorMessage } = failureInfo(err);
     for (const rid of refundIds) {
       await refundCredits({ primitive_run_id: rid });
       await markPrimitiveRunFailed({ primitive_run_id: rid, error_code: errorCode, error_message: errorMessage });

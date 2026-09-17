@@ -21,6 +21,19 @@ import { callAnthropicMessages } from '../../lib/anthropic-client.js';
 
 const MODEL = process.env.ANTHROPIC_AGENT_MODEL || 'claude-sonnet-4-6';
 
+// 45s: generous enough for a reasoning-heavy model to think through word
+// count/phrasing before emitting the <script> tag (see max_tokens above)
+// without making a stuck request hang the wizard indefinitely.
+const DRAFT_TIMEOUT_MS = 45_000;
+
+/** AbortSignal.timeout() rejects/aborts with a DOMException named 'TimeoutError' — detect that
+ * specifically so a slow model call is reported as a timeout, not mislabeled as a parse failure
+ * (a real bug that shipped: the AbortSignal could also fire mid-body-read, after `upstream.ok`
+ * was already true, and got swallowed by the JSON.parse catch below as "unparseable response"). */
+function isTimeoutError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'TimeoutError';
+}
+
 const DraftScriptRequestSchema = z.object({
   pitch: z.string().min(6).max(400).describe('One-line description of the ad, e.g. "a coffee shop\'s grand opening, 20% off this week".'),
   target_duration: z.enum(['5', '10', '15', 'auto']).default('auto'),
@@ -100,9 +113,15 @@ export async function draftScriptRoute(req: Request, res: ExpressResponse): Prom
         system: SYSTEM_PROMPT,
         messages: [{ role: 'user', content: userMessageParts.join('\n') }],
       },
-      { signal: AbortSignal.timeout(30_000) },
+      { signal: AbortSignal.timeout(DRAFT_TIMEOUT_MS) },
     );
   } catch (err) {
+    if (isTimeoutError(err)) {
+      res.status(504).json({
+        error: { code: 'UPSTREAM_TIMEOUT', message: `The AI script writer took too long to respond (over ${DRAFT_TIMEOUT_MS / 1000}s) — try again.` },
+      });
+      return;
+    }
     res.status(502).json({ error: { code: 'UPSTREAM_ERROR', message: (err as Error).message } });
     return;
   }
@@ -116,7 +135,13 @@ export async function draftScriptRoute(req: Request, res: ExpressResponse): Prom
   let data: { content?: Array<{ type?: string; text?: string }> };
   try {
     data = (await upstream.json()) as typeof data;
-  } catch {
+  } catch (err) {
+    if (isTimeoutError(err)) {
+      res.status(504).json({
+        error: { code: 'UPSTREAM_TIMEOUT', message: `The AI script writer took too long to respond (over ${DRAFT_TIMEOUT_MS / 1000}s) — try again.` },
+      });
+      return;
+    }
     res.status(502).json({ error: { code: 'UPSTREAM_ERROR', message: 'Model returned an unparseable response' } });
     return;
   }

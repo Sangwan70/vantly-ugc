@@ -49,6 +49,7 @@ import { listModelsRoute } from './routes/v1/models.js';
 import { mcpRoute } from './routes/mcp.js';
 import { startReconciler } from './orchestrator/reconciler.js';
 import { startPrimitiveReconciler } from './orchestrator/primitive-reconciler.js';
+import { startSkillReconciler } from './orchestrator/skill-reconciler.js';
 import {
   toolingContractsRoute,
   createToolingRunRoute,
@@ -1115,4 +1116,8 @@ app.listen(PORT, () => {
   // legacy reconciler above) -- see primitive-reconciler.ts's doc comment
   // for the stuck-forever-on-submitted incident this closes.
   startPrimitiveReconciler({ supabase });
+  // Separate sweep for the vNext skill_runs table (composed skills) --
+  // not covered by either reconciler above -- see skill-reconciler.ts's
+  // doc comment for the stuck-forever-on-running incident this closes.
+  startSkillReconciler({ supabase });
 });

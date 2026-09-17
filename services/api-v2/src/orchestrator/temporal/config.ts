@@ -41,6 +41,14 @@ export interface PrimitiveReconcilerConfig {
   thresholdMinutes: number;
 }
 
+export interface SkillReconcilerConfig {
+  enabled: boolean;
+  /** How often to sweep skill_runs from inside api-v2. */
+  intervalMs: number;
+  /** Threshold (minutes) a skill_runs row may sit on submitted/running before being force-failed + refunded. */
+  thresholdMinutes: number;
+}
+
 export function getOrchestratorEngine(): OrchestratorEngine {
   const raw = (process.env.ORCHESTRATOR_ENGINE ?? 'http').toLowerCase().trim();
   return raw === 'temporal' ? 'temporal' : 'http';
@@ -137,5 +145,40 @@ export function getPrimitiveReconcilerConfig(): PrimitiveReconcilerConfig {
       'ORCHESTRATOR_PRIMITIVE_RECONCILER_THRESHOLD_MINUTES',
       workflowExecutionTimeoutMinutes + 5,
     ),
+  };
+}
+
+/**
+ * Covers skill_runs (composed multi-step skills: make_ugc_video,
+ * broll_talking_head, make_podcast, make_storybook) -- the one durable-run
+ * table with NO stuck-run safety net at all before this. primitive_runs
+ * (above) and the legacy generation_jobs table (getReconcilerConfig) both
+ * already have one; a composed run whose Temporal workflow dies without
+ * ever reaching its own try/catch (worker crash/OOM/redeploy mid-activity)
+ * previously sat on status='running' forever -- confirmed live via a
+ * run-detail page stuck reporting "running" / current_step: character_sheet
+ * for 10+ minutes with the underlying primitive_runs child never advancing
+ * past 'submitted' either. No refund, no terminal state, just an eternal
+ * spinner for the user.
+ *
+ * thresholdMinutes defaults to 50 (45 + 5): every composed dispatcher in
+ * routes/v1/skills.ts hardcodes `workflowExecutionTimeout: 45 * 60_000`
+ * for its Temporal workflow.start() call -- NOT the generic
+ * TEMPORAL_WORKFLOW_EXECUTION_TIMEOUT_MS/workflowExecutionTimeoutMinutes
+ * used just above for primitive_runs, which defaults to 20 and would make
+ * this sweep race a still-legitimate composed run. Kept as its own env var
+ * (not derived from the primitive config) so the two can be tuned
+ * independently if that 45-minute constant ever changes.
+ */
+export function getSkillReconcilerConfig(): SkillReconcilerConfig {
+  const rawEnabled = process.env.ORCHESTRATOR_SKILL_RECONCILER_ENABLED?.toLowerCase().trim();
+  const defaultEnabled = getOrchestratorEngine() === 'temporal';
+  const enabled = rawEnabled === undefined || rawEnabled === ''
+    ? defaultEnabled
+    : !(rawEnabled === 'false' || rawEnabled === '0' || rawEnabled === 'no');
+  return {
+    enabled,
+    intervalMs: readPositiveInt('ORCHESTRATOR_SKILL_RECONCILER_INTERVAL_MS', 60_000),
+    thresholdMinutes: readPositiveInt('ORCHESTRATOR_SKILL_RECONCILER_THRESHOLD_MINUTES', 50),
   };
 }

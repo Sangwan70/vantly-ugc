@@ -19,7 +19,7 @@
  */
 
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Loader2, Play, Sparkles, Volume2 } from 'lucide-react';
 import type { Field } from './_forms';
 
@@ -158,6 +158,7 @@ export function RunPanel({
     for (const f of form.fields) {
       o[f.name] = defaultForField(f);
       if (f.kind === 'toggle') for (const c of f.children ?? []) o[c.name] = defaultForField(c);
+      if (f.kind === 'expandable') o[f.child.name] = defaultForField(f.child);
     }
     return { ...o, ...initialValues };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -226,14 +227,32 @@ export function RunPanel({
 
   const onChangeAny = (name: string, v: unknown) => setValues((p) => ({ ...p, [name]: v }));
 
+  // Toggle/expandable fields ("Background Music", "Language", …) render as
+  // a wrapping row of pills rather than stacked full-width rows — tap one
+  // to reveal just that setting instead of always showing every field at
+  // once. Everything else (script, identity, plain selects) keeps the
+  // normal stacked layout.
+  const pillFields = form?.fields.filter((f) => f.kind === 'toggle' || f.kind === 'expandable') ?? [];
+  const stackedFields = form?.fields.filter((f) => f.kind !== 'toggle' && f.kind !== 'expandable') ?? [];
+
   return (
     <div className="flex flex-col gap-4 rounded-2xl p-5" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#14151F' }}>
       {!hideHeading && <h2 className="text-sm font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.55)' }}>Run</h2>}
       {form ? (
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          {form.fields.map((f) => (
+          {stackedFields.map((f) => (
             <FieldRow key={f.name} field={f} value={values[f.name]} allValues={values} onChange={(v) => onChangeAny(f.name, v)} onChangeAny={onChangeAny} />
           ))}
+          {pillFields.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>Settings</span>
+              <div className="flex flex-wrap items-start gap-2">
+                {pillFields.map((f) => (
+                  <FieldRow key={f.name} field={f} value={values[f.name]} allValues={values} onChange={(v) => onChangeAny(f.name, v)} onChangeAny={onChangeAny} />
+                ))}
+              </div>
+            </div>
+          )}
           {submitErr && (
             <div className="rounded-lg px-3 py-2 text-xs" style={{ border: '1px solid rgba(255,79,79,0.3)', backgroundColor: 'rgba(255,79,79,0.08)', color: '#FCA5A5' }}>
               {submitErr}
@@ -334,6 +353,9 @@ function FieldRow({ field, value, onChange, allValues, onChangeAny }: { field: F
   if (field.kind === 'toggle') {
     return <ToggleField field={field} value={value} onChange={onChange} allValues={allValues} onChangeAny={onChangeAny} />;
   }
+  if (field.kind === 'expandable') {
+    return <ExpandableField field={field} allValues={allValues} onChangeAny={onChangeAny} />;
+  }
   if (field.kind === 'character-list') {
     return <CharacterListField field={field} value={value} onChange={onChange} />;
   }
@@ -397,6 +419,39 @@ function FieldRow({ field, value, onChange, allValues, onChangeAny }: { field: F
  * Music -> Music preference — instead of two same-looking rows that
  * don't visually communicate the dependency.
  */
+// Shared "pill that expands" chrome for both ToggleField and
+// ExpandableField below. `active` drives the filled/outlined look;
+// `open` (usually the same as `active` for a real toggle, or its own
+// local state for a plain reveal) drives whether the +  flips to a  -
+// and whether `panel` renders. The panel is full-width (`w-full`) so in
+// a flex-wrap row it drops to its own line under the pill instead of
+// squeezing beside it.
+function PillField({ label, active, open, onClick, panel }: { label: string; active: boolean; open: boolean; onClick: () => void; panel?: ReactNode }) {
+  return (
+    <>
+      <button
+        type="button"
+        aria-pressed={active}
+        onClick={onClick}
+        className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12.5px] font-medium transition-colors"
+        style={{
+          backgroundColor: active ? 'rgba(167,139,250,0.16)' : 'rgba(255,255,255,0.05)',
+          border: `1px solid ${active ? '#A78BFA' : 'rgba(255,255,255,0.14)'}`,
+          color: active ? '#A78BFA' : 'rgba(255,255,255,0.75)',
+        }}
+      >
+        {label}
+        <span style={{ fontSize: 15, lineHeight: 1 }}>{open ? '−' : '+'}</span>
+      </button>
+      {open && panel && (
+        <div className="w-full rounded-xl p-3" style={{ backgroundColor: '#0F1015', border: '1px solid rgba(255,255,255,0.08)' }}>
+          {panel}
+        </div>
+      )}
+    </>
+  );
+}
+
 function ToggleField({ field, value, onChange, allValues, onChangeAny }: {
   field: Extract<Field, { kind: 'toggle' }>;
   value: unknown;
@@ -412,30 +467,39 @@ function ToggleField({ field, value, onChange, allValues, onChangeAny }: {
     if (!next) for (const c of children) onChangeAny?.(c.name, defaultForField(c));
   }
 
-  return (
-    <div className="flex flex-col gap-2">
-      <button
-        type="button"
-        role="switch"
-        aria-checked={enabled}
-        onClick={() => handleToggle(!enabled)}
-        className="flex items-center gap-2.5 self-start text-left"
-      >
-        <span className="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors" style={{ backgroundColor: enabled ? '#A78BFA' : 'rgba(255,255,255,0.15)' }}>
-          <span className="inline-block h-3.5 w-3.5 rounded-full transition-transform" style={{ backgroundColor: '#fff', transform: enabled ? 'translateX(18px)' : 'translateX(3px)' }} />
-        </span>
-        <span className="text-[13px] font-medium" style={{ color: '#E9E9F0' }}>{field.label}</span>
-      </button>
-      {field.help && <span className="pl-[46px] text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{field.help}</span>}
-      {enabled && children.length > 0 && (
-        <div className="ml-[19px] flex flex-col gap-3 border-l pl-4" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
-          {children.map((c) => (
-            <FieldRow key={c.name} field={c} value={allValues?.[c.name]} allValues={allValues} onChange={(v) => onChangeAny?.(c.name, v)} onChangeAny={onChangeAny} />
-          ))}
-        </div>
-      )}
+  const panel = (field.help || children.length > 0) ? (
+    <div className="flex flex-col gap-3">
+      {field.help && <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{field.help}</span>}
+      {children.map((c) => (
+        <FieldRow key={c.name} field={c} value={allValues?.[c.name]} allValues={allValues} onChange={(v) => onChangeAny?.(c.name, v)} onChangeAny={onChangeAny} />
+      ))}
     </div>
+  ) : undefined;
+
+  return <PillField label={field.label} active={enabled} open={enabled} onClick={() => handleToggle(!enabled)} panel={panel} />;
+}
+
+// A pill that just reveals its one wrapped field on click — no boolean of
+// its own is submitted (see the `expandable` Field doc comment in
+// _forms.ts). Stays open once opened; there's no "off" state to reset to,
+// so closing it only hides the field, it doesn't clear what's in it.
+function ExpandableField({ field, allValues, onChangeAny }: {
+  field: Extract<Field, { kind: 'expandable' }>;
+  allValues?: Record<string, unknown>;
+  onChangeAny?: (name: string, v: unknown) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const c = field.child;
+  const filled = (() => {
+    const v = allValues?.[c.name];
+    return typeof v === 'string' ? v.trim() !== '' : Boolean(v);
+  })();
+
+  const panel = (
+    <FieldRow field={c} value={allValues?.[c.name]} allValues={allValues} onChange={(v) => onChangeAny?.(c.name, v)} onChangeAny={onChangeAny} />
   );
+
+  return <PillField label={field.label} active={open || filled} open={open} onClick={() => setOpen((o) => !o)} panel={panel} />;
 }
 
 interface SavedCharacter {

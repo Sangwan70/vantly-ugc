@@ -47,7 +47,14 @@ export type Field =
   // of a bare `boolean` field whenever the toggle gates one or more other
   // fields (e.g. Background Music -> Music Preference) so the dependency
   // is visible instead of two unrelated-looking rows sitting side by side.
-  | { kind: 'toggle'; name: string; label: string; defaultValue?: boolean; help?: string; children?: Field[] };
+  | { kind: 'toggle'; name: string; label: string; defaultValue?: boolean; help?: string; children?: Field[] }
+  // A pill that expands to reveal exactly one wrapped field when clicked —
+  // for a setting that's optional-with-a-sensible-default rather than a
+  // real on/off switch (Language, Music Preference, Voice Actor). Unlike
+  // `toggle`, `name` here is a UI-only key (prefixed with `_` by
+  // convention so RunPanel's submit strips it) — the value that actually
+  // gets submitted lives under `child.name`.
+  | { kind: 'expandable'; name: string; label: string; child: Field };
 
 export interface SkillForm {
   fields: Field[];
@@ -66,26 +73,30 @@ export const FORMS: Record<string, SkillForm> = {
       { kind: 'image', name: 'product_image', label: 'Product photo', help: 'A photo of the product to show/hold — turns this into a product ad. Needs a character above to hold it.' },
       { kind: 'text', name: 'broll_url', label: 'B-roll video URL', placeholder: 'https://…mp4 — narrated overlay / review', help: 'The person narrates over this footage.' },
       { kind: 'text', name: 'name', label: 'Name / vibe hint (optional)', placeholder: 'Sophia, 28' },
-      {
-        kind: 'toggle', name: 'captions', label: 'Subtitles', defaultValue: false,
+      // Settings — rendered as a wrapping row of expandable pills (see
+      // RunPanel), matching the "Background music +", "Language +", …
+      // reference layout: tap a pill to reveal just that one setting,
+      // tap again to collapse it. Order matches the original spec list.
+      { kind: 'toggle', name: 'background_music', label: 'Background Music', defaultValue: false },
+      { kind: 'expandable', name: '_language_exp', label: 'Language',
+        child: { kind: 'select', name: 'language', label: 'Language', options: ['en', 'es', 'hi', 'fr', 'de', 'pt', 'ar', 'ja', 'ko', 'zh'], defaultValue: 'en', help: 'Spoken-voice and subtitle language.' },
+      },
+      { kind: 'toggle', name: 'captions', label: 'Subtitles', defaultValue: false,
         children: [
           { kind: 'select', name: 'caption_style', label: 'Subtitle style', options: ['hormozi', 'tiktok', 'minimal'], defaultValue: 'hormozi' },
         ],
       },
-      { kind: 'select', name: 'language', label: 'Language', options: ['en', 'es', 'hi', 'fr', 'de', 'pt', 'ar', 'ja', 'ko', 'zh'], defaultValue: 'en', help: 'Spoken-voice and subtitle language.' },
-      {
-        kind: 'toggle', name: 'background_music', label: 'Background Music', defaultValue: false,
-        children: [
-          { kind: 'text', name: 'music_preference', label: 'Music preference', placeholder: 'lo-fi jazz, upbeat pop, cinematic…' },
-        ],
-      },
-      {
-        kind: 'toggle', name: '_watermark_enabled', label: 'Watermark', defaultValue: false, help: 'Burned onto the final video, small and semi-transparent.',
+      { kind: 'toggle', name: '_watermark_enabled', label: 'Watermark Text', defaultValue: false, help: 'Burned onto the final video, small and semi-transparent.',
         children: [
           { kind: 'text', name: 'watermark_text', label: 'Watermark text', placeholder: '@yourbrand' },
         ],
       },
-      { kind: 'voice-picker', name: 'voice_id', label: 'Voice Actor', help: 'Pick an ElevenLabs voice, or leave blank for the default AI voice.' },
+      { kind: 'expandable', name: '_music_preference_exp', label: 'Music Preference',
+        child: { kind: 'text', name: 'music_preference', label: 'Music preference', placeholder: 'lo-fi jazz, upbeat pop, cinematic…', help: 'Only used when Background Music is on.' },
+      },
+      { kind: 'expandable', name: '_voice_actor_exp', label: 'Voice Actors',
+        child: { kind: 'voice-picker', name: 'voice_id', label: 'Voice Actor', help: 'Pick an ElevenLabs voice, or leave blank for the default AI voice.' },
+      },
       { kind: 'select', name: 'look', label: 'Look', options: ['natural', 'commercial', 'raw_iphone'], defaultValue: 'natural' },
       { kind: 'select', name: 'aspect_ratio', label: 'Aspect ratio', options: ['9:16', '1:1'], defaultValue: '9:16' },
     ],

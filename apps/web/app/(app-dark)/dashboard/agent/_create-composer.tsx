@@ -76,6 +76,8 @@ const selectStyle: React.CSSProperties = {
   fontWeight: 600,
 };
 
+const titleSelectStyle: React.CSSProperties = { ...selectStyle, fontSize: 'inherit', fontWeight: 700, padding: '4px 10px' };
+
 export function CreateComposer({ onGenerate }: { onGenerate: (result: RunResult) => void }) {
   const [videoType, setVideoType] = useState<VideoType>('talking_head');
   const [platform, setPlatform] = useState<Platform>('9:16');
@@ -91,14 +93,16 @@ export function CreateComposer({ onGenerate }: { onGenerate: (result: RunResult)
   }, [videoType]);
 
   return (
-    <div className="flex w-full flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2.5 text-[26px] font-semibold" style={{ color: '#E9E9F0', letterSpacing: '-0.01em' }}>
+    <div className="flex w-full flex-col gap-2.5">
+      <div className="flex flex-wrap items-center gap-2.5 text-[26px] font-bold" style={{ color: '#E9E9F0', letterSpacing: '-0.01em' }}>
         <Sparkles className="h-6 w-6 shrink-0" style={{ color: '#A78BFA' }} />
         <span>Create a</span>
-        <select value={videoType} onChange={(e) => setVideoType(e.target.value as VideoType)} style={selectStyle}>
+        <select value={videoType} onChange={(e) => setVideoType(e.target.value as VideoType)} style={titleSelectStyle}>
           {VIDEO_TYPE_OPTIONS.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
         </select>
-        <span>video for</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 pl-[34px] text-[15px]" style={{ color: 'rgba(255,255,255,0.65)' }}>
+        <span>for</span>
         <select value={platform} onChange={(e) => setPlatform(e.target.value as Platform)} style={selectStyle}>
           {PLATFORM_OPTIONS.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
         </select>

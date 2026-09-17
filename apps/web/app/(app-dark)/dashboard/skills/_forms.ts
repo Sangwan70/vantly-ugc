@@ -39,7 +39,15 @@ export type Field =
   // Voice Actor picker: lists ElevenLabs voices (GET /v1/voices/elevenlabs)
   // with a play-preview per voice. Value is a bare ElevenLabs voice_id, or
   // '' for the default AI voice.
-  | { kind: 'voice-picker'; name: string; label: string; help?: string };
+  | { kind: 'voice-picker'; name: string; label: string; help?: string }
+  // An on/off switch (NOT a raw checkbox) whose own value is a boolean at
+  // `name`. When on, `children` render indented right below it; when
+  // switched off, each child is reset to its own default so a stale value
+  // typed while it was on never gets silently submitted. Use this instead
+  // of a bare `boolean` field whenever the toggle gates one or more other
+  // fields (e.g. Background Music -> Music Preference) so the dependency
+  // is visible instead of two unrelated-looking rows sitting side by side.
+  | { kind: 'toggle'; name: string; label: string; defaultValue?: boolean; help?: string; children?: Field[] };
 
 export interface SkillForm {
   fields: Field[];
@@ -58,12 +66,25 @@ export const FORMS: Record<string, SkillForm> = {
       { kind: 'image', name: 'product_image', label: 'Product photo', help: 'A photo of the product to show/hold — turns this into a product ad. Needs a character above to hold it.' },
       { kind: 'text', name: 'broll_url', label: 'B-roll video URL', placeholder: 'https://…mp4 — narrated overlay / review', help: 'The person narrates over this footage.' },
       { kind: 'text', name: 'name', label: 'Name / vibe hint (optional)', placeholder: 'Sophia, 28' },
-      { kind: 'boolean', name: 'captions', label: 'Subtitles', defaultValue: false },
-      { kind: 'select', name: 'caption_style', label: 'Subtitle style', options: ['hormozi', 'tiktok', 'minimal'], defaultValue: 'hormozi' },
+      {
+        kind: 'toggle', name: 'captions', label: 'Subtitles', defaultValue: false,
+        children: [
+          { kind: 'select', name: 'caption_style', label: 'Subtitle style', options: ['hormozi', 'tiktok', 'minimal'], defaultValue: 'hormozi' },
+        ],
+      },
       { kind: 'select', name: 'language', label: 'Language', options: ['en', 'es', 'hi', 'fr', 'de', 'pt', 'ar', 'ja', 'ko', 'zh'], defaultValue: 'en', help: 'Spoken-voice and subtitle language.' },
-      { kind: 'boolean', name: 'background_music', label: 'Background Music', defaultValue: false },
-      { kind: 'text', name: 'music_preference', label: 'Music Preference', placeholder: 'lo-fi jazz, upbeat pop, cinematic…', help: 'Only used when Background Music is on.' },
-      { kind: 'text', name: 'watermark_text', label: 'Watermark Text', placeholder: '@yourbrand', help: 'Burned onto the final video, small and semi-transparent.' },
+      {
+        kind: 'toggle', name: 'background_music', label: 'Background Music', defaultValue: false,
+        children: [
+          { kind: 'text', name: 'music_preference', label: 'Music preference', placeholder: 'lo-fi jazz, upbeat pop, cinematic…' },
+        ],
+      },
+      {
+        kind: 'toggle', name: '_watermark_enabled', label: 'Watermark', defaultValue: false, help: 'Burned onto the final video, small and semi-transparent.',
+        children: [
+          { kind: 'text', name: 'watermark_text', label: 'Watermark text', placeholder: '@yourbrand' },
+        ],
+      },
       { kind: 'voice-picker', name: 'voice_id', label: 'Voice Actor', help: 'Pick an ElevenLabs voice, or leave blank for the default AI voice.' },
       { kind: 'select', name: 'look', label: 'Look', options: ['natural', 'commercial', 'raw_iphone'], defaultValue: 'natural' },
       { kind: 'select', name: 'aspect_ratio', label: 'Aspect ratio', options: ['9:16', '1:1'], defaultValue: '9:16' },

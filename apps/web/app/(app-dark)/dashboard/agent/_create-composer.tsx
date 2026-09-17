@@ -21,6 +21,7 @@
  */
 
 import { useMemo, useState } from 'react';
+import { Sparkles } from 'lucide-react';
 import { RunPanel, type RunResult, type SkillEntry } from '../skills/_run-panel';
 import { FORMS, type Field } from '../skills/_forms';
 
@@ -91,7 +92,8 @@ export function CreateComposer({ onGenerate }: { onGenerate: (result: RunResult)
 
   return (
     <div className="flex w-full flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2 text-2xl" style={{ color: '#E9E9F0', letterSpacing: '-0.01em' }}>
+      <div className="flex flex-wrap items-center gap-2.5 text-[26px] font-semibold" style={{ color: '#E9E9F0', letterSpacing: '-0.01em' }}>
+        <Sparkles className="h-6 w-6 shrink-0" style={{ color: '#A78BFA' }} />
         <span>Create a</span>
         <select value={videoType} onChange={(e) => setVideoType(e.target.value as VideoType)} style={selectStyle}>
           {VIDEO_TYPE_OPTIONS.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
@@ -116,6 +118,8 @@ export function CreateComposer({ onGenerate }: { onGenerate: (result: RunResult)
         activeRun={null}
         onLaunched={onGenerate}
         initialValues={{ aspect_ratio: platform }}
+        submitLabel="Generate Video"
+        hideHeading
       />
     </div>
   );

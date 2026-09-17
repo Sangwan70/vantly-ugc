@@ -118,12 +118,22 @@ export function estimateSkillEta(skillSlug: string, body: Record<string, unknown
 
 const TERMINAL_RUN_STATUSES = new Set(['succeeded', 'failed', 'canceled', 'error']);
 
+function defaultForField(f: Field): unknown {
+  if (f.kind === 'select') return f.defaultValue ?? f.options[0];
+  if (f.kind === 'number-select') return f.defaultValue ?? f.options[0];
+  if (f.kind === 'boolean' || f.kind === 'toggle') return f.defaultValue ?? false;
+  if (f.kind === 'character-list' || f.kind === 'scene-list') return [];
+  return '';
+}
+
 export function RunPanel({
   skill,
   form,
   activeRun,
   onLaunched,
   initialValues,
+  submitLabel = 'Run skill',
+  hideHeading,
 }: {
   skill: SkillEntry;
   form?: { fields: Field[]; composed: boolean };
@@ -133,16 +143,21 @@ export function RunPanel({
    *  `form.fields` (e.g. a caller-driven aspect_ratio picked outside this
    *  panel's own field list). Applied once, on mount. */
   initialValues?: Record<string, unknown>;
+  /** Text on the submit button. Defaults to "Run skill" for the generic
+   *  Skill Center use; a caller with its own framing (e.g. the agent
+   *  page's video composer) can pass something that reads better there. */
+  submitLabel?: string;
+  /** Hide the "RUN" section label above the fields — for a caller (like
+   *  the agent composer) that already has its own prominent title above
+   *  this panel, so a second generic heading doesn't compete with it. */
+  hideHeading?: boolean;
 }) {
   const initial = useMemo(() => {
     const o: Record<string, unknown> = {};
     if (!form) return { ...o, ...initialValues };
     for (const f of form.fields) {
-      if (f.kind === 'select') o[f.name] = f.defaultValue ?? f.options[0];
-      else if (f.kind === 'number-select') o[f.name] = f.defaultValue ?? f.options[0];
-      else if (f.kind === 'boolean') o[f.name] = f.defaultValue ?? false;
-      else if (f.kind === 'character-list' || f.kind === 'scene-list') o[f.name] = [];
-      else o[f.name] = '';
+      o[f.name] = defaultForField(f);
+      if (f.kind === 'toggle') for (const c of f.children ?? []) o[c.name] = defaultForField(c);
     }
     return { ...o, ...initialValues };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -159,6 +174,9 @@ export function RunPanel({
     setSubmitting(true);
     const body: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(values)) {
+      // UI-only helper fields (e.g. a toggle's synthetic "_enabled" flag
+      // that has no matching backend prop) never leave the browser.
+      if (k.startsWith('_')) continue;
       if (typeof v === 'string' && v.trim() === '') continue;
       if (k === 'characters' && Array.isArray(v)) {
         const cleaned = (v as CharacterItem[])
@@ -206,13 +224,15 @@ export function RunPanel({
     }
   };
 
+  const onChangeAny = (name: string, v: unknown) => setValues((p) => ({ ...p, [name]: v }));
+
   return (
     <div className="flex flex-col gap-4 rounded-2xl p-5" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#14151F' }}>
-      <h2 className="text-sm font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.55)' }}>Run</h2>
+      {!hideHeading && <h2 className="text-sm font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.55)' }}>Run</h2>}
       {form ? (
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           {form.fields.map((f) => (
-            <FieldRow key={f.name} field={f} value={values[f.name]} allValues={values} onChange={(v) => setValues((p) => ({ ...p, [f.name]: v }))} />
+            <FieldRow key={f.name} field={f} value={values[f.name]} allValues={values} onChange={(v) => onChangeAny(f.name, v)} onChangeAny={onChangeAny} />
           ))}
           {submitErr && (
             <div className="rounded-lg px-3 py-2 text-xs" style={{ border: '1px solid rgba(255,79,79,0.3)', backgroundColor: 'rgba(255,79,79,0.08)', color: '#FCA5A5' }}>
@@ -222,7 +242,7 @@ export function RunPanel({
           <div className="flex items-center justify-end">
             <button type="submit" disabled={submitting} className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors" style={{ backgroundColor: submitting ? 'rgba(167,139,250,0.4)' : '#A78BFA', color: '#0F1015' }}>
               {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-              Run skill
+              {submitLabel}
             </button>
           </div>
         </form>
@@ -263,7 +283,7 @@ export function RunPanel({
   );
 }
 
-function FieldRow({ field, value, onChange, allValues }: { field: Field; value: unknown; onChange: (v: unknown) => void; allValues?: Record<string, unknown> }) {
+function FieldRow({ field, value, onChange, allValues, onChangeAny }: { field: Field; value: unknown; onChange: (v: unknown) => void; allValues?: Record<string, unknown>; onChangeAny?: (name: string, v: unknown) => void }) {
   const inputStyle: React.CSSProperties = { backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 10px', fontSize: 13, width: '100%' };
   const labelEl = (
     <label className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>{field.label}{('required' in field && field.required) ? ' *' : ''}</label>
@@ -310,6 +330,9 @@ function FieldRow({ field, value, onChange, allValues }: { field: Field; value: 
   }
   if (field.kind === 'voice-picker') {
     return <VoicePickerField field={field} value={value} onChange={onChange} />;
+  }
+  if (field.kind === 'toggle') {
+    return <ToggleField field={field} value={value} onChange={onChange} allValues={allValues} onChangeAny={onChangeAny} />;
   }
   if (field.kind === 'character-list') {
     return <CharacterListField field={field} value={value} onChange={onChange} />;
@@ -363,6 +386,55 @@ function FieldRow({ field, value, onChange, allValues }: { field: Field; value: 
       <input type="checkbox" checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} />
       {field.label}
     </label>
+  );
+}
+
+/**
+ * An on/off switch that expands to reveal its `children` fields right
+ * below it when on, and collapses (resetting each child to its own
+ * default, so a stale value can never sneak into the submitted body)
+ * when off. Used for settings that gate another field — e.g. Background
+ * Music -> Music preference — instead of two same-looking rows that
+ * don't visually communicate the dependency.
+ */
+function ToggleField({ field, value, onChange, allValues, onChangeAny }: {
+  field: Extract<Field, { kind: 'toggle' }>;
+  value: unknown;
+  onChange: (v: unknown) => void;
+  allValues?: Record<string, unknown>;
+  onChangeAny?: (name: string, v: unknown) => void;
+}) {
+  const enabled = Boolean(value);
+  const children = field.children ?? [];
+
+  function handleToggle(next: boolean) {
+    onChange(next);
+    if (!next) for (const c of children) onChangeAny?.(c.name, defaultForField(c));
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={enabled}
+        onClick={() => handleToggle(!enabled)}
+        className="flex items-center gap-2.5 self-start text-left"
+      >
+        <span className="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors" style={{ backgroundColor: enabled ? '#A78BFA' : 'rgba(255,255,255,0.15)' }}>
+          <span className="inline-block h-3.5 w-3.5 rounded-full transition-transform" style={{ backgroundColor: '#fff', transform: enabled ? 'translateX(18px)' : 'translateX(3px)' }} />
+        </span>
+        <span className="text-[13px] font-medium" style={{ color: '#E9E9F0' }}>{field.label}</span>
+      </button>
+      {field.help && <span className="pl-[46px] text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{field.help}</span>}
+      {enabled && children.length > 0 && (
+        <div className="ml-[19px] flex flex-col gap-3 border-l pl-4" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
+          {children.map((c) => (
+            <FieldRow key={c.name} field={c} value={allValues?.[c.name]} allValues={allValues} onChange={(v) => onChangeAny?.(c.name, v)} onChangeAny={onChangeAny} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

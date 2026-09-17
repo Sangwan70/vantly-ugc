@@ -19,8 +19,8 @@
  */
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Play } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Loader2, Play, Sparkles, Volume2 } from 'lucide-react';
 import type { Field } from './_forms';
 
 interface CharacterItem { name: string; description: string; ref: string; ref_base64: string }
@@ -108,7 +108,7 @@ function estimateMakeUgcVideoEta(durationSeconds: number): string {
 const GENERIC_ETA = 'a few minutes \u2014 sometimes longer for video';
 
 export function estimateSkillEta(skillSlug: string, body: Record<string, unknown>): string {
-  if (skillSlug === 'make_ugc_video') {
+  if (skillSlug === 'make_ugc_video' || skillSlug === 'make_ugc') {
     const raw = body.duration;
     const duration = typeof raw === 'number' ? raw : Number(raw);
     if (Number.isFinite(duration) && duration > 0) return estimateMakeUgcVideoEta(duration);
@@ -123,15 +123,20 @@ export function RunPanel({
   form,
   activeRun,
   onLaunched,
+  initialValues,
 }: {
   skill: SkillEntry;
   form?: { fields: Field[]; composed: boolean };
   activeRun: RunResult | null;
   onLaunched: (r: RunResult) => void;
+  /** Extra values to seed into the submitted body even for fields NOT in
+   *  `form.fields` (e.g. a caller-driven aspect_ratio picked outside this
+   *  panel's own field list). Applied once, on mount. */
+  initialValues?: Record<string, unknown>;
 }) {
   const initial = useMemo(() => {
     const o: Record<string, unknown> = {};
-    if (!form) return o;
+    if (!form) return { ...o, ...initialValues };
     for (const f of form.fields) {
       if (f.kind === 'select') o[f.name] = f.defaultValue ?? f.options[0];
       else if (f.kind === 'number-select') o[f.name] = f.defaultValue ?? f.options[0];
@@ -139,7 +144,8 @@ export function RunPanel({
       else if (f.kind === 'character-list' || f.kind === 'scene-list') o[f.name] = [];
       else o[f.name] = '';
     }
-    return o;
+    return { ...o, ...initialValues };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form]);
   const [values, setValues] = useState<Record<string, unknown>>(initial);
   const [submitting, setSubmitting] = useState(false);
@@ -298,6 +304,12 @@ function FieldRow({ field, value, onChange, allValues }: { field: Field; value: 
   }
   if (field.kind === 'character-picker') {
     return <CharacterPickerField field={field} value={value} onChange={onChange} />;
+  }
+  if (field.kind === 'script-ai') {
+    return <ScriptAiField field={field} value={value} onChange={onChange} />;
+  }
+  if (field.kind === 'voice-picker') {
+    return <VoicePickerField field={field} value={value} onChange={onChange} />;
   }
   if (field.kind === 'character-list') {
     return <CharacterListField field={field} value={value} onChange={onChange} />;
@@ -491,6 +503,178 @@ function CharacterPickerField({ field, value, onChange }: { field: Extract<Field
             placeholder={field.placeholder}
             style={inputStyle}
           />
+        </div>
+      )}
+
+      {field.help && <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{field.help}</span>}
+    </div>
+  );
+}
+
+
+/**
+ * A script textarea with a hover-reveal "Generate with AI" sparkle at its
+ * right edge (mouse-over the field, or focus it on touch). Treats whatever
+ * is currently typed as a one-line pitch/idea, drafts a full spoken script
+ * via POST /v1/assist/draft-script, and replaces the box's content with the
+ * result -- still a plain editable textarea afterward, so the user can
+ * paste their own script here just as easily as generating one.
+ */
+function ScriptAiField({ field, value, onChange }: { field: Extract<Field, { kind: 'script-ai' }>; value: unknown; onChange: (v: unknown) => void }) {
+  const inputStyle: React.CSSProperties = { backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 40px 8px 10px', fontSize: 13, width: '100%' };
+  const [hover, setHover] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  const [draftErr, setDraftErr] = useState<string | null>(null);
+  const text = String(value ?? '');
+
+  const generate = async () => {
+    if (!text.trim() || drafting) return;
+    setDrafting(true);
+    setDraftErr(null);
+    try {
+      const resp = await fetch('/api/v1/assist/draft-script', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pitch: text.trim(), target_duration: 'auto' }),
+      });
+      const data = (await resp.json()) as Record<string, unknown>;
+      if (!resp.ok) {
+        const msg = (data as any)?.error?.message ?? `HTTP ${resp.status}`;
+        setDraftErr(typeof msg === 'string' ? msg : 'Could not draft a script.');
+        return;
+      }
+      const script = typeof data.script === 'string' ? data.script : null;
+      if (script) onChange(script);
+      else setDraftErr('The draft came back empty — try rephrasing your idea.');
+    } catch (err) {
+      setDraftErr((err as Error).message);
+    } finally {
+      setDrafting(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>{field.label}</label>
+      <div className="relative" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+        <textarea
+          rows={4}
+          value={text}
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={() => setHover(true)}
+          placeholder={field.placeholder}
+          style={inputStyle}
+        />
+        {(hover || drafting) && text.trim() && (
+          <button
+            type="button"
+            onClick={generate}
+            disabled={drafting}
+            title="Generate with AI"
+            className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full transition-opacity disabled:opacity-60"
+            style={{ backgroundColor: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.4)' }}
+          >
+            {drafting ? <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: '#A78BFA' }} /> : <Sparkles className="h-3.5 w-3.5" style={{ color: '#A78BFA' }} />}
+          </button>
+        )}
+      </div>
+      {draftErr && <span className="text-[11px]" style={{ color: '#F87171' }}>{draftErr}</span>}
+      {field.help && <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{field.help}</span>}
+    </div>
+  );
+}
+
+interface ElevenLabsVoiceOption {
+  voice_id: string;
+  name: string;
+  preview_url: string | null;
+  category?: string;
+}
+
+/** Voice Actor picker: lists real ElevenLabs voices, with a play-preview per
+ *  voice. Value is a bare voice_id, or '' for the default AI voice. Renders
+ *  a plain "voiceover isn't set up" note (never an error) when the account
+ *  has no ElevenLabs key configured, per GET /v1/voices/elevenlabs's
+ *  `configured: false` response. */
+function VoicePickerField({ field, value, onChange }: { field: Extract<Field, { kind: 'voice-picker' }>; value: unknown; onChange: (v: unknown) => void }) {
+  const [open, setOpen] = useState(false);
+  const [voices, setVoices] = useState<ElevenLabsVoiceOption[] | null>(null);
+  const [configured, setConfigured] = useState(true);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const current = typeof value === 'string' ? value : '';
+
+  useEffect(() => {
+    if (!open || voices !== null) return;
+    fetch('/api/v1/voices/elevenlabs', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((j: { configured?: boolean; voices?: ElevenLabsVoiceOption[] }) => {
+        setConfigured(j.configured !== false);
+        setVoices(j.voices ?? []);
+      })
+      .catch(() => { setVoices([]); setLoadErr('Could not load voices.'); });
+  }, [open, voices]);
+
+  const selected = voices?.find((v) => v.voice_id === current);
+
+  const togglePreview = (v: ElevenLabsVoiceOption) => {
+    if (!v.preview_url) return;
+    if (playingId === v.voice_id) {
+      audioRef.current?.pause();
+      setPlayingId(null);
+      return;
+    }
+    audioRef.current?.pause();
+    const audio = new Audio(v.preview_url);
+    audioRef.current = audio;
+    audio.onended = () => setPlayingId(null);
+    void audio.play();
+    setPlayingId(v.voice_id);
+  };
+
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>{field.label}</label>
+
+      {current && (
+        <div className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ backgroundColor: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.25)' }}>
+          <span className="flex-1 truncate text-[12px]" style={{ color: '#E9E9F0' }}>{selected?.name ?? current}</span>
+          <button type="button" onClick={() => onChange('')} className="text-[11px] underline" style={{ color: 'rgba(255,255,255,0.5)' }}>clear</button>
+        </div>
+      )}
+
+      <button type="button" onClick={() => setOpen((o) => !o)} className="self-start text-[12px] underline" style={{ color: '#A78BFA' }}>
+        {open ? 'hide voices' : current ? 'change voice' : 'choose a voice'}
+      </button>
+
+      {open && (
+        <div className="flex flex-col gap-2 rounded-xl p-3" style={{ border: '1px solid rgba(255,255,255,0.08)', backgroundColor: '#0F1015' }}>
+          {!configured ? (
+            <div className="py-2 text-[12px]" style={{ color: 'rgba(255,255,255,0.45)' }}>
+              Voiceover isn&apos;t set up for this account yet — the default AI voice will be used.
+            </div>
+          ) : voices === null ? (
+            <div className="py-3 text-center text-[12px]" style={{ color: 'rgba(255,255,255,0.4)' }}>loading…</div>
+          ) : voices.length === 0 ? (
+            <div className="py-3 text-center text-[12px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{loadErr ?? 'No voices available.'}</div>
+          ) : (
+            <div className="flex max-h-56 flex-col gap-1 overflow-y-auto">
+              {voices.map((v) => (
+                <div key={v.voice_id} className="flex items-center gap-2 rounded-lg px-2 py-1.5" style={{ border: current === v.voice_id ? '1px solid #A78BFA' : '1px solid transparent', backgroundColor: current === v.voice_id ? 'rgba(167,139,250,0.08)' : 'transparent' }}>
+                  {v.preview_url && (
+                    <button type="button" onClick={() => togglePreview(v)} title="Preview" className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
+                      <Volume2 className="h-3 w-3" style={{ color: playingId === v.voice_id ? '#A78BFA' : 'rgba(255,255,255,0.5)' }} />
+                    </button>
+                  )}
+                  <button type="button" onClick={() => { onChange(v.voice_id); setOpen(false); }} className="flex-1 truncate text-left text-[12.5px]" style={{ color: '#E9E9F0' }}>
+                    {v.name}{v.category ? <span style={{ color: 'rgba(255,255,255,0.4)' }}> · {v.category}</span> : null}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

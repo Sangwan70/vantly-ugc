@@ -25,6 +25,7 @@ import { invokeFn } from '@/lib/supabase/fn-proxy';
 import { SAMPLE_PROMPTS } from '@/lib/sample-prompts';
 import { RunPanel, estimateSkillEta, type SkillEntry as SkillCatalogEntry, type RunResult as SkillLaunchResult } from '../skills/_run-panel';
 import { FORMS as SKILL_FORMS } from '../skills/_forms';
+import { CreateComposer, MAKE_UGC_ENTRY } from './_create-composer';
 
 type Block =
   | { type: 'text'; text: string }
@@ -1773,17 +1774,8 @@ export default function AgentPage() {
         {skillRunModal}
         {historyRail}
         <div className="mx-auto flex h-full min-w-0 flex-1 flex-col items-center justify-center px-6">
-        <div className="mb-6 flex items-center gap-3">
-          <Sparkles className="h-7 w-7" style={{ color: '#A78BFA' }} />
-          <h1 className="text-3xl" style={{ color: '#E9E9F0', letterSpacing: '-0.02em' }}>What should we create?</h1>
-        </div>
-        <div className="w-full max-w-3xl">{composer}</div>
-        <div className="mt-4 flex w-full max-w-3xl flex-wrap justify-center gap-2">
-          {SUGGESTIONS.map((s) => (
-            <button key={s.label} type="button" onClick={() => setInput(s.prompt)} className="rounded-full px-3.5 py-2 text-[13px]" style={{ background: '#14151F', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.75)' }}>
-              {s.label}
-            </button>
-          ))}
+        <div className="w-full max-w-3xl">
+          <CreateComposer onGenerate={(r) => void launchSkillFromPicker(MAKE_UGC_ENTRY, r)} />
         </div>
         {error && <div className="mt-4 rounded-xl px-4 py-2.5 text-sm" style={{ border: '1px solid rgba(255,79,79,0.3)', background: 'rgba(255,79,79,0.08)', color: '#FCA5A5' }}>{error}</div>}
         </div>

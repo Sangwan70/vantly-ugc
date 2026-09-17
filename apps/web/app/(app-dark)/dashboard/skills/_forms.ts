@@ -30,7 +30,16 @@ export type Field =
   // scene: a speaking character (drawn from the sibling `charactersField`
   // list), their spoken line, and a visual description of the shot. Value
   // is an array of { speaker, line, visual_description } objects.
-  | { kind: 'scene-list'; name: string; label: string; max: number; charactersField: string; help?: string };
+  | { kind: 'scene-list'; name: string; label: string; max: number; charactersField: string; help?: string }
+  // Script textarea with a hover-reveal "Generate with AI" sparkle at its
+  // right edge. Treats the CURRENT text as a one-line pitch, drafts a full
+  // script via POST /v1/assist/draft-script, and replaces the box's
+  // content with the result (still editable afterward).
+  | { kind: 'script-ai'; name: string; label: string; placeholder?: string; help?: string }
+  // Voice Actor picker: lists ElevenLabs voices (GET /v1/voices/elevenlabs)
+  // with a play-preview per voice. Value is a bare ElevenLabs voice_id, or
+  // '' for the default AI voice.
+  | { kind: 'voice-picker'; name: string; label: string; help?: string };
 
 export interface SkillForm {
   fields: Field[];
@@ -41,15 +50,21 @@ export const FORMS: Record<string, SkillForm> = {
   make_ugc: {
     composed: true,
     fields: [
-      { kind: 'text', name: 'script', label: 'Script — what they say', placeholder: 'Okay this completely changed how I work — I plan my whole week in ten minutes now.', textarea: true, help: 'Any length — a line makes one clip, a monologue makes a multi-take video. Never trimmed.' },
+      { kind: 'script-ai', name: 'script', label: 'Script — what they say', placeholder: 'Paste your script here, or type your idea and click the sparkle to generate one…', help: 'Any length — a line makes one clip, a monologue makes a multi-take video. Never trimmed.' },
+      { kind: 'text', name: 'scene_action', label: '…or a silent clip (instead of a script)', placeholder: 'dancing freestyle, smiling at camera', help: 'Use instead of a script for a non-speech clip. Needs a saved character.' },
       { kind: 'text', name: 'person', label: 'Person (describe in words)', placeholder: 'a friendly young woman, soft daylight', help: 'OR upload a photo / reuse a saved character below — at most one.' },
       { kind: 'image', name: 'image', label: '…or upload a photo of the person', help: 'The face is locked to it.' },
       { kind: 'character-picker', name: 'character', label: '…or reuse a saved character', placeholder: 'char_… or a character_sheet_url', help: 'Pick a saved character or stock actor, or paste an id/URL.' },
+      { kind: 'image', name: 'product_image', label: 'Product photo', help: 'A photo of the product to show/hold — turns this into a product ad. Needs a character above to hold it.' },
+      { kind: 'text', name: 'broll_url', label: 'B-roll video URL', placeholder: 'https://…mp4 — narrated overlay / review', help: 'The person narrates over this footage.' },
       { kind: 'text', name: 'name', label: 'Name / vibe hint (optional)', placeholder: 'Sophia, 28' },
-      { kind: 'text', name: 'broll_url', label: 'B-roll video URL (optional)', placeholder: 'https://…mp4 — narrated overlay / review', help: 'The person narrates over this footage.' },
-      { kind: 'text', name: 'scene_action', label: 'Silent clip (instead of a script)', placeholder: 'dancing freestyle, smiling at camera', help: 'Use instead of a script for a non-speech clip. Needs a saved character.' },
-      { kind: 'boolean', name: 'captions', label: 'Captions', defaultValue: false },
-      { kind: 'select', name: 'caption_style', label: 'Caption style', options: ['hormozi', 'tiktok', 'minimal'], defaultValue: 'hormozi' },
+      { kind: 'boolean', name: 'captions', label: 'Subtitles', defaultValue: false },
+      { kind: 'select', name: 'caption_style', label: 'Subtitle style', options: ['hormozi', 'tiktok', 'minimal'], defaultValue: 'hormozi' },
+      { kind: 'select', name: 'language', label: 'Language', options: ['en', 'es', 'hi', 'fr', 'de', 'pt', 'ar', 'ja', 'ko', 'zh'], defaultValue: 'en', help: 'Spoken-voice and subtitle language.' },
+      { kind: 'boolean', name: 'background_music', label: 'Background Music', defaultValue: false },
+      { kind: 'text', name: 'music_preference', label: 'Music Preference', placeholder: 'lo-fi jazz, upbeat pop, cinematic…', help: 'Only used when Background Music is on.' },
+      { kind: 'text', name: 'watermark_text', label: 'Watermark Text', placeholder: '@yourbrand', help: 'Burned onto the final video, small and semi-transparent.' },
+      { kind: 'voice-picker', name: 'voice_id', label: 'Voice Actor', help: 'Pick an ElevenLabs voice, or leave blank for the default AI voice.' },
       { kind: 'select', name: 'look', label: 'Look', options: ['natural', 'commercial', 'raw_iphone'], defaultValue: 'natural' },
       { kind: 'select', name: 'aspect_ratio', label: 'Aspect ratio', options: ['9:16', '1:1'], defaultValue: '9:16' },
     ],

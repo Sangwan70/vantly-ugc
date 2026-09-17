@@ -114,7 +114,7 @@ export function CreateComposer({ onGenerate, onUseSavedPrompt, onRunDifferentSki
 
       {REQUIRED_CHARACTER_TYPES.has(videoType) && (
         <p className="text-[12.5px]" style={{ color: 'rgba(255,255,255,0.5)' }}>
-          This type needs a saved character — pick one under "Use Saved Characters" below.
+          This type needs a saved character — pick one under &quot;Use Saved Characters&quot; below.
         </p>
       )}
 

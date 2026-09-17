@@ -1269,7 +1269,7 @@ export async function getSkillRunRoute(req: Request, res: Response): Promise<voi
   }
   const { data: run, error: runErr } = await supabase
     .from('skill_runs')
-    .select('id, user_id, skill_slug, skill_version, status, current_step, started_at, finished_at, created_at, final_output, error_code, error_message')
+    .select('id, user_id, skill_slug, skill_version, status, current_step, started_at, finished_at, created_at, final_output, error_code, error_message, input')
     .eq('id', skillRunId)
     .maybeSingle();
   if (runErr) {
@@ -1294,8 +1294,16 @@ export async function getSkillRunRoute(req: Request, res: Response): Promise<voi
     { status: run.status, error_code: run.error_code, error_message: run.error_message },
     stepRows,
   );
+  // Surface only the one input field the run-detail progress bar needs to
+  // compute a time-based ETA (see apps/web .../skills/runs/[id]/page.tsx) --
+  // never the raw `input` blob, which can carry base64 reference images,
+  // scripts, or other user content that has no business in this response.
+  const rawInput = run.input as Record<string, unknown> | null;
+  const rawDuration = rawInput && typeof rawInput === 'object' ? rawInput.duration : undefined;
+  const videoDurationSeconds = typeof rawDuration === 'number' && Number.isFinite(rawDuration) ? rawDuration : null;
   res.status(200).json({
     skill_run_id: run.id,
+    video_duration_seconds: videoDurationSeconds,
     skill: run.skill_slug,
     skill_version: run.skill_version,
     status: effectiveStatus,

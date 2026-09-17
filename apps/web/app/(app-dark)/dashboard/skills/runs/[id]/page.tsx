@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { use, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ArrowLeft, ExternalLink, Loader2 } from 'lucide-react';
+import { estimateSkillEta } from '../../_run-panel';
 
 interface Artifact { url: string; kind?: string; mime?: string | null; bytes?: number }
 interface StepEntry { primitive_run_id?: string; primitive: string; status: string; started_at?: string | null; finished_at?: string | null; error?: { code: string; message: string | null } | null; artifacts?: Artifact[] }
@@ -30,6 +31,7 @@ interface RunBody {
   primitive?: string;
   artifacts?: Artifact[];
   // shared
+  video_duration_seconds?: number | null;
   status: string;
   started_at?: string | null;
   finished_at?: string | null;
@@ -69,6 +71,157 @@ function friendlyErrorMessage(code: string | null | undefined, message: string |
     return 'A temporary provider error occurred.';
   }
   return message?.trim() || 'This run failed for an unknown reason — check the server logs.';
+}
+
+/**
+ * make_ugc_video's real, fixed step sequence (see workflows/make-ugc-video.ts
+ * -- portrait and character_sheet are near-instant compared to the actual
+ * video render, so this bar is time-weighted rather than an equal 1/5-per-step
+ * split, which would sit the bar at "40% done" for the several minutes the
+ * selfie step (the seedance-2.0 render, the real long pole) is running. Two
+ * steps here are conditionally skipped by the workflow (portrait when the
+ * caller supplied portrait_url directly; subtitles/watermark when the
+ * caller opted out) -- skipped steps simply never appear as `current_step`
+ * or in `steps[]`, so they drop out of the "completed weight so far" sum
+ * without needing to be special-cased.
+ */
+const MAKE_UGC_STEP_ORDER = ['portrait', 'character_sheet', 'selfie', 'subtitles', 'watermark'] as const;
+const MAKE_UGC_STEP_WEIGHT: Record<(typeof MAKE_UGC_STEP_ORDER)[number], number> = {
+  portrait: 0.05,
+  character_sheet: 0.05,
+  selfie: 0.8,
+  subtitles: 0.05,
+  watermark: 0.05,
+};
+const MAKE_UGC_STEP_LABEL: Record<string, string> = {
+  portrait: 'Generating portrait',
+  character_sheet: 'Building character sheet',
+  selfie: 'Rendering video',
+  subtitles: 'Adding captions',
+  watermark: 'Adding watermark',
+  done: 'Finalizing',
+};
+// steps[].primitive uses the worker's activity names, not the shorter
+// current_step keys the workflow signals with -- see
+// services/primitive-worker-vnext/src/activities/*.ts.
+const PRIMITIVE_TO_MAKE_UGC_STEP: Record<string, string> = {
+  portrait_gpt2: 'portrait',
+  character_sheet_gpt2: 'character_sheet',
+  simple_selfie: 'selfie',
+  subtitles: 'subtitles',
+  watermark: 'watermark',
+};
+// seedance-2.0 renders roughly 36s of wall-clock time per second of output
+// video (packages/schema/src/v2/models.ts's "~3 min for a 5s clip" data
+// point) -- matches estimateMakeUgcVideoEta's own constant in _run-panel.tsx.
+function expectedMakeUgcStepSeconds(step: string, durationSeconds: number | null | undefined): number {
+  switch (step) {
+    case 'portrait': return 30;
+    case 'character_sheet': return 15;
+    case 'selfie': return Math.max(30, (durationSeconds ?? 10) * 36);
+    case 'subtitles': return 20;
+    case 'watermark': return 15;
+    default: return 30;
+  }
+}
+
+interface MakeUgcProgress { fraction: number; label: string }
+
+/**
+ * Grounded in the same primitive_runs rows the Timeline section below
+ * already renders (never a guess independent of real backend state): every
+ * step strictly before the current one is fully counted, and the current
+ * step gets partial credit from how long its own primitive_runs row has
+ * been running versus how long that step normally takes -- capped short of
+ * 100% of its own weight so the bar can never visually finish before the
+ * step's row actually flips to succeeded/failed.
+ */
+function computeMakeUgcProgress(body: RunBody, nowMs: number): MakeUgcProgress {
+  if (body.status === 'succeeded') return { fraction: 1, label: MAKE_UGC_STEP_LABEL.done };
+  const cur = body.current_step ?? null;
+  if (!cur || cur === 'done') {
+    return { fraction: cur === 'done' ? 1 : 0, label: cur === 'done' ? MAKE_UGC_STEP_LABEL.done : 'Queued' };
+  }
+  const idx = MAKE_UGC_STEP_ORDER.indexOf(cur as (typeof MAKE_UGC_STEP_ORDER)[number]);
+  if (idx === -1) return { fraction: 0, label: cur };
+  let completed = 0;
+  for (let i = 0; i < idx; i++) completed += MAKE_UGC_STEP_WEIGHT[MAKE_UGC_STEP_ORDER[i]];
+  const curStepRow = (body.steps ?? []).find((s) => PRIMITIVE_TO_MAKE_UGC_STEP[s.primitive] === cur);
+  const stepStartedAtMs = curStepRow?.started_at
+    ? new Date(curStepRow.started_at).getTime()
+    : body.started_at
+      ? new Date(body.started_at).getTime()
+      : null;
+  const expectedMs = expectedMakeUgcStepSeconds(cur, body.video_duration_seconds) * 1000;
+  const withinStep = stepStartedAtMs != null ? Math.max(0, nowMs - stepStartedAtMs) / expectedMs : 0.4;
+  const partial = Math.min(0.92, withinStep);
+  const fraction = Math.min(0.99, completed + MAKE_UGC_STEP_WEIGHT[cur as (typeof MAKE_UGC_STEP_ORDER)[number]] * partial);
+  return { fraction, label: MAKE_UGC_STEP_LABEL[cur] ?? cur };
+}
+
+function formatElapsed(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = Math.max(0, Math.round(sec % 60));
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+function ProgressBar({ fraction, indeterminate }: { fraction: number; indeterminate?: boolean }) {
+  return (
+    <div className="h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+      <div
+        className={indeterminate ? 'h-full animate-pulse' : 'h-full transition-[width] duration-700 ease-out'}
+        style={{
+          width: indeterminate ? '40%' : `${Math.round(fraction * 100)}%`,
+          backgroundColor: '#A78BFA',
+          borderRadius: 9999,
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * Live progress + approx-time section for the run-detail page. Real,
+ * time-weighted progress for make_ugc_video (the skill this session's
+ * whole investigation centered on); an honest indeterminate bar for
+ * every other composed skill, whose step count varies per run (scene/clip
+ * counts) and so has no reliable fixed total to compute a true fraction
+ * against -- showing a fabricated percentage there would be worse than
+ * showing none.
+ */
+function RunProgress({ body }: { body: RunBody }) {
+  const terminal = TERMINAL.has(body.status);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (terminal) return;
+    const t = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [terminal]);
+  if (body.status === 'succeeded') return null;
+
+  const startedAtMs = body.started_at ? new Date(body.started_at).getTime() : body.created_at ? new Date(body.created_at).getTime() : null;
+  const endMs = terminal && body.finished_at ? new Date(body.finished_at).getTime() : nowMs;
+  const elapsedSec = startedAtMs != null ? Math.max(0, (endMs - startedAtMs) / 1000) : null;
+
+  const isMakeUgc = body.skill === 'make_ugc_video' || body.skill === 'make_ugc';
+  const progress = isMakeUgc ? computeMakeUgcProgress(body, nowMs) : null;
+  const etaText = isMakeUgc && body.skill ? estimateSkillEta(body.skill, { duration: body.video_duration_seconds ?? undefined }) : 'a few minutes \u2014 sometimes longer for video';
+
+  return (
+    <div className="mt-4 rounded-xl px-4 py-3" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#15161D' }}>
+      <div className="flex items-center justify-between gap-3 text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
+        <span>{progress ? progress.label : body.current_step ?? 'In progress'}</span>
+        <span>{progress ? `${Math.round(progress.fraction * 100)}%` : null}</span>
+      </div>
+      <div className="mt-2">
+        <ProgressBar fraction={progress?.fraction ?? 0} indeterminate={!progress} />
+      </div>
+      <div className="mt-2 flex items-center justify-between text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
+        <span>{elapsedSec != null ? `Elapsed: ${formatElapsed(elapsedSec)}` : null}</span>
+        {!terminal && <span>Typically {etaText}</span>}
+      </div>
+    </div>
+  );
 }
 
 export default function RunTimelinePage({ params }: { params: Promise<{ id: string }> }) {
@@ -178,6 +331,8 @@ function RunBodyView({ body, composed, id }: { body: RunBody; composed: boolean;
           <span style={{ color: body.status === 'succeeded' ? '#34D399' : body.status === 'failed' ? '#F87171' : '#A78BFA' }}>{body.status}</span>
         </div>
       </div>
+
+      <RunProgress body={body} />
 
       {body.error && (
         <div className="mt-4 rounded-xl px-4 py-3 text-sm" style={{ border: '1px solid rgba(255,79,79,0.3)', backgroundColor: 'rgba(255,79,79,0.08)', color: '#FCA5A5' }}>

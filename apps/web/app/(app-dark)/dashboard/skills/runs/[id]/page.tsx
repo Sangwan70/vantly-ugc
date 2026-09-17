@@ -84,11 +84,31 @@ export default function RunTimelinePage({ params }: { params: Promise<{ id: stri
     stopped.current = false;
     const fetchOnce = async () => {
       try {
-        let resp = await fetch(`/api/v1/primitives/runs/${encodeURIComponent(id)}`, { credentials: 'include' });
-        let didCompose = false;
-        if (!resp.ok || forcedComposed) {
+        // The URL already told us which table this run lives in
+        // (CreateComposer/RunPanel link here with ?composed=1 for every
+        // composed skill_runs id) -- go straight to skills/runs instead of
+        // probing primitives/runs first and discarding a guaranteed 404.
+        // That probe used to run on EVERY 4s poll tick for the run's whole
+        // lifetime regardless of forcedComposed (the old `|| forcedComposed`
+        // check only decided whether to ALSO fetch skills/runs afterward,
+        // not whether to skip the primitives probe) -- confirmed live via a
+        // HAR showing a steady stream of primitives/runs 404s alongside the
+        // real skills/runs 200s for one make_ugc_video run's entire
+        // detail-page session. Harmless to the data shown, but doubled the
+        // request count and spammed error monitoring with a 404 that was
+        // never actually an error.
+        let resp: Response;
+        let didCompose: boolean;
+        if (forcedComposed) {
           resp = await fetch(`/api/v1/skills/runs/${encodeURIComponent(id)}`, { credentials: 'include' });
           didCompose = true;
+        } else {
+          resp = await fetch(`/api/v1/primitives/runs/${encodeURIComponent(id)}`, { credentials: 'include' });
+          didCompose = false;
+          if (!resp.ok) {
+            resp = await fetch(`/api/v1/skills/runs/${encodeURIComponent(id)}`, { credentials: 'include' });
+            didCompose = true;
+          }
         }
         if (!resp.ok) {
           setError(`run ${resp.status}`);

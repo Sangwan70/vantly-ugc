@@ -26,12 +26,104 @@ const MODEL = process.env.ANTHROPIC_AGENT_MODEL || 'claude-sonnet-4-6';
 // without making a stuck request hang the wizard indefinitely.
 const DRAFT_TIMEOUT_MS = 45_000;
 
+// Fallback model tried ONCE if the primary model times out, errors, or
+// returns something unparseable -- 'claude-haiku-4-5' is already this
+// codebase's established fast-model choice for latency-sensitive Anthropic
+// calls (see primitive-worker-vnext/src/client/anthropic.ts's portrait
+// prompt builder). A live HAR showed the primary model missing even the
+// generous 45s window on an ordinary pitch; retrying on a faster model
+// actually resolves the user's request instead of just failing faster or
+// with a clearer message. Distinct from generateImageWithFallback's
+// PRIMARY/proxy fallback (openai.ts) -- that one switches network path on
+// a connection failure; this one switches MODEL on a latency/quality
+// failure, so it also covers the model returning something unparseable,
+// not just a timeout.
+const FALLBACK_MODEL = process.env.ANTHROPIC_AGENT_FALLBACK_MODEL || 'claude-haiku-4-5';
+// Shorter than the primary's: haiku is materially faster, and the two
+// timeouts stack (worst case ~65s total) only on the rare request that
+// exhausts both -- most fall back well before this.
+const FALLBACK_TIMEOUT_MS = 20_000;
+
 /** AbortSignal.timeout() rejects/aborts with a DOMException named 'TimeoutError' — detect that
  * specifically so a slow model call is reported as a timeout, not mislabeled as a parse failure
  * (a real bug that shipped: the AbortSignal could also fire mid-body-read, after `upstream.ok`
  * was already true, and got swallowed by the JSON.parse catch below as "unparseable response"). */
 function isTimeoutError(err: unknown): boolean {
   return err instanceof Error && err.name === 'TimeoutError';
+}
+
+/**
+ * One model-call attempt's failure, already carrying the exact HTTP
+ * status + JSON body draftScriptRoute would have sent for it directly --
+ * lets the route try a second (fallback) model on ANY of these without
+ * duplicating the status/body logic for each failure kind.
+ */
+class DraftAttemptError extends Error {
+  constructor(
+    readonly httpStatus: number,
+    readonly body: { error: { code: string; message: string; detail?: string } },
+  ) {
+    super(body.error.message);
+    this.name = 'DraftAttemptError';
+  }
+}
+
+/** Call `model`, bounded by `timeoutMs`, and return its raw text content blocks
+ *  joined together (NOT yet <script>-tag-extracted -- draftScriptRoute does that
+ *  once, after whichever attempt succeeds). Throws DraftAttemptError on any
+ *  failure so the caller can retry with a different model without re-deriving
+ *  the response shape. */
+async function attemptDraft(model: string, timeoutMs: number, userMessage: string): Promise<string> {
+  let upstream: globalThis.Response;
+  try {
+    upstream = await callAnthropicMessages(
+      {
+        model,
+        // Generous headroom: some upstream models (esp. via
+        // MODEL_PROVIDER=openrouter) reason inline before the <script> tag
+        // rather than in a separate thinking channel, and 400 was tight
+        // enough that a request could get cut off mid-reasoning, before
+        // ever emitting the tag -- see the <script> extraction in
+        // draftScriptRoute, which is what actually keeps stray reasoning
+        // out of the result.
+        max_tokens: 700,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userMessage }],
+      },
+      { signal: AbortSignal.timeout(timeoutMs) },
+    );
+  } catch (err) {
+    if (isTimeoutError(err)) {
+      throw new DraftAttemptError(504, {
+        error: { code: 'UPSTREAM_TIMEOUT', message: `The AI script writer took too long to respond (over ${timeoutMs / 1000}s) — try again.` },
+      });
+    }
+    throw new DraftAttemptError(502, { error: { code: 'UPSTREAM_ERROR', message: (err as Error).message } });
+  }
+
+  if (!upstream.ok) {
+    const text = await upstream.text().catch(() => '');
+    throw new DraftAttemptError(502, {
+      error: { code: 'UPSTREAM_ERROR', message: `Model call failed (${upstream.status})`, detail: text.slice(0, 500) },
+    });
+  }
+
+  let data: { content?: Array<{ type?: string; text?: string }> };
+  try {
+    data = (await upstream.json()) as typeof data;
+  } catch (err) {
+    if (isTimeoutError(err)) {
+      throw new DraftAttemptError(504, {
+        error: { code: 'UPSTREAM_TIMEOUT', message: `The AI script writer took too long to respond (over ${timeoutMs / 1000}s) — try again.` },
+      });
+    }
+    throw new DraftAttemptError(502, { error: { code: 'UPSTREAM_ERROR', message: 'Model returned an unparseable response' } });
+  }
+
+  return (data.content ?? [])
+    .filter((block) => block.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text as string)
+    .join('');
 }
 
 const DraftScriptRequestSchema = z.object({
@@ -98,58 +190,41 @@ export async function draftScriptRoute(req: Request, res: ExpressResponse): Prom
   if (tone_notes?.trim()) userMessageParts.push(`Extra guidance: ${tone_notes.trim()}`);
   userMessageParts.push('Write the script now.');
 
-  let upstream: globalThis.Response;
+  const userMessage = userMessageParts.join('\n');
+
+  let rawText: string;
   try {
-    upstream = await callAnthropicMessages(
-      {
-        model: MODEL,
-        // Generous headroom: some upstream models (esp. via
-        // MODEL_PROVIDER=openrouter) reason inline before the <script> tag
-        // rather than in a separate thinking channel, and 400 was tight
-        // enough that a request could get cut off mid-reasoning, before
-        // ever emitting the tag -- see the <script> extraction below,
-        // which is what actually keeps stray reasoning out of the result.
-        max_tokens: 700,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: userMessageParts.join('\n') }],
-      },
-      { signal: AbortSignal.timeout(DRAFT_TIMEOUT_MS) },
+    rawText = await attemptDraft(MODEL, DRAFT_TIMEOUT_MS, userMessage);
+  } catch (primaryErr) {
+    const primaryDetail = primaryErr instanceof DraftAttemptError ? primaryErr.body.error.code : 'unknown';
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[assist.draft-script] primary model (${MODEL}) failed (${primaryDetail}: ${(primaryErr as Error).message}) -- retrying once with fallback model ${FALLBACK_MODEL}`,
     );
-  } catch (err) {
-    if (isTimeoutError(err)) {
-      res.status(504).json({
-        error: { code: 'UPSTREAM_TIMEOUT', message: `The AI script writer took too long to respond (over ${DRAFT_TIMEOUT_MS / 1000}s) — try again.` },
-      });
+    try {
+      rawText = await attemptDraft(FALLBACK_MODEL, FALLBACK_TIMEOUT_MS, userMessage);
+    } catch (fallbackErr) {
+      // Both attempts failed. Prefer a message that's honest about having
+      // already retried, rather than the fallback's own generic per-attempt
+      // wording (which would otherwise say e.g. "over 20s" and read like
+      // only one short attempt was ever made).
+      if (fallbackErr instanceof DraftAttemptError) {
+        if (fallbackErr.httpStatus === 504) {
+          res.status(504).json({
+            error: {
+              code: 'UPSTREAM_TIMEOUT',
+              message: 'The AI script writer took too long to respond, even after automatically retrying with a faster fallback model — please try again in a moment.',
+            },
+          });
+          return;
+        }
+        res.status(fallbackErr.httpStatus).json(fallbackErr.body);
+        return;
+      }
+      res.status(502).json({ error: { code: 'UPSTREAM_ERROR', message: (fallbackErr as Error).message } });
       return;
     }
-    res.status(502).json({ error: { code: 'UPSTREAM_ERROR', message: (err as Error).message } });
-    return;
   }
-
-  if (!upstream.ok) {
-    const text = await upstream.text().catch(() => '');
-    res.status(502).json({ error: { code: 'UPSTREAM_ERROR', message: `Model call failed (${upstream.status})`, detail: text.slice(0, 500) } });
-    return;
-  }
-
-  let data: { content?: Array<{ type?: string; text?: string }> };
-  try {
-    data = (await upstream.json()) as typeof data;
-  } catch (err) {
-    if (isTimeoutError(err)) {
-      res.status(504).json({
-        error: { code: 'UPSTREAM_TIMEOUT', message: `The AI script writer took too long to respond (over ${DRAFT_TIMEOUT_MS / 1000}s) — try again.` },
-      });
-      return;
-    }
-    res.status(502).json({ error: { code: 'UPSTREAM_ERROR', message: 'Model returned an unparseable response' } });
-    return;
-  }
-
-  const rawText = (data.content ?? [])
-    .filter((block) => block.type === 'text' && typeof block.text === 'string')
-    .map((block) => block.text as string)
-    .join('');
 
   // Pull ONLY what's inside <script>…</script> — this is what actually
   // keeps a model's inline reasoning (word-counting, draft attempts, "Let's

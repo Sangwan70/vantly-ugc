@@ -4,7 +4,7 @@
 
 import Link from 'next/link';
 import type { ComponentType, MouseEvent, ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   BookOpenText,
   Bot,
@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useLogin } from '@/components/login-context';
 import { Home2CTAButton } from '@/components/home2-cta-button';
+import { createClient } from '@/lib/supabase/client';
 
 const primaryLinks = [
   { href: '/use-cases', label: 'Use Cases' },
@@ -221,6 +222,29 @@ function NavMenu({
 export function LandingHeader() {
   const { openLogin } = useLogin();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // Whether THIS browser already holds a valid session, checked client-side
+  // on mount. Middleware already redirects a signed-in visitor away from `/`
+  // server-side (see app/page.tsx) -- this is a client-side backstop for the
+  // cases that slips past that: a page served from the browser's own
+  // back/forward cache after closing and reopening (no fresh request, so
+  // middleware never re-runs), or any other stale render. Starts `false` so
+  // a first paint never flashes "Dashboard" at a genuinely signed-out
+  // visitor; flips to `true` only once a real session is confirmed.
+  const [signedIn, setSignedIn] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => {
+      if (active) setSignedIn(Boolean(data.user));
+    }).catch(() => {
+      // Network hiccup or not configured (shouldn't happen on this page) --
+      // fail closed, same as a genuinely signed-out visitor.
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   function closeMobileMenu() {
     setMobileMenuOpen(false);
@@ -252,12 +276,18 @@ export function LandingHeader() {
           </nav>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <div onClick={handleGenerateClick}>
-            <Home2CTAButton href="#" variant="dark" size="md" showArrow={false}>
-              <span className="sm:hidden">Generate</span>
-              <span className="hidden sm:inline">Start generating</span>
+          {signedIn ? (
+            <Home2CTAButton href="/dashboard" variant="dark" size="md" showArrow={false}>
+              Dashboard
             </Home2CTAButton>
-          </div>
+          ) : (
+            <div onClick={handleGenerateClick}>
+              <Home2CTAButton href="#" variant="dark" size="md" showArrow={false}>
+                <span className="sm:hidden">Generate</span>
+                <span className="hidden sm:inline">Start generating</span>
+              </Home2CTAButton>
+            </div>
+          )}
           <button
             type="button"
             aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}

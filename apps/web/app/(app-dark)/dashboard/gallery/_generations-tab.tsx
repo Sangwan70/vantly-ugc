@@ -135,8 +135,7 @@ export function GenerationsTab() {
   const jobsLoaded = jobs !== null;
   useEffect(() => {
     if (!jobsLoaded) return;
-    const id = window.setInterval(async () => {
-      if (document.visibilityState === 'hidden') return;
+    const refreshHead = async () => {
       const head = await fetchPage(0);
       if (!head) return;
       setJobs((prev) => {
@@ -145,8 +144,22 @@ export function GenerationsTab() {
         if (fresh.length === 0) return prev;
         return [...fresh, ...(prev ?? [])];
       });
+    };
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      void refreshHead();
     }, 12000);
-    return () => window.clearInterval(id);
+    // Skipping ticks while hidden (above) avoids wasted fetches, but still
+    // left this waiting for its next natural 12s tick to catch up once the
+    // tab came back -- and a long enough backgrounding can get an interval
+    // throttled/suspended by Chrome too. Force an immediate refresh the
+    // moment this tab regains focus instead.
+    const onVisible = () => { if (document.visibilityState === 'visible') void refreshHead(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [jobsLoaded, fetchPage]);
 
   useEffect(() => {

@@ -136,7 +136,18 @@ export default function JobsPage() {
       if (document.visibilityState === 'hidden') return;
       void load();
     }, 10000);
-    return () => window.clearInterval(id);
+    // The interval above already skips ticks while hidden (good -- no
+    // wasted fetches), but was otherwise still waiting for its next
+    // natural 10s tick to catch up once the tab came back, and a long
+    // enough backgrounding can get an interval throttled/suspended by
+    // Chrome too. Force an immediate refresh the moment this tab regains
+    // focus instead of waiting on that.
+    const onVisible = () => { if (document.visibilityState === 'visible') void load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [jobs]);
 
   const failedCount = useMemo(

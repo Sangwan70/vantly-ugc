@@ -162,12 +162,21 @@ export default function SkillDetailPage({ params }: { params: Promise<{ slug: st
   }, [slug]);
   useEffect(() => { void reloadRecent(); }, [reloadRecent]);
 
-  // Poll active run
+  // Poll active run. Same backgrounded-tab fix as the standalone run-detail
+  // page (dashboard/skills/runs/[id]/page.tsx, commit 04de21f) and the agent
+  // chat panel: a hidden tab has its setTimeout chain throttled -- or fully
+  // frozen after ~5 minutes -- by Chrome, so a run that finishes while this
+  // tab is backgrounded can sit showing stale progress for a long time after
+  // someone tabs back in. Force an immediate refetch the moment the tab
+  // regains focus instead of waiting on whatever throttled timer was pending.
   useEffect(() => {
     if (!activeRun || TERMINAL.has(activeRun.status)) return;
     let cancelled = false;
+    let inFlight = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const tick = async () => {
-      if (cancelled) return;
+      if (cancelled || inFlight) return;
+      inFlight = true;
       try {
         const url = activeRun.composed
           ? `/api/v1/skills/runs/${encodeURIComponent(activeRun.id)}`
@@ -186,14 +195,27 @@ export default function SkillDetailPage({ params }: { params: Promise<{ slug: st
               void postRunResultToAgentChat(link.chatId, link.toolUseId, next);
             }
             void reloadRecent();
+            inFlight = false;
             return;
           }
         }
       } catch {}
-      setTimeout(tick, 4000);
+      inFlight = false;
+      if (cancelled) return;
+      timer = setTimeout(tick, 4000);
     };
-    const t = setTimeout(tick, 4000);
-    return () => { cancelled = true; clearTimeout(t); };
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (timer != null) { clearTimeout(timer); timer = null; }
+      void tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    timer = setTimeout(tick, 4000);
+    return () => {
+      cancelled = true;
+      if (timer != null) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [activeRun, reloadRecent]);
 
   if (error) {

@@ -23,6 +23,7 @@ import { PricingCards } from '@/components/pricing-cards';
 import { FaqSection } from '@/components/landing/faq-section';
 import { CtaSection } from '@/components/landing/cta-section';
 import { LandingFooter } from '@/components/landing/landing-footer';
+import { CookieConsentBanner } from '@/components/landing/cookie-consent-banner';
 import { getStaticPage } from '@/lib/content/get-page';
 
 export default async function RootPage() {
@@ -72,6 +73,8 @@ export default async function RootPage() {
 
           <LandingFooter />
         </div>
+
+        <CookieConsentBanner />
       </div>
     </LoginProvider>
   );

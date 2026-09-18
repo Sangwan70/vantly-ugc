@@ -277,13 +277,41 @@ export default function RunTimelinePage({ params }: { params: Promise<{ id: stri
       }
     };
     let cancelled = false;
+    let inFlight = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const loop = async () => {
+      if (inFlight) return;
+      inFlight = true;
       const done = await fetchOnce();
+      inFlight = false;
       if (cancelled || done || stopped.current) return;
-      setTimeout(loop, 4000);
+      timer = setTimeout(loop, 4000);
     };
+    // A backgrounded tab has its poll timers throttled -- or fully frozen,
+    // which Chrome does to hidden tabs after ~5 minutes -- by the browser.
+    // A run that finishes while the tab is hidden then keeps showing its
+    // last-known status (e.g. "running") until whatever throttled timer
+    // eventually fires, which can be many minutes after someone actually
+    // looks at the tab again. Force an immediate refetch the moment the tab
+    // becomes visible so the page never shows stale status to someone who
+    // just tabbed back in. Confirmed against a real run (b15f6b9c) that
+    // finished server-side in 36 seconds but whose open tab still showed
+    // "running" 43+ minutes later -- skill_runs/skill_run_status_events
+    // showed the run started and failed within the same minute; nothing
+    // was actually stuck, the open tab just never got to poll again.
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (timer != null) { clearTimeout(timer); timer = null; }
+      void loop();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     void loop();
-    return () => { cancelled = true; stopped.current = true; };
+    return () => {
+      cancelled = true;
+      stopped.current = true;
+      if (timer != null) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [id, forcedComposed]);
 
   return (

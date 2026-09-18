@@ -60,7 +60,7 @@ interface AgentSavedPrompt {
 }
 interface StepArtifact { url?: string; kind?: string; mime?: string }
 interface StepInfo { primitive_run_id: string; primitive: string; status: string; artifacts?: StepArtifact[]; error?: { message?: string } | null }
-interface ToolRun { skill: string; status: 'running' | 'succeeded' | 'failed'; mediaUrl?: string; note?: string; runId?: string; composed?: boolean; characters?: SavedCharacter[]; currentStep?: string; steps?: StepInfo[] }
+interface ToolRun { skill: string; status: 'running' | 'succeeded' | 'failed'; mediaUrl?: string; note?: string; runId?: string; composed?: boolean; characters?: SavedCharacter[]; currentStep?: string; steps?: StepInfo[]; orphaned?: boolean }
 interface AskOption { label: string; description?: string; recommended?: boolean }
 interface PendingAsk { toolUseId: string; question: string; options: AskOption[]; allowOther: boolean }
 
@@ -199,7 +199,18 @@ function rebuildToolRuns(msgs: Msg[]): Record<string, ToolRun> {
       // that didn't exist yet when it was persisted). Prefer input's, since a
       // stale linkRunToMessage PATCH racing a later one should never win.
       const runId = (typeof b.input?.run_id === 'string' ? b.input.run_id : undefined) ?? m.skillRunId ?? undefined;
-      if (!runId) continue;
+      if (!runId) {
+        // Nothing to recheck against -- mark it failed (not a fake
+        // "running") so the panel is honest and the existing Retry button
+        // (driven by status === 'failed') gives the user a real way out.
+        // `orphaned: true` tells openChat (below) to write this outcome
+        // back to the server, since nothing else ever will.
+        tr[b.id] = {
+          skill: b.name, status: 'failed', orphaned: true,
+          note: "Didn't get a response before this chat was interrupted — try again.",
+        };
+        continue;
+      }
       const composed = typeof b.input?.composed === 'boolean' ? b.input.composed : m.runKind === 'skill';
       tr[b.id] = { skill: b.name, status: 'running', runId, composed };
     }
@@ -543,8 +554,21 @@ export default function AgentPage() {
       // (below) already re-attaches to it and continues the brain loop.
       const skipId = lastUnresolvedToolUse(msgs)?.id;
       for (const [tid, run] of Object.entries(tr)) {
-        if (tid === skipId) continue;
-        if (run.status === 'running' && run.runId) void recheckRun(tid, run);
+        if (run.status === 'running' && run.runId) {
+          // Deferred to resumeIfNeeded (below), which re-attaches to this
+          // exact run and continues the brain loop afterward -- recheckRun
+          // would only look at its status, not carry the conversation on.
+          if (tid !== skipId) void recheckRun(tid, run);
+        } else if (run.orphaned) {
+          // resumeIfNeeded can't help this one either (it also requires a
+          // runId), so if we don't write its outcome back here, nothing
+          // ever will -- the chat would keep showing "failed" locally
+          // (rebuildToolRuns already paints it that way) but the server's
+          // own last_run_status would stay NULL forever: never sorts to
+          // the bottom of the rail, never eligible for "Delete failed
+          // generations". This is what actually fixes that for good.
+          persistOrphanFailure(tid, run.skill, run.note ?? 'Interrupted before completion');
+        }
       }
       if (resume) void resumeIfNeeded(msgs, tr);
       return true;
@@ -580,6 +604,22 @@ export default function AgentPage() {
       method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages: rows.map(toServerMessage) }),
     }).catch(() => { /* offline / local-dev without service role — cache still holds it */ });
+  }
+
+  /** One-time write-back for an orphaned tool_use (see rebuildToolRuns'
+   *  own comment) -- persists the synthetic failure the panel is already
+   *  showing locally, so the server's last_run_status derivation
+   *  (appendMessagesToChat) learns about it too. cmid = the tool_use id,
+   *  same idempotent-by-client_msg_id pattern as every other tool_result
+   *  here, so calling this more than once (e.g. two tabs open) is safe --
+   *  the second insert is just a no-op against the unique index. */
+  function persistOrphanFailure(toolUseId: string, skill: string, note: string) {
+    const trMsg: Msg = {
+      role: 'user',
+      content: [{ type: 'tool_result', tool_use_id: toolUseId, content: JSON.stringify({ status: 'failed', error: note }) }],
+      cmid: toolUseId,
+    };
+    persist([trMsg]);
   }
 
   /** One-time adoption of a legacy localStorage session into a fresh server chat. */
@@ -955,11 +995,36 @@ export default function AgentPage() {
     if (tu.name === 'ask_user') return { text: await askUser(tu) };
     setToolRuns((p) => ({ ...p, [tu.id]: { skill: tu.name, status: 'running' } }));
     setRailOpen(true);
-    const sub = await fetch(`/api/v1/skills/${encodeURIComponent(tu.name)}/run`, {
-      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(tu.input), signal: abortRef.current?.signal,
-    });
-    const subJson = await sub.json();
+    // The dispatch request itself (not just a non-2xx response) can throw:
+    // a dropped connection, or a gateway timeout/error page whose body
+    // isn't valid JSON so `.json()` throws. Previously neither was caught
+    // here, which let the exception escape all the way up through
+    // driveLoop uncaught -- the tool_use (already persisted before this
+    // runs) never got a matching tool_result, leaving the chat stuck
+    // showing a fake "generating..." forever with nothing in the database
+    // to ever recheck against. Confirmed live against chat
+    // fbfefa08-9192-4c06-8bf0-106fa0d25a81: one persisted tool_use, zero
+    // skill_runs rows, zero tool_results. Folding this into the exact same
+    // 'failed' tool_result path the normal !sub.ok case already uses means
+    // a dispatch failure -- however it fails -- ALWAYS produces a real,
+    // persisted, retry-able outcome instead of an unrecoverable dead end.
+    let sub: Response;
+    let subJson: any;
+    try {
+      sub = await fetch(`/api/v1/skills/${encodeURIComponent(tu.name)}/run`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tu.input), signal: abortRef.current?.signal,
+      });
+      subJson = await sub.json();
+    } catch (e) {
+      if (cancelRef.current || (e as Error)?.name === 'AbortError') {
+        setToolRuns((p) => ({ ...p, [tu.id]: { skill: tu.name, status: 'failed', note: 'canceled' } }));
+        return { text: JSON.stringify({ status: 'canceled' }) };
+      }
+      const detail = (e as Error)?.message || 'Could not reach the server to start this generation.';
+      setToolRuns((p) => ({ ...p, [tu.id]: { skill: tu.name, status: 'failed', note: detail } }));
+      return { text: JSON.stringify({ status: 'failed', error: detail }) };
+    }
     if (!sub.ok) {
       const rawDetail = subJson?.detail ?? subJson?.error ?? `run ${sub.status}`;
       const detail = describeFailureDetail(rawDetail);
@@ -1001,7 +1066,25 @@ export default function AgentPage() {
           continue;
         }
       }
-      const { text: resultText, runId, runKind } = await runSkill(toolUse, asstMsg.cmid!);
+      // Ultimate safety net: runSkill is already defensive about its own
+      // dispatch/poll failures (see its own comment), but if anything
+      // upstream of that still throws, this tool_use MUST still get a
+      // matching tool_result -- otherwise the chat is left permanently
+      // unresolved with nothing in the database to ever recheck against
+      // (the exact failure mode that stranded chat fbfefa08). A generic
+      // catch here is the backstop of last resort, not the primary fix.
+      let resultText: string;
+      let runId: string | undefined;
+      let runKind: 'skill' | 'primitive' | null | undefined;
+      try {
+        const r = await runSkill(toolUse, asstMsg.cmid!);
+        resultText = r.text; runId = r.runId; runKind = r.runKind;
+      } catch (e) {
+        const detail = (e as Error)?.message || 'Something went wrong running this generation.';
+        setToolRuns((p) => ({ ...p, [toolUse.id]: { ...p[toolUse.id], skill: p[toolUse.id]?.skill ?? toolUse.name, status: 'failed', note: detail } }));
+        resultText = JSON.stringify({ status: 'failed', error: detail });
+        runId = undefined; runKind = undefined;
+      }
       // cmid = the tool_use id (stable, unique) → idempotent re-append on retry.
       const trMsg: Msg = { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: resultText }], cmid: toolUse.id, skillRunId: runId ?? null, runKind: runKind ?? null };
       convo = [...convo, trMsg];

@@ -474,6 +474,85 @@ export async function deleteMessageRoute(req: Request, res: Response): Promise<v
   res.status(200).json({ ok: true, id: data.id });
 }
 
+// PATCH /v1/agent/chats/:id/messages/:clientMsgId — link a run onto an
+// ALREADY-PERSISTED message, without touching its content/role/seq.
+//
+// Why this exists: a brain-driven tool_use is persisted the instant the
+// brain decides to call it (see agent/page.tsx driveLoop) -- before the run
+// exists, so its `input` can't carry a run id yet (and shouldn't be rewritten
+// after the fact -- it's the model's own recorded call). The run's real id is
+// only otherwise learned client-side once dispatch succeeds, and used to only
+// ever reach the database via the matching tool_result message, which
+// requires the tab to survive until polling finishes or gives up. A tab that
+// dies (closed, backgrounded and frozen, session ends) between those two
+// points strands the run id in memory that no longer exists -- the chat has
+// no record of which run its "generating..." message even refers to, and
+// unlike a run rebuildToolRuns() DOES know about, there is nothing for the
+// open-chat reconciliation pass (recheckRun) to re-check, ever.
+//
+// Fixes that by having runSkill() call this the MOMENT it learns the run id
+// (right after submit, well before polling starts) so the linkage survives
+// even if the tab dies one tick later. Best-effort / fire-and-forget on the
+// client -- exactly like every other persist() call in this file's design --
+// so a failed PATCH degrades to the pre-existing behavior, never blocks the
+// run itself.
+export async function linkMessageRunRoute(req: Request, res: Response): Promise<void> {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+
+  const chatId = req.params.id;
+  const clientMsgId = req.params.clientMsgId;
+  if (!isUuid(chatId)) {
+    res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Invalid chat id' } });
+    return;
+  }
+  if (!clientMsgId) {
+    res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Invalid message id' } });
+    return;
+  }
+
+  const body = (req.body ?? {}) as {
+    skill_run_id?: unknown;
+    primitive_run_id?: unknown;
+    run_kind?: unknown;
+  };
+  const patch: Record<string, unknown> = {};
+  if (isUuid(body.skill_run_id)) patch.skill_run_id = body.skill_run_id;
+  if (isUuid(body.primitive_run_id)) patch.primitive_run_id = body.primitive_run_id;
+  if (body.run_kind === 'skill' || body.run_kind === 'primitive') patch.run_kind = body.run_kind;
+  if (Object.keys(patch).length === 0) {
+    res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'No valid run linkage fields' } });
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from('agent_messages')
+    .update(patch)
+    .eq('chat_id', chatId)
+    .eq('user_id', userId)
+    .eq('client_msg_id', clientMsgId)
+    .is('deleted_at', null)
+    .select('id')
+    .maybeSingle();
+  if (error) {
+    console.error(`[agent chats link message run] ${error.message}`);
+    res.status(500).json({ error: { code: 'DATABASE_ERROR', message: 'Failed to link run' } });
+    return;
+  }
+  if (!data) {
+    res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Message not found' } });
+    return;
+  }
+
+  // Same O(1) "is a render live?" upkeep appendMessagesToChat does for a
+  // fresh insert -- keep it consistent for a linked-after-the-fact run too.
+  if (typeof patch.skill_run_id === 'string') {
+    await supabase.from('agent_chats').update({ last_skill_run_id: patch.skill_run_id }).eq('id', chatId).eq('user_id', userId);
+  }
+
+  res.status(200).json({ ok: true, id: data.id });
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // Projects (Phase 3) — left-rail groups; a chat belongs to 0/1 project. A
 // project's `instructions` are the pinned free-text context the client passes

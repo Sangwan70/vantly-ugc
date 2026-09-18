@@ -94,6 +94,7 @@ import {
   patchChatRoute,
   deleteChatRoute,
   deleteMessageRoute,
+  linkMessageRunRoute,
   listProjectsRoute,
   createProjectRoute,
   patchProjectRoute,
@@ -987,6 +988,7 @@ app.get('/v1/voices/elevenlabs', readLimiter, authMiddleware, listElevenLabsVoic
   app.delete('/v1/agent/chats/:id', readLimiter, authMiddleware, deleteChatRoute);
   app.post('/v1/agent/chats/:id/messages', readLimiter, authMiddleware, appendMessagesRoute);
   app.delete('/v1/agent/chats/:id/messages/:clientMsgId', readLimiter, authMiddleware, deleteMessageRoute);
+  app.patch('/v1/agent/chats/:id/messages/:clientMsgId', readLimiter, authMiddleware, linkMessageRunRoute);
   // Projects (Phase 3) — rail groups + pinned context injected into the brain.
   // Same reasoning: record-keeping, not generation.
   app.get('/v1/agent/projects', readLimiter, authMiddleware, listProjectsRoute);

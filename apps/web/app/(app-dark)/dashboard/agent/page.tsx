@@ -190,9 +190,18 @@ function rebuildToolRuns(msgs: Msg[]): Record<string, ToolRun> {
     if (!Array.isArray(m.content)) continue;
     for (const b of m.content) {
       if (b.type !== 'tool_use' || resolved.has(b.id)) continue;
-      const runId = typeof b.input?.run_id === 'string' ? b.input.run_id : undefined;
+      // Two places a still-unresolved tool_use's run id can live: embedded in
+      // its OWN input (the standalone/skill-picker launch paths, which know
+      // the run id before this message is ever persisted -- see [slug]/page.tsx
+      // createRunAgentChat and launchSkillFromPicker below), or on the message
+      // ROW itself (a brain-driven call -- see runSkill's linkRunToMessage --
+      // whose input is the model's own recorded call and can't carry a run id
+      // that didn't exist yet when it was persisted). Prefer input's, since a
+      // stale linkRunToMessage PATCH racing a later one should never win.
+      const runId = (typeof b.input?.run_id === 'string' ? b.input.run_id : undefined) ?? m.skillRunId ?? undefined;
       if (!runId) continue;
-      tr[b.id] = { skill: b.name, status: 'running', runId, composed: b.input?.composed === true };
+      const composed = typeof b.input?.composed === 'boolean' ? b.input.composed : m.runKind === 'skill';
+      tr[b.id] = { skill: b.name, status: 'running', runId, composed };
     }
   }
   for (const m of msgs) {
@@ -847,10 +856,32 @@ export default function AgentPage() {
     return JSON.stringify(detail).slice(0, 200);
   }
 
+  /** Best-effort: stamp a run id onto an ALREADY-PERSISTED message (by its
+   *  own client_msg_id) the moment the run id is known -- not once polling
+   *  finishes. Without this, a brain-driven tool_use's run id lives only in
+   *  React state until the matching tool_result gets persisted; a tab that
+   *  dies (closed, backgrounded and frozen, session ends) before that point
+   *  strands the id nowhere the database ever learns it, and the chat is
+   *  left with no way to ever find out what happened to that run -- not
+   *  even the on-reopen reconciliation pass (recheckRun) can help, since it
+   *  needs a run id to check. Fire-and-forget like every other persist()
+   *  call here: a failed PATCH just means no early linkage, not a broken run. */
+  function linkRunToMessage(parentCmid: string, runId: string, composed: boolean) {
+    const cid = chatIdRef.current;
+    if (!cid) return;
+    void fetch(`/api/v1/agent/chats/${cid}/messages/${encodeURIComponent(parentCmid)}`, {
+      method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(composed ? { skill_run_id: runId, run_kind: 'skill' } : { primitive_run_id: runId, run_kind: 'primitive' }),
+    }).catch(() => { /* best-effort -- see comment above */ });
+  }
+
   /** Submit a skill then poll it. Records runId so a refresh can resume. Returns
-   *  the tool_result text + the run linkage to stamp on the persisted message. */
+   *  the tool_result text + the run linkage to stamp on the persisted message.
+   *  `parentCmid` is the client_msg_id of the ASSISTANT message that carries
+   *  this tool_use -- already persisted by the time this runs (see driveLoop)
+   *  -- so the run id learned below can be linked onto it immediately. */
   type RunResult = { text: string; runId?: string; runKind?: 'skill' | 'primitive' };
-  async function runSkill(tu: Extract<Block, { type: 'tool_use' }>): Promise<RunResult> {
+  async function runSkill(tu: Extract<Block, { type: 'tool_use' }>, parentCmid: string): Promise<RunResult> {
     if (tu.name === 'list_my_characters') return { text: await listMyCharacters(tu) };
     if (tu.name === 'ask_user') return { text: await askUser(tu) };
     setToolRuns((p) => ({ ...p, [tu.id]: { skill: tu.name, status: 'running' } }));
@@ -869,6 +900,7 @@ export default function AgentPage() {
     const composed = Boolean(subJson.skill_run_id);
     const id = (subJson.skill_run_id ?? subJson.run_id) as string;
     setToolRuns((p) => ({ ...p, [tu.id]: { skill: tu.name, status: 'running', runId: id, composed } }));
+    linkRunToMessage(parentCmid, id, composed);
     const text = await pollRun(tu.id, id, composed, tu.name);
     return { text, runId: id, runKind: composed ? 'skill' : 'primitive' };
   }
@@ -900,7 +932,7 @@ export default function AgentPage() {
           continue;
         }
       }
-      const { text: resultText, runId, runKind } = await runSkill(toolUse);
+      const { text: resultText, runId, runKind } = await runSkill(toolUse, asstMsg.cmid!);
       // cmid = the tool_use id (stable, unique) → idempotent re-append on retry.
       const trMsg: Msg = { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: resultText }], cmid: toolUse.id, skillRunId: runId ?? null, runKind: runKind ?? null };
       convo = [...convo, trMsg];
@@ -967,10 +999,16 @@ export default function AgentPage() {
   /** Re-run a single failed generation, in place. Explicit (no silent re-spend). */
   async function retryRun(tu: Extract<Block, { type: 'tool_use' }>) {
     if (busy) return;
+    // runSkill needs the id of the ASSISTANT message that carries this
+    // tool_use (to link the new run onto it -- see linkRunToMessage) --
+    // look up its own parent rather than tu.id, which is the tool_use
+    // block's own id, not the message row's client_msg_id.
+    const parent = messages.find((m) => Array.isArray(m.content) && m.content.some((b) => b.type === 'tool_use' && b.id === tu.id));
+    if (!parent?.cmid) { setError('Could not find this run\'s message to retry.'); return; }
     cancelRef.current = false;
     abortRef.current = new AbortController();
     setBusy(true); setError(null);
-    try { await runSkill(tu); }
+    try { await runSkill(tu, parent.cmid); }
     catch (e) { if (!cancelRef.current) setError((e as Error).message); }
     finally { setBusy(false); }
   }
@@ -1259,7 +1297,15 @@ export default function AgentPage() {
     if (!cid) { setError('Could not start a chat for this run.'); return; }
     setRailOpen(true);
     const toolUseId = genId();
-    const asstMsg: Msg = { role: 'assistant', content: [{ type: 'tool_use', id: toolUseId, name: target.slug, input: {} }], cmid: genId() };
+    // Embed the run linkage directly in the tool_use's own `input`, the same
+    // pattern [slug]/page.tsx's createRunAgentChat uses -- result.id/composed
+    // are already known at this point (RunPanel already submitted the run),
+    // so there's no need for the async link-after-persist path runSkill uses
+    // for a brain-driven call (whose run doesn't exist yet when its tool_use
+    // message is first persisted). Fixes the same "orphaned forever" gap for
+    // a run launched from the skill picker as runSkill's linkRunToMessage
+    // fixes for a brain-driven one.
+    const asstMsg: Msg = { role: 'assistant', content: [{ type: 'tool_use', id: toolUseId, name: target.slug, input: { run_id: result.id, composed: result.composed } }], cmid: genId() };
     setMessages((prev) => [...prev, asstMsg]);
     persist([asstMsg]);
     setToolRuns((p) => ({ ...p, [toolUseId]: { skill: target.slug, status: 'running', runId: result.id, composed: result.composed } }));

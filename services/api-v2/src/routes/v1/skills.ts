@@ -13,7 +13,13 @@ import { uploadUserAudioBuffer } from '../../lib/r2-upload.js';
 import { synthesizeElevenLabsSpeech } from '../../lib/elevenlabs.js';
 import { ModerationError } from '../../lib/image-moderation.js';
 import { quoteSkillCredits, quoteInFlightPrimitiveRun } from '../../skills/credit-quotes.js';
-import { decideMakeUgcRoute, validateMakeUgcVariants, buildBatchRunRecord, type MakeUgcProps } from '../../skills/make-ugc-router.js';
+import {
+  decideMakeUgcRoute,
+  validateMakeUgcVariants,
+  buildBatchRunRecord,
+  scorePrePublishChecklist,
+  type MakeUgcProps,
+} from '../../skills/make-ugc-router.js';
 import { isAdminEmail } from '../../lib/admin-allowlist.js';
 import { recordSkillRunStatusEvent } from '../../lib/skill-run-status-events.js';
 import { deriveEffectiveSkillRunStatus } from '../../lib/skill-run-status.js';
@@ -405,7 +411,13 @@ async function dispatchMakeUgc(
   userId: string,
   props: MakeUgcProps,
 ): Promise<void> {
-  const { slug, body } = decideMakeUgcRoute(props);
+  const routed = decideMakeUgcRoute(props);
+  const { slug, body } = routed;
+  // Milestone 2, item 2: computed once, from the request alone -- attached
+  // to whatever success response runSkillRoute ends up sending (see
+  // withPrePublishChecklist below), for both this single-run path AND the
+  // batch path (runOneMakeUgcVariant calls this same function per variant).
+  const checklist = scorePrePublishChecklist(props, routed);
 
   try {
     if (slug === 'make_broll_talking_head') {
@@ -506,7 +518,25 @@ async function dispatchMakeUgc(
   // Delegate to the normal flow with the resolved underlying slug + body.
   req.params.slug = slug;
   req.body = body;
-  await runSkillRoute(req, res);
+  await runSkillRoute(req, withPrePublishChecklist(res, checklist));
+}
+
+/**
+ * Wraps res.json so a successful dispatch response also carries
+ * `pre_publish_checklist` -- without touching runSkillRoute or any of the
+ * per-skill dispatchers it calls (dispatchMakeUgcVideo, etc.), which know
+ * nothing about make_ugc-level concerns like this. An error response
+ * (anything with an `error` key) is passed through untouched.
+ */
+function withPrePublishChecklist(res: Response, checklist: ReturnType<typeof scorePrePublishChecklist>): Response {
+  const originalJson = res.json.bind(res);
+  res.json = ((body: unknown) => {
+    if (body && typeof body === 'object' && !('error' in (body as Record<string, unknown>))) {
+      return originalJson({ ...(body as Record<string, unknown>), pre_publish_checklist: checklist });
+    }
+    return originalJson(body);
+  }) as Response['json'];
+  return res;
 }
 
 /**

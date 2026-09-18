@@ -203,6 +203,126 @@ export function decideMakeUgcRoute(props: MakeUgcProps): {
 
 
 /**
+ * Milestone 2, item 2 of the Video Generation Flow audit's 10 Improvements
+ * (§6): "a lightweight pre-publish scoring or checklist step ... rules-based
+ * check before a video is marked ready: caption readability, hook-in-first-
+ * 3-seconds heuristic, duration-vs-platform fit." Deliberately NOT an ML
+ * predictor (that's the doc's own stated multi-quarter bet) -- three plain
+ * rules, computed from the request alone (no rendered video needed), so it
+ * costs nothing and returns instantly at dispatch time rather than waiting
+ * on generation.
+ */
+export interface PrePublishChecklistItem {
+  id: 'hook_in_first_3s' | 'caption_readability' | 'duration_platform_fit';
+  passed: boolean;
+  message: string;
+}
+
+export interface PrePublishChecklist {
+  passed: number;
+  total: number;
+  items: PrePublishChecklistItem[];
+}
+
+/** Known throat-clearing openers -- flagging KNOWN weak patterns (instead of
+ *  requiring a match against some "good hook" template) means a legitimately
+ *  creative hook that doesn't fit any pattern is never penalized. */
+const WEAK_OPENERS =
+  /^(so[,\s]|um[,\s]|uh[,\s]|okay so|ok so|hi (guys|everyone|there)|hey (guys|everyone|there)|welcome back|in this video|today i (want|wanted) to|today we|let me tell you|i wanted to (share|talk)|so today)/i;
+
+/** The speaking pace this pipeline's OWN duration bands already assume
+ *  (fitDuration: <=11 words -> 5s, <=22 -> 10s, <=33 -> 15s) -- ~2.2 words/
+ *  sec. Used only as the "comfortable" reference in messaging; the
+ *  readability check itself flags meaningfully faster than this, not this
+ *  exact figure, so scripts that already fit the render pipeline's own
+ *  bands are never flagged. */
+const COMFORTABLE_WORDS_PER_SECOND = 2.2;
+const CAPTION_READABILITY_CEILING_WPS = 3.0;
+
+function firstClause(script: string): string {
+  const m = script.trim().match(/^(.*?)(?:[.,!?]|$)/);
+  return (m?.[1] ?? script).trim();
+}
+
+/**
+ * Scores ONE routed request. Pure -- reads only `props` (the caller's
+ * make_ugc input) and `routed` (decideMakeUgcRoute's own output), same
+ * "no I/O, no side effects" contract as decideMakeUgcRoute itself, so the
+ * dispatch route can call it with zero extra cost and the batch path gets
+ * it for free per-variant (see dispatchMakeUgc in routes/v1/skills.ts).
+ */
+export function scorePrePublishChecklist(
+  props: MakeUgcProps,
+  routed: { slug: string; body: Record<string, unknown> },
+): PrePublishChecklist {
+  const script = props.script?.trim();
+  const items: PrePublishChecklistItem[] = [];
+
+  // 1. Hook in the first ~3 seconds.
+  if (script) {
+    const opener = firstClause(script);
+    const weak = WEAK_OPENERS.test(opener);
+    items.push({
+      id: 'hook_in_first_3s',
+      passed: !weak,
+      message: weak
+        ? `Opens with "${opener}" — a throat-clearing lead-in. Cut straight to the claim, question, or moment that earns the first 3 seconds.`
+        : 'Opens without a known weak/throat-clearing lead-in.',
+    });
+  } else {
+    items.push({
+      id: 'hook_in_first_3s',
+      passed: true,
+      message: 'No dialogue script (silent/scene_action clip) — not applicable.',
+    });
+  }
+
+  const duration =
+    typeof routed.body.duration === 'number'
+      ? (routed.body.duration as number)
+      : script
+      ? Math.max(5, Math.round(countWords(script) / COMFORTABLE_WORDS_PER_SECOND))
+      : 10;
+
+  const subtitles =
+    typeof routed.body.subtitles === 'boolean' ? (routed.body.subtitles as boolean) : props.captions === true;
+
+  // 2. Caption readability — only meaningful when captions are actually on.
+  if (script && subtitles) {
+    const wps = countWords(script) / duration;
+    const tooFast = wps > CAPTION_READABILITY_CEILING_WPS;
+    items.push({
+      id: 'caption_readability',
+      passed: !tooFast,
+      message: tooFast
+        ? `~${wps.toFixed(1)} words/sec is faster than comfortable caption reading (aim for ~${COMFORTABLE_WORDS_PER_SECOND}-${CAPTION_READABILITY_CEILING_WPS}) — trim the script or lengthen the take.`
+        : `~${wps.toFixed(1)} words/sec — comfortable caption pace.`,
+    });
+  } else {
+    items.push({
+      id: 'caption_readability',
+      passed: true,
+      message: subtitles ? 'No dialogue script — not applicable.' : 'Captions are off for this generation — not applicable.',
+    });
+  }
+
+  // 3. Duration/aspect fit for the platforms this pipeline publishes to
+  // (TikTok / Instagram Reels & Stories / YouTube Shorts — all full-screen
+  // vertical, per /dashboard/social's own publish targets).
+  const aspect = (routed.body.aspect_ratio as string | undefined) ?? (props.aspect_ratio === '1:1' ? '1:1' : '9:16');
+  const squareOnVerticalPlatform = aspect === '1:1';
+  items.push({
+    id: 'duration_platform_fit',
+    passed: !squareOnVerticalPlatform,
+    message: squareOnVerticalPlatform
+      ? '1:1 fits an Instagram feed post, but TikTok, Reels/Stories and Shorts all play full-screen vertical — 9:16 avoids letterboxing there.'
+      : `${aspect} at ${duration}s fits TikTok, Reels/Stories and Shorts.`,
+  });
+
+  return { passed: items.filter((i) => i.passed).length, total: items.length, items };
+}
+
+/**
  * make_ugc bulk generation ("variants"). Validates every requested variant
  * BEFORE anything is dispatched -- see dispatchMakeUgcBatch in
  * routes/v1/skills.ts for why: an invalid variant discovered partway through

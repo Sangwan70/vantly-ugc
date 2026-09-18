@@ -96,7 +96,31 @@ export interface ReconcileSkillRunsResult {
   claimed: number;
   refunded: number;
   refundFailures: number;
+  /**
+   * One diagnostic entry per claimed row (Milestone 1, item 4 -- "ship it
+   * with a metric on how many runs it actually recovers and how many are
+   * false-positives ... adjust from there"). `workflowId` is deterministic
+   * (`${skill_slug}-${id}`, same construction routes/v1/skills.ts's
+   * dispatch uses) so ops can paste it straight into the Temporal UI and
+   * confirm the execution was genuinely dead, not still legitimately
+   * running -- the actual false-positive check this item asks for, since
+   * nothing short of Temporal's own history can answer that. Always
+   * present, empty when nothing was claimed.
+   */
+  details: StuckSkillRunDetail[];
   error?: string;
+}
+
+export interface StuckSkillRunDetail {
+  id: string;
+  skillSlug: string | null;
+  workflowId: string | null;
+  /** Minutes since the run started (or was created, if it never got that
+   *  far) -- how long it actually ran before being claimed, for judging
+   *  whether the threshold is well-tuned. */
+  elapsedMinutes: number | null;
+  /** The step it was on right before being overwritten to 'failed'. */
+  lastStep: string | null;
 }
 
 function thresholdToIso(minutes: number): string {
@@ -123,6 +147,39 @@ export async function reconcileStuckSkillRuns(
   const cutoff = thresholdToIso(thresholdMinutes);
   const message = `No worker completed this run within ${thresholdMinutes} minutes of dispatch -- credits refunded automatically.`;
 
+  // Snapshot diagnostic fields for the same candidate set BEFORE the claim
+  // below overwrites current_step to 'failed' -- this is the only chance
+  // to capture what step a row was actually on. Best-effort and read-only:
+  // a failure here (or a client that doesn't support a bare select, as in
+  // some unit-test doubles) never blocks the real claim/refund pass.
+  const candidates = new Map<
+    string,
+    { skillSlug: string | null; lastStep: string | null; startedAt: string | null; createdAt: string | null }
+  >();
+  try {
+    const { data: candidateRows } = await supabase
+      .from('skill_runs')
+      .select('id, skill_slug, current_step, started_at, created_at')
+      .in('status', ['submitted', 'running'])
+      .lt('updated_at', cutoff);
+    for (const row of (candidateRows ?? []) as Array<{
+      id: string;
+      skill_slug?: string | null;
+      current_step?: string | null;
+      started_at?: string | null;
+      created_at?: string | null;
+    }>) {
+      candidates.set(row.id, {
+        skillSlug: row.skill_slug ?? null,
+        lastStep: row.current_step ?? null,
+        startedAt: row.started_at ?? null,
+        createdAt: row.created_at ?? null,
+      });
+    }
+  } catch {
+    // Diagnostic-only -- see comment above.
+  }
+
   const { data: claimedRows, error: claimErr } = await supabase
     .from('skill_runs')
     .update({
@@ -137,13 +194,27 @@ export async function reconcileStuckSkillRuns(
     .select('id');
 
   if (claimErr) {
-    return { claimed: 0, refunded: 0, refundFailures: 0, error: claimErr.message };
+    return { claimed: 0, refunded: 0, refundFailures: 0, details: [], error: claimErr.message };
   }
 
   const rows = (claimedRows ?? []) as StuckSkillRow[];
   if (rows.length === 0) {
-    return { claimed: 0, refunded: 0, refundFailures: 0 };
+    return { claimed: 0, refunded: 0, refundFailures: 0, details: [] };
   }
+
+  const claimedAt = Date.now();
+  const details: StuckSkillRunDetail[] = rows.map((row) => {
+    const c = candidates.get(row.id);
+    const startedIso = c?.startedAt ?? c?.createdAt ?? null;
+    const elapsedMinutes = startedIso ? Math.round((claimedAt - new Date(startedIso).getTime()) / 60_000) : null;
+    return {
+      id: row.id,
+      skillSlug: c?.skillSlug ?? null,
+      workflowId: c?.skillSlug ? `${c.skillSlug}-${row.id}` : null,
+      elapsedMinutes,
+      lastStep: c?.lastStep ?? null,
+    };
+  });
 
   // One audit event per row this tick actually claimed. Best-effort: logged
   // after the claim succeeds, never allowed to affect the refund pass below.
@@ -205,6 +276,7 @@ export async function reconcileStuckSkillRuns(
     claimed: rows.length,
     refunded,
     refundFailures,
+    details,
     ...(errors.length > 0 ? { error: errors.join('; ') } : {}),
   };
 }
@@ -260,14 +332,22 @@ export function startSkillReconciler(opts: StartSkillReconcilerOptions): SkillRe
         // batch of composed runs hits the same fate.
         Sentry.captureMessage(
           `skill-reconciler: recovered ${result.claimed} stuck skill_runs past ${cfg.thresholdMinutes}min (refunded ${result.refunded}, refund_failures ${result.refundFailures})`,
-          { level: 'warning', extra: { thresholdMinutes: cfg.thresholdMinutes, ...result } },
+          {
+            level: 'warning',
+            // `details` carries each row's workflowId + elapsedMinutes so
+            // this alert doubles as the false-positive check Milestone 1
+            // item 4 asks for: paste a workflowId into the Temporal UI and
+            // confirm it was genuinely dead before the threshold fires
+            // again on real traffic.
+            extra: { thresholdMinutes: cfg.thresholdMinutes, ...result },
+          },
         );
       }
       return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       log('tick threw', { error: msg });
-      return { claimed: 0, refunded: 0, refundFailures: 0, error: msg };
+      return { claimed: 0, refunded: 0, refundFailures: 0, details: [], error: msg };
     } finally {
       state.inFlight = false;
     }

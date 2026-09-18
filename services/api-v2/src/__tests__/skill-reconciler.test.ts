@@ -25,6 +25,9 @@ interface FakeSkillRun {
   error_code?: string;
   error_message?: string;
   finished_at?: string | null;
+  skill_slug?: string;
+  started_at?: string;
+  created_at?: string;
 }
 
 interface FakePrimitiveRun {
@@ -179,13 +182,32 @@ describe('reconcileStuckSkillRuns', () => {
     const skillRunId = '00000000-0000-0000-0000-000000000001';
     const childId = '00000000-0000-0000-0000-00000000c001';
     const { client, skillRuns, primitiveRuns, rpcCalls } = makeSupabase({
-      skillRuns: [{ id: skillRunId, status: 'running', current_step: 'character_sheet', updated_at: minutesAgo(60) }],
+      skillRuns: [{
+        id: skillRunId,
+        status: 'running',
+        current_step: 'character_sheet',
+        updated_at: minutesAgo(60),
+        skill_slug: 'make_ugc_video',
+        started_at: minutesAgo(60),
+      }],
       primitiveRuns: [{ id: childId, skill_run_id: skillRunId, status: 'submitted', credits_deducted: 5 }],
     });
 
     const result = await reconcileStuckSkillRuns(client, 50);
 
-    expect(result).toEqual({ claimed: 1, refunded: 1, refundFailures: 0 });
+    expect(result.claimed).toBe(1);
+    expect(result.refunded).toBe(1);
+    expect(result.refundFailures).toBe(0);
+    // The diagnostic snapshot (Milestone 1, item 4): captured BEFORE the
+    // claim overwrites current_step, so it still shows the real last step
+    // and a workflowId ops can paste into the Temporal UI.
+    expect(result.details).toEqual([{
+      id: skillRunId,
+      skillSlug: 'make_ugc_video',
+      workflowId: `make_ugc_video-${skillRunId}`,
+      elapsedMinutes: 60,
+      lastStep: 'character_sheet',
+    }]);
     expect(skillRuns[0].status).toBe('failed');
     expect(skillRuns[0].current_step).toBe('failed');
     expect(skillRuns[0].error_code).toBe('DISPATCH_TIMEOUT');
@@ -211,7 +233,7 @@ describe('reconcileStuckSkillRuns', () => {
       skillRuns: [{ id: skillRunId, status: 'running', updated_at: minutesAgo(10) }],
     });
     const result = await reconcileStuckSkillRuns(client, 50);
-    expect(result).toEqual({ claimed: 0, refunded: 0, refundFailures: 0 });
+    expect(result).toEqual({ claimed: 0, refunded: 0, refundFailures: 0, details: [] });
     expect(skillRuns[0].status).toBe('running');
     expect(rpcCalls).toHaveLength(0);
   });
@@ -251,7 +273,9 @@ describe('reconcileStuckSkillRuns', () => {
       refundBehavior: { [childId]: `NO_DEDUCTION_FOUND: no debit transactions found for job ${childId}` },
     });
     const result = await reconcileStuckSkillRuns(client, 50);
-    expect(result).toEqual({ claimed: 1, refunded: 0, refundFailures: 0 });
+    expect(result.claimed).toBe(1);
+    expect(result.refunded).toBe(0);
+    expect(result.refundFailures).toBe(0);
     expect(skillRuns[0].status).toBe('failed');
   });
 

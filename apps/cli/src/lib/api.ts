@@ -11,6 +11,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { CLIError, type ApiIssue } from './errors.js';
+import type { SkillSingleSubmitResult, SkillBatchSubmitResult } from '../types.js';
 
 /** Default API URL. Override via VANTLY_UGC_API_URL. */
 const DEFAULT_API_URL = 'https://api.vantly-ugc.com';
@@ -509,7 +510,7 @@ export class VantlyUgcAPI {
   readonly baseUrl: string;
   private readonly supabaseUrl: string;
   private readonly apiKey: string;
-  private readonly anonKey: string;
+  private readonly anonKey: string | undefined;
 
   constructor(apiKey?: string) {
     this.apiKey = apiKey ?? '';
@@ -1121,8 +1122,8 @@ export class VantlyUgcAPI {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        apikey: this.anonKey,
-        Authorization: `Bearer ${this.anonKey}`,
+        apikey: this.anonKey ?? '',
+        Authorization: `Bearer ${this.anonKey ?? ''}`,
       },
     });
     if (!res.ok) {
@@ -1454,20 +1455,17 @@ export class VantlyUgcAPI {
 
   /**
    * Run a vNext skill. Returns the run id (skill_run_id for composed
-   * skills like make_ugc_video, run_id for atomic primitives).
+   * skills like make_ugc_video, run_id for atomic primitives) -- OR, when
+   * `input.variants` was set (make_ugc's bulk/multi-variant path), a
+   * SkillBatchSubmitResult instead: the single-run shape has no `batch`
+   * field, so `'batch' in result` is a safe, exhaustive discriminant. See
+   * commands/skills.ts's isBatchSubmitResult / handleBatchRun.
    */
   async runSkill(
     slug: string,
     input: Record<string, unknown>,
     opts?: { idempotencyKey?: string },
-  ): Promise<{
-    run_id?: string;
-    skill_run_id?: string;
-    workflow_id?: string;
-    skill: string;
-    primitive?: string;
-    status: string;
-  }> {
+  ): Promise<SkillSingleSubmitResult | SkillBatchSubmitResult> {
     const headers: Record<string, string> = {};
     if (opts?.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
     const res = await this.requestWithExtraHeaders(
@@ -1476,7 +1474,7 @@ export class VantlyUgcAPI {
       input,
       headers,
     );
-    return (await res.json()) as Awaited<ReturnType<VantlyUgcAPI['runSkill']>>;
+    return (await res.json()) as SkillSingleSubmitResult | SkillBatchSubmitResult;
   }
 
   /**

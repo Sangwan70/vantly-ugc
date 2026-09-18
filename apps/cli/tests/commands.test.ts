@@ -13,9 +13,13 @@
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { execSync, type ExecSyncOptionsWithStringEncoding } from 'node:child_process';
+import { execSync, exec, type ExecSyncOptionsWithStringEncoding } from 'node:child_process';
+import { promisify } from 'node:util';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createServer, type Server } from 'node:http';
+
+const execAsync = promisify(exec);
 // Phase 1 pure-logic units (built output — dist emits .d.ts).
 import { classifyError, contentPolicySuggestion, CLIError } from '../dist/lib/errors.js';
 import { v2SubmitError } from '../dist/v2/lib.js';
@@ -43,6 +47,26 @@ const EXEC_OPTS: ExecSyncOptionsWithStringEncoding = {
  */
 function run(args: string): string {
   return execSync(`node ${CLI_ENTRY} ${args}`, EXEC_OPTS).trim();
+}
+
+/**
+ * ASYNC counterpart to run(), for tests that stand up their OWN mock HTTP
+ * server in the SAME process. execSync (and run()/runWithEnv-via-execSync)
+ * blocks Node's entire event loop until the child process exits -- fine
+ * for tests that hit the real api-v2, but fatal here: an in-process mock
+ * server can't accept the CLI child's connection while the parent event
+ * loop is frozen inside execSync, so the child waits forever for a
+ * response the frozen server can never send, and execSync's own timeout
+ * eventually kills it (ETIMEDOUT). exec()'s promisified form keeps the
+ * event loop running while the child is out, so the mock server stays
+ * live. Extra env vars merge over EXEC_OPTS.env, same as run().
+ */
+async function runWithEnvAsync(args: string, extraEnv: Record<string, string>): Promise<string> {
+  const { stdout } = await execAsync(`node ${CLI_ENTRY} ${args}`, {
+    ...EXEC_OPTS,
+    env: { ...EXEC_OPTS.env, ...extraEnv },
+  });
+  return stdout.trim();
 }
 
 /**
@@ -465,5 +489,101 @@ describe('character show (C2)', () => {
     const { stderr } = runExpectFail('character show char_TEST1234');
     assert.ok(!stderr.includes('Not implemented'), `show should be implemented, got: ${stderr}`);
     assert.ok(/Error code:/.test(stderr), `show should emit a structured CLI error, got: ${stderr}`);
+  });
+});
+
+
+// Milestone 2 item 1 follow-up: `skills run make_ugc --input '{"variants":[...]}'`
+// used to crash with "API returned no run id" because the command assumed
+// one run id per submission -- a make_ugc batch response has no top-level
+// run id at all, just a `runs[]` array. These exercise the fix against a
+// local mock server standing in for api-v2.
+describe('vantly-ugc skills run make_ugc (batch / variants)', () => {
+  let server: Server;
+  let port: number;
+
+  beforeEach(async () => {
+    server = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (c) => chunks.push(c as Buffer));
+      req.on('end', () => {
+        if (req.method === 'POST' && req.url === '/v1/skills/make_ugc/run') {
+          res.writeHead(207, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            batch: true,
+            skill: 'make_ugc',
+            total: 2,
+            succeeded: 2,
+            failed: 0,
+            runs: [
+              {
+                variant_index: 0,
+                http_status: 202,
+                skill_run_id: 'run-composed-a',
+                workflow_id: 'make_ugc_video-run-composed-a',
+                skill: 'make_ugc_video',
+                status: 'submitted',
+              },
+              {
+                variant_index: 1,
+                http_status: 202,
+                run_id: 'run-primitive-b',
+                workflow_id: 'simple_selfie-run-primitive-b',
+                skill: 'make_simple_selfie',
+                primitive: 'simple_selfie',
+                status: 'submitted',
+              },
+            ],
+          }));
+          return;
+        }
+        if (req.method === 'GET' && req.url === '/v1/skills/runs/run-composed-a') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'succeeded', final_output: { video_url: 'https://example.com/a.mp4' } }));
+          return;
+        }
+        if (req.method === 'GET' && req.url === '/v1/primitives/runs/run-primitive-b') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'succeeded', artifacts: [{ url: 'https://example.com/b.mp4' }] }));
+          return;
+        }
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'not_found' }));
+      });
+    });
+    await new Promise<void>((resolvePromise) => server.listen(0, '127.0.0.1', () => resolvePromise()));
+    const addr = server.address();
+    port = typeof addr === 'object' && addr !== null ? addr.port : 0;
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()));
+  });
+
+  it('reports the batch envelope instead of crashing with "API returned no run id"', async () => {
+    const input = JSON.stringify({ script: 'hi', variants: [{ character: 'char_a' }, { character: 'char_b' }] });
+    const out = await runWithEnvAsync(`skills run make_ugc --input '${input}' --json`, {
+      VANTLY_UGC_API_KEY: 'test-key',
+      VANTLY_UGC_API_URL: `http://127.0.0.1:${port}`,
+    });
+    const parsed = JSON.parse(out);
+    assert.equal(parsed.batch, true);
+    assert.equal(parsed.total, 2);
+    assert.equal(parsed.runs.length, 2);
+    assert.equal(parsed.runs[0].skill_run_id, 'run-composed-a');
+    assert.equal(parsed.runs[1].run_id, 'run-primitive-b');
+  });
+
+  it('--wait polls every variant (composed AND primitive run ids) to a terminal status', async () => {
+    const input = JSON.stringify({ script: 'hi', variants: [{ character: 'char_a' }, { character: 'char_b' }] });
+    const out = await runWithEnvAsync(`skills run make_ugc --input '${input}' --wait --poll-interval 1 --json`, {
+      VANTLY_UGC_API_KEY: 'test-key',
+      VANTLY_UGC_API_URL: `http://127.0.0.1:${port}`,
+    });
+    const parsed = JSON.parse(out);
+    assert.equal(parsed.runs[0].status, 'succeeded');
+    assert.equal(parsed.runs[0].final_output.video_url, 'https://example.com/a.mp4');
+    assert.equal(parsed.runs[1].status, 'succeeded');
+    assert.equal(parsed.runs[1].artifacts[0].url, 'https://example.com/b.mp4');
   });
 });

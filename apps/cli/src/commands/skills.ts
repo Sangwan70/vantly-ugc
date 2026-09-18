@@ -24,6 +24,7 @@ import { getApiKey } from '../lib/credentials.js';
 import { VantlyUgcAPI } from '../lib/api.js';
 import { CLIError, handleError } from '../lib/errors.js';
 import { detectOutputMode, printJson, printQuiet, createSpinner } from '../lib/output.js';
+import type { OutputMode, SkillSingleSubmitResult, SkillBatchSubmitResult } from '../types.js';
 
 interface ListOpts {
   profile?: string;
@@ -63,10 +64,18 @@ export function registerSkillsCommand(program: Command): void {
     .option('--profile <name>', 'Credential profile')
     .option('--json', 'Output JSON')
     .option('--quiet', 'Minimal output')
-    .action(async (opts: ListOpts) => {
+    .action(async (opts: ListOpts, command: Command) => {
       try {
-        const mode = detectOutputMode(opts);
-        const apiKey = await getApiKey(opts.profile);
+        // `--json` / `--quiet` / `--profile` are declared BOTH globally (on
+        // the root program, so they work before any subcommand name) and
+        // locally here (so `--help` documents them on this command too) --
+        // Commander resolves a name collision like that to the ANCESTOR's
+        // option, not this command's own `opts`, so `opts.json` is silently
+        // always undefined. optsWithGlobals() merges this command's values
+        // with every ancestor's, which is what actually has the flag.
+        const globals = command.optsWithGlobals() as ListOpts;
+        const mode = detectOutputMode(globals);
+        const apiKey = await getApiKey(globals.profile ?? opts.profile);
         if (!apiKey) {
           throw new CLIError('Not logged in. Run `vantly-ugc login`.', { code: 'NOT_AUTHENTICATED' });
         }
@@ -105,10 +114,13 @@ export function registerSkillsCommand(program: Command): void {
     .option('--timeout <seconds>', 'Max time to wait', (v) => parseInt(v, 10), 1800)
     .option('--json', 'Output JSON')
     .option('--quiet', 'Minimal output')
-    .action(async (slug: string, opts: RunOpts) => {
+    .action(async (slug: string, opts: RunOpts, command: Command) => {
       try {
-        const mode = detectOutputMode(opts);
-        const apiKey = await getApiKey(opts.profile);
+        // See the `list` action's comment above -- same --json/--quiet/
+        // --profile global-vs-local collision, same fix.
+        const globals = command.optsWithGlobals() as RunOpts;
+        const mode = detectOutputMode(globals);
+        const apiKey = await getApiKey(globals.profile ?? opts.profile);
         if (!apiKey) {
           throw new CLIError('Not logged in. Run `vantly-ugc login`.', { code: 'NOT_AUTHENTICATED' });
         }
@@ -123,6 +135,17 @@ export function registerSkillsCommand(program: Command): void {
 
         const idemKey = opts.idempotencyKey ?? `cli-${randomUUID()}`;
         const submit = await api.runSkill(slug, inputBody, { idempotencyKey: idemKey });
+
+        // make_ugc's `variants` bulk path returns a batch envelope, not a
+        // single run id -- handle it on its own path rather than falling
+        // through to the `!runId` "API returned no run id" error below
+        // (that was the exact gap flagged when batch dispatch shipped:
+        // this command assumed one run id per submission).
+        if (isBatchSubmitResult(submit)) {
+          await handleBatchRun(api, submit, opts, mode);
+          return;
+        }
+
         const runId = submit.skill_run_id ?? submit.run_id;
         const composed = Boolean(submit.skill_run_id);
         if (!runId) {
@@ -175,10 +198,13 @@ export function registerSkillsCommand(program: Command): void {
     .option('--composed', 'Treat the id as a composed skill_run_id (default tries primitive first, then composed)')
     .option('--json', 'Output JSON')
     .option('--quiet', 'Minimal output')
-    .action(async (runId: string, opts: StatusOpts) => {
+    .action(async (runId: string, opts: StatusOpts, command: Command) => {
       try {
-        const mode = detectOutputMode(opts);
-        const apiKey = await getApiKey(opts.profile);
+        // See the `list` action's comment above -- same --json/--quiet/
+        // --profile global-vs-local collision, same fix.
+        const globals = command.optsWithGlobals() as StatusOpts;
+        const mode = detectOutputMode(globals);
+        const apiKey = await getApiKey(globals.profile ?? opts.profile);
         if (!apiKey) {
           throw new CLIError('Not logged in. Run `vantly-ugc login`.', { code: 'NOT_AUTHENTICATED' });
         }
@@ -205,6 +231,114 @@ export function registerSkillsCommand(program: Command): void {
         handleError(err);
       }
     });
+}
+
+function isBatchSubmitResult(
+  submit: SkillSingleSubmitResult | SkillBatchSubmitResult,
+): submit is SkillBatchSubmitResult {
+  return (submit as SkillBatchSubmitResult).batch === true;
+}
+
+/**
+ * `vantly-ugc skills run make_ugc --input '{"variants":[...]}'` — the
+ * batch-aware counterpart to the single-run path above. Without `--wait`
+ * it just reports what was accepted; with `--wait` it polls every
+ * successfully-dispatched variant until each reaches a terminal status
+ * (or the shared --timeout elapses), same TERMINAL set and poll cadence
+ * as the single-run path, just fanned out over the batch's `runs` array.
+ *
+ * A variant can fail to dispatch at all (bad character id, moderation
+ * block, a same-batch race on the combined credit preflight) -- those
+ * carry no run id and are already terminal, so they're reported
+ * immediately rather than waited on.
+ */
+async function handleBatchRun(
+  api: VantlyUgcAPI,
+  submit: SkillBatchSubmitResult,
+  opts: RunOpts,
+  mode: OutputMode,
+): Promise<void> {
+  if (!opts.wait) {
+    if (mode === 'json') {
+      printJson(submit);
+    } else if (mode === 'quiet') {
+      for (const r of submit.runs) {
+        const id = r.skill_run_id ?? r.run_id;
+        if (id) printQuiet(id);
+      }
+    } else {
+      console.log(chalk.green(`\n${submit.skill} batch submitted — ${submit.succeeded}/${submit.total} accepted`));
+      for (const r of submit.runs) {
+        const id = r.skill_run_id ?? r.run_id;
+        if (id) {
+          console.log(`  [${r.variant_index}] ${chalk.cyan(id)}  ${r.status ?? ''}`);
+        } else {
+          console.log(`  [${r.variant_index}] ${chalk.red('failed to submit')}  ${String(r.error ?? '')} ${r.detail ? JSON.stringify(r.detail) : ''}`);
+        }
+      }
+      console.log(chalk.dim('\nPoll each with: vantly-ugc skills status <run_id> [--composed]\n'));
+    }
+    return;
+  }
+
+  const pollable = submit.runs
+    .map((entry) => ({ entry, runId: entry.skill_run_id ?? entry.run_id, composed: Boolean(entry.skill_run_id) }))
+    .filter((p): p is { entry: typeof submit.runs[number]; runId: string; composed: boolean } => Boolean(p.runId));
+
+  const finals = new Map<number, Record<string, unknown>>();
+  const spinner = mode === 'human' ? createSpinner(`${submit.skill} batch · 0/${pollable.length} done…`).start() : null;
+  const deadline = Date.now() + (opts.timeout ?? 1800) * 1000;
+
+  while (finals.size < pollable.length && Date.now() < deadline) {
+    await Promise.all(
+      pollable.map(async (p) => {
+        if (finals.has(p.entry.variant_index)) return;
+        const body = p.composed ? await api.getSkillRun(p.runId) : await api.getPrimitiveRun(p.runId);
+        if (TERMINAL.has(String(body.status ?? 'unknown'))) finals.set(p.entry.variant_index, body);
+      }),
+    );
+    if (spinner) spinner.text = `${submit.skill} batch · ${finals.size}/${pollable.length} done…`;
+    if (finals.size < pollable.length) await new Promise((r) => setTimeout(r, (opts.pollInterval ?? 5) * 1000));
+  }
+  if (spinner) spinner.stop();
+
+  if (mode === 'json') {
+    printJson({
+      ...submit,
+      runs: submit.runs.map((r) => {
+        const final = finals.get(r.variant_index);
+        return final ? { ...r, ...final } : r;
+      }),
+    });
+    return;
+  }
+  if (mode === 'quiet') {
+    for (const r of submit.runs) {
+      const final = finals.get(r.variant_index);
+      const url = final ? extractMediaUrl(final) : null;
+      if (url) printQuiet(url);
+    }
+    return;
+  }
+
+  console.log();
+  console.log(chalk.bold(`${submit.skill} batch — ${finals.size}/${pollable.length} finished`));
+  for (const r of submit.runs) {
+    const runId = r.skill_run_id ?? r.run_id;
+    if (!runId) {
+      console.log(`  [${r.variant_index}] ${chalk.red('failed to submit')}  ${String(r.error ?? '')} ${r.detail ? JSON.stringify(r.detail) : ''}`);
+      continue;
+    }
+    const final = finals.get(r.variant_index);
+    if (!final) {
+      console.log(
+        `  [${r.variant_index}] ${chalk.yellow('still running')} (timed out waiting) — check later with: ` +
+          `vantly-ugc skills status ${runId}${r.skill_run_id ? ' --composed' : ''}`,
+      );
+      continue;
+    }
+    renderRun(final, runId, Boolean(r.skill_run_id));
+  }
 }
 
 function extractMediaUrl(body: Record<string, unknown>): string | null {

@@ -13,7 +13,7 @@ import { uploadUserAudioBuffer } from '../../lib/r2-upload.js';
 import { synthesizeElevenLabsSpeech } from '../../lib/elevenlabs.js';
 import { ModerationError } from '../../lib/image-moderation.js';
 import { quoteSkillCredits, quoteInFlightPrimitiveRun } from '../../skills/credit-quotes.js';
-import { decideMakeUgcRoute, type MakeUgcProps } from '../../skills/make-ugc-router.js';
+import { decideMakeUgcRoute, validateMakeUgcVariants, buildBatchRunRecord, type MakeUgcProps } from '../../skills/make-ugc-router.js';
 import { isAdminEmail } from '../../lib/admin-allowlist.js';
 import { recordSkillRunStatusEvent } from '../../lib/skill-run-status-events.js';
 import { deriveEffectiveSkillRunStatus } from '../../lib/skill-run-status.js';
@@ -163,10 +163,16 @@ export async function refundSkillRunCharges(
   return { charged: charged.length, refunded };
 }
 
-async function preflightCreditCheck(
+/**
+ * Shared by preflightCreditCheck (single skill run) AND dispatchMakeUgcBatch
+ * (make_ugc's `variants` bulk path, which needs ONE combined check against a
+ * pre-summed total across every variant, not N separate per-slug quotes) --
+ * extracted so a batch's aggregate gate and a single run's gate can never
+ * disagree about what "enough balance" means.
+ */
+async function checkCreditsAvailable(
   userId: string,
-  slug: string,
-  input: Record<string, unknown>,
+  needed: number,
   isAdmin: boolean,
 ): Promise<{ ok: true } | { ok: false; needed: number; available: number; committed: number }> {
   // Self-host: no billing configured, so nothing to reserve or charge.
@@ -175,7 +181,6 @@ async function preflightCreditCheck(
   // deductPrimitiveCredits (primitive-worker-vnext/src/client/credits.ts)
   // mirrors this so the run doesn't fail deeper in the workflow either.
   if (isAdmin) return { ok: true };
-  const needed = quoteSkillCredits(slug, input);
   if (needed <= 0) return { ok: true };
   const { data, error } = await supabase
     .from('user_credits')
@@ -190,6 +195,15 @@ async function preflightCreditCheck(
   const committed = await committedInFlightCredits(userId);
   if (available - committed < needed) return { ok: false, needed, available, committed };
   return { ok: true };
+}
+
+async function preflightCreditCheck(
+  userId: string,
+  slug: string,
+  input: Record<string, unknown>,
+  isAdmin: boolean,
+): Promise<{ ok: true } | { ok: false; needed: number; available: number; committed: number }> {
+  return checkCreditsAvailable(userId, quoteSkillCredits(slug, input), isAdmin);
 }
 
 function getPrimitiveTaskQueue(): string {
@@ -225,6 +239,57 @@ export async function quoteSkillRoute(req: Request, res: Response): Promise<void
     return;
   }
   const input = parsed.data as Record<string, unknown>;
+
+  // make_ugc bulk quote: one combined price for the whole `variants` batch,
+  // reusing the SAME per-variant validation the run path uses (see
+  // dispatchMakeUgcBatch) so a quote can never accept -- or price -- a batch
+  // the run would reject.
+  const variantOverrides = slug === 'make_ugc' ? (input as { variants?: Array<Record<string, unknown>> }).variants : undefined;
+  if (variantOverrides && variantOverrides.length > 0) {
+    const rawBase = { ...(req.body as Record<string, unknown>) };
+    delete rawBase.variants;
+    const validated = validateMakeUgcVariants(rawBase, variantOverrides);
+    if (!validated.ok) {
+      res.status(400).json({ error: 'invalid_variant', skill: slug, variants: validated.errors });
+      return;
+    }
+    const perVariant = validated.variants.map((v) => quoteSkillCredits(v.routed.slug, v.routed.body));
+    const credits = perVariant.reduce((sum, c) => sum + c, 0);
+    if (isAdminEmail((req as any).userEmail)) {
+      res.status(200).json({
+        slug,
+        batch: true,
+        credits,
+        per_variant: perVariant,
+        available: null,
+        committed: 0,
+        sufficient: true,
+        unlimited: true,
+      });
+      return;
+    }
+    let available: number | null = null;
+    const { data } = await supabase
+      .from('user_credits')
+      .select('monthly_credits_remaining, purchased_balance')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (data) available = Number(data.monthly_credits_remaining ?? 0) + Number(data.purchased_balance ?? 0);
+    const committed = available === null ? 0 : await committedInFlightCredits(userId);
+    const free = available === null ? null : Math.max(0, available - committed);
+    res.status(200).json({
+      slug,
+      batch: true,
+      credits,
+      per_variant: perVariant,
+      available: free,
+      committed,
+      sufficient: free === null ? true : free >= credits,
+      unlimited: false,
+    });
+    return;
+  }
+
   const credits = quoteSkillCredits(slug, input);
 
   // Admins (ADMIN_EMAILS) never see a "not enough credits" block — the confirm
@@ -444,6 +509,136 @@ async function dispatchMakeUgc(
   await runSkillRoute(req, res);
 }
 
+/**
+ * Runs dispatchMakeUgc for ONE variant's props without touching the real
+ * req/res -- captures whatever {status, body} it would have sent instead.
+ * Every response in this whole file (verified: grep res\. across
+ * routes/v1/skills.ts matches only res.status(...).json(...), nothing else)
+ * goes through exactly that shape, so this minimal fake is a complete stand-in
+ * for a real Express response for everything dispatchMakeUgc (and everything
+ * IT calls: runSkillRoute, dispatchMakeUgcVideo, dispatchBrollTalkingHead,
+ * dispatchMakePodcast, dispatchMakeStorybook) can do to it. This lets a batch
+ * reuse the single-variant dispatch path byte-for-byte -- same identity
+ * resolution, same per-run preflight, same Temporal dispatch, same
+ * primitive_runs/skill_runs bookkeeping -- instead of a second, easily-drifting
+ * copy of that logic for the batch case.
+ */
+function runOneMakeUgcVariant(
+  req: Request,
+  userId: string,
+  props: MakeUgcProps,
+): Promise<{ status: number; body: unknown }> {
+  return new Promise((resolve) => {
+    const fakeReq = {
+      params: { slug: 'make_ugc' },
+      body: props,
+      userId,
+      userEmail: (req as any).userEmail,
+    } as unknown as Request;
+    let capturedStatus = 200;
+    const fakeRes = {
+      status(code: number) {
+        capturedStatus = code;
+        return fakeRes;
+      },
+      json(body: unknown) {
+        resolve({ status: capturedStatus, body });
+      },
+    } as unknown as Response;
+    dispatchMakeUgc(fakeReq, fakeRes, userId, props).catch((err) => {
+      resolve({ status: 500, body: { error: 'batch_variant_dispatch_failed', detail: errorMessage(err) } });
+    });
+  });
+}
+
+/**
+ * make_ugc's `variants` bulk path (Milestone 2, item 1 of the Video
+ * Generation Flow audit's product phase: "accept an array of variant
+ * overrides... dispatch them as parallel Temporal workflows, and return one
+ * quote covering all of them up front"). Additive only -- a request with no
+ * `variants` never reaches this function; the plain single-run path above is
+ * untouched.
+ *
+ * Every variant is validated BEFORE anything is dispatched (validateMakeUgcVariants
+ * re-parses each merged {...base, ...override} from scratch against the full
+ * schema), and the WHOLE batch's total cost is checked against the caller's
+ * balance in ONE combined preflight before the first workflow starts -- so an
+ * invalid variant, or an unaffordable batch, is rejected with nothing already
+ * billed, rather than 3 of 5 variants succeeding before variant 4 fails.
+ *
+ * Dispatch itself is sequential, not Promise.all: each iteration reuses the
+ * ordinary single-run path unchanged (runOneMakeUgcVariant), which inserts its
+ * skill_runs/primitive_runs row before returning -- so by the time variant N's
+ * OWN per-run preflight (still enforced normally, inside that reused path) runs,
+ * committedInFlightCredits already sees variants 0..N-1 from this same batch as
+ * committed. That is a real defense-in-depth property, not just an ordering
+ * nicety: the combined preflight above is a fail-fast check against a balance
+ * read once up front, and (like every other preflight in this file) is
+ * best-effort, not a hard lock -- a concurrent request from the same user could
+ * still race it. The underlying Temporal workflows still all run concurrently
+ * once started; only the (fast, non-blocking) start calls are ordered.
+ */
+async function dispatchMakeUgcBatch(
+  req: Request,
+  res: Response,
+  userId: string,
+  variantOverrides: Array<Record<string, unknown>>,
+  isAdmin: boolean,
+): Promise<void> {
+  const rawBase = { ...(req.body as Record<string, unknown>) };
+  delete rawBase.variants;
+
+  const validated = validateMakeUgcVariants(rawBase, variantOverrides);
+  if (!validated.ok) {
+    res.status(400).json({ error: 'invalid_variant', skill: 'make_ugc', variants: validated.errors });
+    return;
+  }
+  const variants = validated.variants;
+
+  const perVariantNeeded = variants.map((v) => quoteSkillCredits(v.routed.slug, v.routed.body));
+  const totalNeeded = perVariantNeeded.reduce((sum, c) => sum + c, 0);
+  const preflight = await checkCreditsAvailable(userId, totalNeeded, isAdmin);
+  if (!preflight.ok) {
+    const free = Math.max(0, preflight.available - preflight.committed);
+    res.status(402).json({
+      error: 'insufficient_credits',
+      skill: 'make_ugc',
+      needed: preflight.needed,
+      available: preflight.available,
+      committed: preflight.committed,
+      detail:
+        `This batch of ${variants.length} needs ${preflight.needed} credits but you have ${free} available` +
+        (preflight.committed > 0 ? ` (${preflight.committed} reserved by jobs still running)` : '') +
+        `. Top up on the Billing page to continue.`,
+      buy_url: '/dashboard/billing',
+    });
+    return;
+  }
+
+  const runs: Array<Record<string, unknown>> = [];
+  for (let i = 0; i < variants.length; i += 1) {
+    const captured = await runOneMakeUgcVariant(req, userId, variants[i].props);
+    runs.push(buildBatchRunRecord(i, captured));
+  }
+
+  const succeeded = runs.filter((r) => (r.http_status as number) < 400).length;
+  // 207 (Multi-Status), not 200/202: the batch envelope itself is fine, but
+  // individual variants can independently fail (a bad character id, a
+  // moderation block, a same-batch race on the aggregate preflight above) --
+  // a flat 200/202 would read as "all N succeeded" to a caller that only
+  // checks the outer status, which the per-run statuses inside `runs` can
+  // contradict. 207 is still < 300, so it counts as `ok` for a plain
+  // fetch()-based caller while remaining honestly distinct from "fully ok."
+  res.status(207).json({
+    batch: true,
+    skill: 'make_ugc',
+    total: variants.length,
+    succeeded,
+    failed: variants.length - succeeded,
+    runs,
+  });
+}
+
 export async function runSkillRoute(req: Request, res: Response): Promise<void> {
   const userId = (req as any).userId as string | undefined;
   if (!userId) {
@@ -478,6 +673,11 @@ export async function runSkillRoute(req: Request, res: Response): Promise<void> 
   // re-host, preflight, dispatcher, skill_runs row and skill_run_id are all the
   // existing ones. make_ugc owns no generation of its own.
   if (slug === 'make_ugc') {
+    const variantOverrides = (parsed.data as MakeUgcProps & { variants?: Array<Record<string, unknown>> }).variants;
+    if (variantOverrides && variantOverrides.length > 0) {
+      await dispatchMakeUgcBatch(req, res, userId, variantOverrides, isAdminEmail((req as any).userEmail));
+      return;
+    }
     await dispatchMakeUgc(req, res, userId, parsed.data as MakeUgcProps);
     return;
   }

@@ -91,6 +91,16 @@ export const MakeUgcVideoSkillInputSchema = z
  * identity + picks an existing skill (make_ugc_video / make_simple_selfie /
  * make_broll_talking_head) and delegates. No new generation, no new workflow.
  */
+/**
+ * Bulk-generation cap for make_ugc's `variants` array (see below). Chosen as
+ * a conservative starting point -- large enough for the doc's own example
+ * use case (a handful of hooks/actors against one script), small enough that
+ * one HTTP request can't fan out into an unbounded number of paid Temporal
+ * workflows. Shared between the schema's own .max() and
+ * validateMakeUgcVariants's own bounds check so the two can't drift.
+ */
+export const MAKE_UGC_MAX_VARIANTS = 10;
+
 export const MakeUgcSkillInputSchema = z
   .object({
     script: z
@@ -181,6 +191,27 @@ export const MakeUgcSkillInputSchema = z
       .max(120)
       .describe('A music direction, e.g. "lo-fi jazz" or "upbeat pop". Only used when background_music is true.')
       .optional(),
+    // Bulk generation: render several versions of this ad in one call against
+    // the same base script -- different hooks, saved characters, or caption
+    // styles. Each element is a partial make_ugc request that OVERRIDES only
+    // the keys it sets on top of the base object (so [{character:"char_a"},
+    // {character:"char_b"}] renders the same base script with two different
+    // saved characters). Kept as z.record rather than a full recursive
+    // MakeUgcSkillInputSchema so a variant is never required to repeat every
+    // base field -- validateMakeUgcVariants (make-ugc-router.ts) re-validates
+    // each MERGED {...base, ...variant} object against this same schema
+    // before anything is dispatched, so an invalid combination is still
+    // caught, just per-variant rather than here. Capped at
+    // MAKE_UGC_MAX_VARIANTS: unbounded fan-out from one HTTP request would be
+    // an easy way to accidentally (or deliberately) start dozens of paid
+    // Temporal workflows and blow past a budget before anyone notices.
+    variants: z
+      .array(z.record(z.string(), z.unknown()))
+      .max(MAKE_UGC_MAX_VARIANTS)
+      .optional()
+      .describe(
+        `Generate up to ${MAKE_UGC_MAX_VARIANTS} versions of this ad in one call -- different hooks, saved characters, or caption styles against the same base script/settings. Each element overrides only the fields it sets (e.g. [{character:"char_abc"},{character:"char_def"}] renders the same script with two different saved characters). Omit for a single normal run.`,
+      ),
   })
   .refine((d) => Boolean(d.script) || Boolean(d.scene_action), {
     message: 'provide either script (what they say) or scene_action (a silent clip)',

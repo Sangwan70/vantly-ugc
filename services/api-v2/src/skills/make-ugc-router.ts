@@ -17,6 +17,7 @@
  */
 
 import { countWords, fitDuration } from '@vantly-ugc/schema';
+import { MakeUgcSkillInputSchema, MAKE_UGC_MAX_VARIANTS } from './registry.js';
 
 export interface MakeUgcProps {
   script?: string;
@@ -198,4 +199,77 @@ export function decideMakeUgcRoute(props: MakeUgcProps): {
   const defaultMusic = resolveMusic(props);
   if (typeof defaultMusic !== 'undefined') body.background_music = defaultMusic;
   return { slug: 'make_ugc_video', body };
+}
+
+
+/**
+ * make_ugc bulk generation ("variants"). Validates every requested variant
+ * BEFORE anything is dispatched -- see dispatchMakeUgcBatch in
+ * routes/v1/skills.ts for why: an invalid variant discovered partway through
+ * a batch would mean some real, billed Temporal workflows already started
+ * before the caller finds out a later one was malformed.
+ *
+ * Each variant is `{...rawBase, ...override}` re-validated from scratch
+ * against the FULL MakeUgcSkillInputSchema (not a merge of two already-parsed
+ * objects) so zod's own defaulting/refinement logic runs exactly once per
+ * variant, the same way it would for an equivalent single-variant request --
+ * there is no separate "merge two validated objects" code path to drift from
+ * the real one.
+ *
+ * `rawBase` is the caller's raw request body with `variants` itself removed
+ * (never an already-parsed object) precisely so per-variant defaulting
+ * happens against what the caller actually sent, not against a
+ * previously-defaulted copy.
+ */
+export interface MakeUgcVariantError {
+  variant_index: number;
+  detail: unknown;
+}
+
+export interface MakeUgcRoutedVariant {
+  props: MakeUgcProps;
+  routed: { slug: string; body: Record<string, unknown> };
+}
+
+export function validateMakeUgcVariants(
+  rawBase: Record<string, unknown>,
+  overrides: Array<Record<string, unknown>>,
+): { ok: true; variants: MakeUgcRoutedVariant[] } | { ok: false; errors: MakeUgcVariantError[] } {
+  const errors: MakeUgcVariantError[] = [];
+  const variants: MakeUgcRoutedVariant[] = [];
+  const capped = overrides.slice(0, MAKE_UGC_MAX_VARIANTS);
+  for (let i = 0; i < capped.length; i += 1) {
+    const parsed = MakeUgcSkillInputSchema.safeParse({ ...rawBase, ...capped[i] });
+    if (!parsed.success) {
+      errors.push({ variant_index: i, detail: parsed.error.flatten() });
+      continue;
+    }
+    const props = parsed.data as MakeUgcProps;
+    variants.push({ props, routed: decideMakeUgcRoute(props) });
+  }
+  if (errors.length > 0) return { ok: false, errors };
+  return { ok: true, variants };
+}
+
+/**
+ * Merges one captured {status, body} into a make_ugc batch's per-run record
+ * (see dispatchMakeUgcBatch, routes/v1/skills.ts). Broken out on its own,
+ * separate from that route file, specifically so it can be unit-tested
+ * without pulling in server.ts's Supabase client construction (which throws
+ * without live env vars) -- the same reason validateMakeUgcVariants above
+ * lives here rather than in the route file too.
+ *
+ * The obvious inline version has a real trap: a successful dispatch's own
+ * body already carries a `status` field ('submitted') -- spreading it AFTER
+ * a `status` key holding the HTTP code would let that string silently
+ * clobber the code, which then breaks the succeeded/failed tally in
+ * dispatchMakeUgcBatch (a string compared with `< 400` is never true, so
+ * every success would misreport as a failure). `http_status` stays a
+ * distinct key precisely to avoid that collision.
+ */
+export function buildBatchRunRecord(
+  variantIndex: number,
+  captured: { status: number; body: unknown },
+): Record<string, unknown> {
+  return { variant_index: variantIndex, ...(captured.body as Record<string, unknown>), http_status: captured.status };
 }

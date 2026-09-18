@@ -50,6 +50,49 @@ const isUuid = (v: unknown): v is string =>
   typeof v === 'string' &&
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 
+// Mirrors the client's own terminal-status classification (dashboard/agent/
+// page.tsx FAILSTATES/TERMINAL) so the server's denormalized
+// agent_chats.last_run_status agrees with what the chat UI itself would
+// render for the same tool_result JSON.
+const RUN_FAILSTATES = new Set(['failed', 'canceled', 'cancelled']);
+const RUN_SUCCEEDSTATES = new Set(['succeeded', 'completed', 'success']);
+
+/**
+ * Denormalize last_run_status onto agent_chats the same way last_skill_run_id
+ * already is (see appendMessagesToChat below): scan this batch's rows,
+ * newest first, for a tool_result block whose JSON `content` carries a
+ * terminal status, and map it the same way the client does. A tool_result
+ * that isn't valid JSON, or whose status is some in-progress value, is not
+ * terminal -- keep scanning earlier rows in the same batch rather than
+ * treating it as "no status" and clobbering the chat's last known outcome.
+ * Returns null when nothing terminal is found in this batch (caller then
+ * leaves the chat's existing last_run_status untouched, same pattern as
+ * lastSkillRun below).
+ */
+function deriveLastRunStatusFromRows(
+  rows: Array<{ role: string; content: unknown }>,
+): 'succeeded' | 'failed' | null {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i];
+    if (row.role !== 'user' || !Array.isArray(row.content)) continue;
+    for (const block of row.content as Array<Record<string, unknown>>) {
+      if (!block || block.type !== 'tool_result') continue;
+      const raw = block.content;
+      if (typeof raw !== 'string') continue;
+      let parsed: { status?: unknown } | null = null;
+      try {
+        parsed = JSON.parse(raw) as { status?: unknown };
+      } catch {
+        continue;
+      }
+      const status = typeof parsed?.status === 'string' ? parsed.status : '';
+      if (RUN_FAILSTATES.has(status)) return 'failed';
+      if (RUN_SUCCEEDSTATES.has(status)) return 'succeeded';
+    }
+  }
+  return null;
+}
+
 /**
  * Derive the in-flight tool run from the message rows (no extra query): the
  * LAST tool_use whose id never appears as a tool_result's tool_use_id is the
@@ -98,7 +141,7 @@ export async function createChatRoute(req: Request, res: Response): Promise<void
   const { data: chat, error } = await supabase
     .from('agent_chats')
     .insert({ user_id: userId, project_id: projectId, title })
-    .select('id, project_id, title, status, pinned, last_skill_run_id, message_count, last_message_at, created_at, updated_at')
+    .select('id, project_id, title, status, pinned, last_skill_run_id, last_run_status, message_count, last_message_at, created_at, updated_at')
     .single();
 
   if (error || !chat) {
@@ -228,9 +271,11 @@ async function appendMessagesToChat(
 
   // 4) Bump chat counters. last_skill_run_id = last skill run in this batch.
   const lastSkillRun = [...rows].reverse().find((r) => r.skill_run_id)?.skill_run_id ?? null;
+  const lastRunStatus = deriveLastRunStatusFromRows(rows);
   const newCount = (chat.message_count ?? 0) + rows.length;
   const patch: Record<string, unknown> = { message_count: newCount, last_message_at: new Date().toISOString() };
   if (lastSkillRun) patch.last_skill_run_id = lastSkillRun;
+  if (lastRunStatus) patch.last_run_status = lastRunStatus;
   const { error: bumpErr } = await supabase.from('agent_chats').update(patch).eq('id', chatId).eq('user_id', userId);
   if (bumpErr) console.error(`[agent chats append] bump: ${bumpErr.message}`); // non-fatal
 
@@ -255,7 +300,7 @@ export async function getChatRoute(req: Request, res: Response): Promise<void> {
 
   const { data: chat, error: chatErr } = await supabase
     .from('agent_chats')
-    .select('id, project_id, title, status, pinned, last_skill_run_id, message_count, last_message_at, archived_at, created_at, updated_at')
+    .select('id, project_id, title, status, pinned, last_skill_run_id, last_run_status, message_count, last_message_at, archived_at, created_at, updated_at')
     .eq('id', chatId)
     .eq('user_id', userId)
     .maybeSingle();
@@ -304,7 +349,7 @@ export async function listChatsRoute(req: Request, res: Response): Promise<void>
 
   let q = supabase
     .from('agent_chats')
-    .select('id, project_id, title, status, pinned, last_skill_run_id, message_count, last_message_at, created_at, updated_at')
+    .select('id, project_id, title, status, pinned, last_skill_run_id, last_run_status, message_count, last_message_at, created_at, updated_at')
     .eq('user_id', userId);
   // Soft-archive: default to non-archived unless status=archived|all requested.
   if (status === 'archived') q = q.not('archived_at', 'is', null);
@@ -372,7 +417,7 @@ export async function patchChatRoute(req: Request, res: Response): Promise<void>
     .update(patch)
     .eq('id', chatId)
     .eq('user_id', userId)
-    .select('id, project_id, title, status, pinned, last_skill_run_id, message_count, last_message_at, archived_at, created_at, updated_at')
+    .select('id, project_id, title, status, pinned, last_skill_run_id, last_run_status, message_count, last_message_at, archived_at, created_at, updated_at')
     .maybeSingle();
   if (error) {
     console.error(`[agent chats patch] ${error.message}`);
@@ -546,8 +591,18 @@ export async function linkMessageRunRoute(req: Request, res: Response): Promise<
 
   // Same O(1) "is a render live?" upkeep appendMessagesToChat does for a
   // fresh insert -- keep it consistent for a linked-after-the-fact run too.
+  // Also clear last_run_status: linking a fresh run id here means a new
+  // attempt (initial dispatch or retry) just started, so the chat's old
+  // terminal outcome (e.g. "failed") no longer describes what's in flight --
+  // leaving it set would keep sorting/showing this chat as failed while a
+  // retry is actively running. appendMessagesToChat sets it again once this
+  // new run's own tool_result lands.
   if (typeof patch.skill_run_id === 'string') {
-    await supabase.from('agent_chats').update({ last_skill_run_id: patch.skill_run_id }).eq('id', chatId).eq('user_id', userId);
+    await supabase
+      .from('agent_chats')
+      .update({ last_skill_run_id: patch.skill_run_id, last_run_status: null })
+      .eq('id', chatId)
+      .eq('user_id', userId);
   }
 
   res.status(200).json({ ok: true, id: data.id });

@@ -37,7 +37,7 @@ type Block =
 // produced it so a reopened chat re-shows media + re-attaches its run. These
 // three are CLIENT-ONLY — stripped before the transcript reaches the brain.
 interface Msg { role: 'user' | 'assistant'; content: string | Block[]; cmid?: string; skillRunId?: string | null; runKind?: 'skill' | 'primitive' | null }
-interface ChatSummary { id: string; title: string | null; status: string; pinned: boolean; message_count: number; last_message_at: string; project_id?: string | null }
+interface ChatSummary { id: string; title: string | null; status: string; pinned: boolean; message_count: number; last_message_at: string; project_id?: string | null; last_run_status?: 'succeeded' | 'failed' | null }
 interface Project { id: string; name: string; emoji?: string | null; instructions?: string | null }
 // Minimal shape of the brand kit snapshot (see /dashboard/brand-kit and
 // /api/onboarding/brand-extract) — just the fields the project-context
@@ -436,14 +436,53 @@ export default function AgentPage() {
   }
 
   // ── Chat persistence (client-driven, idempotent, fire-and-forget) ────────
+  /** Server already sorts pinned-first, then by recency (listChatsRoute). Stable
+   *  re-sort so a chat whose last generation failed sinks below ones that
+   *  succeeded or are still in progress -- a permanently-failed run (e.g.
+   *  a budget-cap rejection nobody's going to retry) shouldn't sit at the
+   *  top of the rail just because it's the most recent thing that happened.
+   *  Recency order within each group (failed / not-failed) is preserved
+   *  since Array.prototype.sort is a stable sort. */
+  function sortChats(list: ChatSummary[]): ChatSummary[] {
+    return [...list].sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+      const aFailed = a.last_run_status === 'failed';
+      const bFailed = b.last_run_status === 'failed';
+      if (aFailed !== bFailed) return aFailed ? 1 : -1;
+      return 0;
+    });
+  }
+
   async function fetchChats() {
     try {
       const r = await fetch('/api/v1/agent/chats?limit=50', { credentials: 'include' });
       if (!r.ok) return;
       const j = (await r.json()) as { chats?: ChatSummary[]; projects?: Project[] };
-      setChats(j.chats ?? []);
+      setChats(sortChats(j.chats ?? []));
       setProjects(j.projects ?? []);
     } catch { /* ignore */ }
+  }
+
+  /** Bulk-archive every non-pinned chat whose last generation failed --
+   *  "delete/cleanup failed generations, they're unnecessarily annoying"
+   *  (a pinned chat is presumably kept on purpose, so it's excluded from
+   *  the sweep). Same archive (soft-delete) as the per-chat "..." menu's
+   *  own Archive action, just applied to all of them in one click. */
+  function clearFailedChats() {
+    const toClear = chats.filter((c) => c.last_run_status === 'failed' && !c.pinned);
+    if (toClear.length === 0) return;
+    const label = toClear.length === 1 ? 'this failed generation' : `these ${toClear.length} failed generations`;
+    if (!window.confirm(`Clear ${label}? They'll be archived out of your chat list.`)) return;
+    const ids = new Set(toClear.map((c) => c.id));
+    setChats((p) => p.filter((c) => !ids.has(c.id))); // optimistic
+    if (chatIdRef.current && ids.has(chatIdRef.current)) {
+      setMessages([]); setToolRuns({}); setChat(null); setActiveProject(null);
+      try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
+    }
+    for (const c of toClear) {
+      void fetch(`/api/v1/agent/chats/${c.id}`, { method: 'DELETE', credentials: 'include' }).catch(() => { /* best-effort */ });
+    }
+    void fetchChats();
   }
   function setActiveProject(id: string | null) { activeProjectIdRef.current = id; setActiveProjectId(id); }
 
@@ -1319,7 +1358,7 @@ export default function AgentPage() {
    *  brain to run it, so there's no driveLoop continuation afterward. */
   async function launchSkillFromPicker(target: SkillCatalogEntry, result: SkillLaunchResult) {
     setRunSkillTarget(null);
-    const cid = await ensureChat(`Run ${skillLabel(target.slug)} — ${new Date().toLocaleString()}`);
+    const cid = await ensureChat(`Generated ${skillLabel(target.slug)}`);
     if (!cid) { setError('Could not start a chat for this run.'); return; }
     setRailOpen(true);
     const toolUseId = genId();
@@ -1530,6 +1569,25 @@ export default function AgentPage() {
     </form>
   );
 
+  // Friendly "2h ago" label for a chat row. Titles used to embed a full
+  // `toLocaleString()` timestamp (see the old `Run X — <timestamp>` format)
+  // specifically so rows stayed distinguishable in the list -- now that
+  // titles are just "Generated <skill>", this is what keeps that job without
+  // dumping a raw datetime into every row.
+  function timeAgo(iso: string): string {
+    const then = new Date(iso).getTime();
+    if (Number.isNaN(then)) return '';
+    const diffMs = Date.now() - then;
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 7) return `${days}d ago`;
+    return new Date(iso).toLocaleDateString();
+  }
+
   // One row in the history rail: reopen on click; hover reveals a … menu
   // (rename / pin / archive); inline-edit while renaming.
   function renderChatRow(c: ChatSummary) {
@@ -1553,7 +1611,11 @@ export default function AgentPage() {
           {c.pinned
             ? <Pin className="h-3.5 w-3.5 shrink-0" style={{ color: active ? '#A78BFA' : 'rgba(255,255,255,0.45)' }} />
             : <MessageSquarePlus className="h-3.5 w-3.5 shrink-0" style={{ color: active ? '#A78BFA' : 'rgba(255,255,255,0.3)' }} />}
-          <span className="truncate" style={{ color: active ? '#E9E9F0' : 'rgba(255,255,255,0.72)' }}>{c.title ?? 'New chat'}</span>
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span className="truncate" style={{ color: active ? '#E9E9F0' : 'rgba(255,255,255,0.72)' }}>{c.title ?? 'New chat'}</span>
+            {c.last_run_status === 'failed' && <AlertCircle className="h-3 w-3 shrink-0" style={{ color: '#F87171' }} />}
+          </span>
+          <span className="shrink-0 text-[11px]" style={{ color: 'rgba(255,255,255,0.35)' }}>{timeAgo(c.last_message_at)}</span>
         </button>
         <button type="button" aria-label="Chat options"
           onClick={(e) => { e.stopPropagation(); setMenuFor(menuFor === c.id ? null : c.id); }}
@@ -1670,6 +1732,15 @@ export default function AgentPage() {
             <input value={chatQuery} onChange={(e) => setChatQuery(e.target.value)} placeholder="Search chats" className="w-full bg-transparent text-[13px] outline-none" style={{ color: '#E9E9F0' }} />
             {chatQuery && <button type="button" aria-label="Clear search" onClick={() => setChatQuery('')} className="opacity-50 hover:opacity-100"><X className="h-3 w-3" style={{ color: '#E9E9F0' }} /></button>}
           </div>
+        </div>
+      )}
+      {chats.some((c) => c.last_run_status === 'failed' && !c.pinned) && (
+        <div className="px-2.5 pb-1.5">
+          <button type="button" onClick={clearFailedChats}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12.5px] transition-colors hover:bg-white/[0.06]"
+            style={{ border: '1px solid rgba(248,113,113,0.25)', color: 'rgba(248,113,113,0.85)' }}>
+            <Trash2 className="h-3.5 w-3.5" /> Clear failed generations
+          </button>
         </div>
       )}
       <div className="flex-1 px-2 pb-4">

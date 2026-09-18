@@ -50,7 +50,7 @@ const TERMINAL = new Set(['succeeded', 'completed', 'success', 'failed', 'cancel
 // action the user asked for.
 async function createRunAgentChat(skill: SkillEntry, toolUseId: string, run: RunResult): Promise<string | null> {
   try {
-    const title = `Run ${skill.name} — ${new Date().toLocaleString()}`;
+    const title = `Generated ${skill.name}`;
     // Embeds the run's real id (+ composed-ness) directly in the tool_use
     // block's own `input` — the one thing this message carries that
     // survives regardless of whether THIS tab is still open. Without it,

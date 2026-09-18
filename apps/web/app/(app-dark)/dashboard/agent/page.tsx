@@ -996,7 +996,28 @@ export default function AgentPage() {
     finally { setBusy(false); void fetchChats(); }
   }
 
-  /** Re-run a single failed generation, in place. Explicit (no silent re-spend). */
+  /** Re-run a single failed generation, in place. Explicit (no silent re-spend).
+   *
+   *  This used to call runSkill and stop -- never persisting anything, so
+   *  the retry's outcome existed ONLY in the in-memory toolRuns state for
+   *  the rest of this tab's lifetime. A reload rebuilds toolRuns purely
+   *  from persisted messages (rebuildToolRuns), which still only had the
+   *  ORIGINAL failed tool_result -- so a successful retry would silently
+   *  revert to showing "failed" again the moment the tab closed, even
+   *  though the video had actually finished generating. Reported live:
+   *  chat da110f05, run b15f6b9c's retry produced a real video, but every
+   *  reopen of the chat kept showing the original BUDGET_CAP_PRIMITIVE
+   *  failure with nothing to indicate a retry had ever happened.
+   *
+   *  Fix: persist a new tool_result for the retry, same as driveLoop does
+   *  for the original attempt. It CANNOT reuse tu.id as its client_msg_id
+   *  -- that id is already taken by the original tool_result row, and
+   *  (chat_id, client_msg_id) is a hard unique index, so a same-id insert
+   *  would be silently dropped by appendMessagesToChat's idempotency
+   *  check even if attempted. A fresh cmid avoids the collision;
+   *  tool_use_id stays tu.id so rebuildToolRuns still matches it to the
+   *  same tool_use, and being LATER in seq order, it naturally wins over
+   *  the original when rebuildToolRuns replays messages in order. */
   async function retryRun(tu: Extract<Block, { type: 'tool_use' }>) {
     if (busy) return;
     // runSkill needs the id of the ASSISTANT message that carries this
@@ -1008,7 +1029,12 @@ export default function AgentPage() {
     cancelRef.current = false;
     abortRef.current = new AbortController();
     setBusy(true); setError(null);
-    try { await runSkill(tu, parent.cmid); }
+    try {
+      const { text: resultText, runId, runKind } = await runSkill(tu, parent.cmid);
+      const trMsg: Msg = { role: 'user', content: [{ type: 'tool_result', tool_use_id: tu.id, content: resultText }], cmid: genId(), skillRunId: runId ?? null, runKind: runKind ?? null };
+      setMessages((prev) => [...prev, trMsg]);
+      persist([trMsg]);
+    }
     catch (e) { if (!cancelRef.current) setError((e as Error).message); }
     finally { setBusy(false); }
   }

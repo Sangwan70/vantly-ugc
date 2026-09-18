@@ -93,6 +93,7 @@ import {
   listChatsRoute,
   patchChatRoute,
   deleteChatRoute,
+  purgeFailedAgentChatsRoute,
   deleteMessageRoute,
   linkMessageRunRoute,
   listProjectsRoute,
@@ -986,6 +987,10 @@ app.get('/v1/voices/elevenlabs', readLimiter, authMiddleware, listElevenLabsVoic
   app.get('/v1/agent/chats/:id', readLimiter, authMiddleware, getChatRoute);
   app.patch('/v1/agent/chats/:id', readLimiter, authMiddleware, patchChatRoute);
   app.delete('/v1/agent/chats/:id', readLimiter, authMiddleware, deleteChatRoute);
+  // Hard delete, unlike the soft-archive DELETE above -- see purgeFailedAgentChatsRoute's own doc
+  // comment. generateLimiter (not readLimiter) to match /v1/runs/purge-failed's own rate class,
+  // since both do real R2 + cascading DB deletes rather than a cheap read/write.
+  app.post('/v1/agent/chats/purge-failed', generateLimiter, authMiddleware, purgeFailedAgentChatsRoute);
   app.post('/v1/agent/chats/:id/messages', readLimiter, authMiddleware, appendMessagesRoute);
   app.delete('/v1/agent/chats/:id/messages/:clientMsgId', readLimiter, authMiddleware, deleteMessageRoute);
   app.patch('/v1/agent/chats/:id/messages/:clientMsgId', readLimiter, authMiddleware, linkMessageRunRoute);

@@ -17,6 +17,7 @@
 
 import type { Request, Response } from 'express';
 import { supabase } from '../../server.js';
+import { deleteR2ObjectsByUrl } from '../../lib/r2-upload.js';
 
 // ── shared helpers ──────────────────────────────────────────────────────────
 
@@ -606,6 +607,176 @@ export async function linkMessageRunRoute(req: Request, res: Response): Promise<
   }
 
   res.status(200).json({ ok: true, id: data.id });
+}
+
+/** Pulls every string value that looks like an http(s) URL out of an
+ * arbitrary JSON blob (skill_runs.final_output has a handful of *_url keys).
+ * Mirrors collectUrlsFromJson in routes/v1/runs.ts exactly -- kept as its
+ * own copy here rather than a shared import so this file's hard-delete path
+ * doesn't reach into the unrelated /v1/runs (Jobs page) module. */
+function collectUrlsFromJson(value: unknown, out: string[]): void {
+  if (typeof value === 'string') {
+    if (/^https?:\/\//i.test(value)) out.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const v of value) collectUrlsFromJson(v, out);
+    return;
+  }
+  if (value && typeof value === 'object') {
+    for (const v of Object.values(value as Record<string, unknown>)) collectUrlsFromJson(v, out);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// POST /v1/agent/chats/purge-failed
+//
+// GENUINE, IRREVERSIBLE hard delete -- the "Clear failed generations"
+// button. Unlike deleteChatRoute above (soft-archive only, kept specifically
+// to preserve skill_run audit links for a normal chat), this is the sibling
+// of /v1/runs' purgeFailedRunsRoute (routes/v1/runs.ts, the Jobs page's
+// "Purge failed" action): it removes the R2-hosted media those FAILED
+// generations produced, then the skill_runs/primitive_runs rows themselves
+// (vNext child tables -- primitive_artifacts, primitive_events,
+// provider_tasks, skill_run_status_events -- cascade via existing FKs), then
+// the chat rows (agent_messages cascades via chat_id FK).
+//
+// Scope is deliberately narrow and re-verified server-side, never trusting
+// the client's own filtering:
+//   - Only the caller's own chats (user_id = userId).
+//   - Only chats with last_run_status = 'failed' (the denormalized column
+//     appendMessagesToChat/linkMessageRunRoute maintain) -- never a chat
+//     whose last generation succeeded.
+//   - Only chats that aren't pinned (a pin is an explicit "keep this").
+//   - Of the runs those chats' messages ever referenced, only ones whose
+//     OWN row is still status = 'failed' get deleted. A chat's
+//     last_run_status reflects its MOST RECENT generation only -- an
+//     earlier successful run in the same chat's history (e.g. the user
+//     retried a working generation into a later failure) is left
+//     completely alone, media and all. Only that one message's chat
+//     context goes away with the chat row; the run and its R2 media
+//     survive as an orphaned-from-this-chat but otherwise intact record.
+export async function purgeFailedAgentChatsRoute(req: Request, res: Response): Promise<void> {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+
+  const { data: chats, error: chatsErr } = await supabase
+    .from('agent_chats')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('last_run_status', 'failed')
+    .eq('pinned', false);
+  if (chatsErr) {
+    console.error(`[agent chats purge-failed] load chats: ${chatsErr.message}`);
+    res.status(500).json({ error: { code: 'DATABASE_ERROR', message: 'Failed to load failed chats' } });
+    return;
+  }
+  const chatIds = (chats ?? []).map((c) => c.id as string);
+  if (chatIds.length === 0) {
+    res.status(200).json({ deleted_chats: 0, deleted_skill_runs: 0, deleted_primitive_runs: 0, r2: { deleted: 0, skipped: 0 } });
+    return;
+  }
+
+  // Every skill_run_id / primitive_run_id ANY message in these chats ever
+  // recorded -- not just the chat's current last one -- so an earlier
+  // failed retry's run gets swept up too, not only the final attempt.
+  const { data: msgRows, error: msgErr } = await supabase
+    .from('agent_messages')
+    .select('skill_run_id, primitive_run_id')
+    .in('chat_id', chatIds);
+  if (msgErr) {
+    console.error(`[agent chats purge-failed] load messages: ${msgErr.message}`);
+    res.status(500).json({ error: { code: 'DATABASE_ERROR', message: 'Failed to load chat messages' } });
+    return;
+  }
+  const skillRunIdSet = new Set<string>();
+  const primitiveRunIdSet = new Set<string>();
+  for (const row of msgRows ?? []) {
+    if (row.skill_run_id) skillRunIdSet.add(row.skill_run_id as string);
+    if (row.primitive_run_id) primitiveRunIdSet.add(row.primitive_run_id as string);
+  }
+
+  const allUrls: string[] = [];
+  let skillRunIds: string[] = [];
+  let primitiveRunIds: string[] = [];
+
+  if (skillRunIdSet.size > 0) {
+    const { data: failedSkillRuns } = await supabase
+      .from('skill_runs')
+      .select('id, final_output')
+      .in('id', Array.from(skillRunIdSet))
+      .eq('user_id', userId)
+      .eq('status', 'failed');
+    skillRunIds = (failedSkillRuns ?? []).map((r) => r.id as string);
+    for (const row of failedSkillRuns ?? []) collectUrlsFromJson(row.final_output, allUrls);
+    if (skillRunIds.length > 0) {
+      // A step's own artifact can exist even though the composed skill as a
+      // whole failed later (e.g. character sheet succeeded, then video
+      // generation blew the budget cap) -- final_output alone would miss it.
+      const { data: childArtifacts } = await supabase
+        .from('primitive_runs')
+        .select('primitive_artifacts(url)')
+        .in('skill_run_id', skillRunIds);
+      for (const child of childArtifacts ?? []) {
+        const artifacts = (child.primitive_artifacts as Array<{ url: string }> | null) ?? [];
+        for (const a of artifacts) if (a.url) allUrls.push(a.url);
+      }
+    }
+  }
+
+  if (primitiveRunIdSet.size > 0) {
+    // skill_run_id IS NULL: only a STANDALONE failed primitive run is
+    // purged here -- one that belongs to a skill_run is entirely handled by
+    // that skill_run's own cascade delete above (deleting it twice is just
+    // a harmless zero-row match, but scoping it this way keeps the two
+    // branches' accounting -- and this route's response counts -- honest).
+    const { data: failedPrimitives } = await supabase
+      .from('primitive_runs')
+      .select('id, primitive_artifacts(url)')
+      .in('id', Array.from(primitiveRunIdSet))
+      .eq('user_id', userId)
+      .eq('status', 'failed')
+      .is('skill_run_id', null);
+    primitiveRunIds = (failedPrimitives ?? []).map((r) => r.id as string);
+    for (const row of failedPrimitives ?? []) {
+      const artifacts = (row.primitive_artifacts as Array<{ url: string }> | null) ?? [];
+      for (const a of artifacts) if (a.url) allUrls.push(a.url);
+    }
+  }
+
+  const r2Result = await deleteR2ObjectsByUrl(allUrls);
+
+  if (skillRunIds.length > 0) {
+    const { error } = await supabase.from('skill_runs').delete().in('id', skillRunIds).eq('user_id', userId);
+    if (error) console.error(`[agent chats purge-failed] delete skill_runs: ${error.message}`);
+  }
+  if (primitiveRunIds.length > 0) {
+    const { error } = await supabase.from('primitive_runs').delete().in('id', primitiveRunIds).eq('user_id', userId);
+    if (error) console.error(`[agent chats purge-failed] delete primitive_runs: ${error.message}`);
+  }
+
+  // Chats last -- agent_messages cascades away via its chat_id FK the
+  // instant each chat row goes, so there's nothing left dangling either way
+  // this errors out.
+  const { error: delChatsErr } = await supabase.from('agent_chats').delete().in('id', chatIds).eq('user_id', userId);
+  if (delChatsErr) {
+    console.error(`[agent chats purge-failed] delete chats: ${delChatsErr.message}`);
+    res.status(500).json({
+      error: { code: 'DATABASE_ERROR', message: 'Runs and media were cleaned up, but some chats failed to delete' },
+      deleted_chats: 0,
+      deleted_skill_runs: skillRunIds.length,
+      deleted_primitive_runs: primitiveRunIds.length,
+      r2: r2Result,
+    });
+    return;
+  }
+
+  res.status(200).json({
+    deleted_chats: chatIds.length,
+    deleted_skill_runs: skillRunIds.length,
+    deleted_primitive_runs: primitiveRunIds.length,
+    r2: r2Result,
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════════════

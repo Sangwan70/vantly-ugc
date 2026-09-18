@@ -274,6 +274,7 @@ export default function AgentPage() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [clearingFailed, setClearingFailed] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const [railOpen, setRailOpen] = useState(true);
   const [hydrated, setHydrated] = useState(false);
@@ -468,21 +469,50 @@ export default function AgentPage() {
    *  (a pinned chat is presumably kept on purpose, so it's excluded from
    *  the sweep). Same archive (soft-delete) as the per-chat "..." menu's
    *  own Archive action, just applied to all of them in one click. */
-  function clearFailedChats() {
+  /** GENUINE hard delete -- not the soft-archive every other chat removal
+   *  in this file uses. Permanently removes every non-pinned chat whose
+   *  last generation failed, PLUS the resources that generation actually
+   *  produced: the chat's whole message history, the skill_run/
+   *  primitive_run database records, and any R2-hosted media those failed
+   *  runs left behind. Server-side (purgeFailedAgentChatsRoute) re-verifies
+   *  everything and only ever touches a run whose own status is 'failed' --
+   *  an earlier successful generation in the same chat's history is never
+   *  touched. There is no undo once this call succeeds. */
+  async function clearFailedChats() {
     const toClear = chats.filter((c) => c.last_run_status === 'failed' && !c.pinned);
-    if (toClear.length === 0) return;
-    const label = toClear.length === 1 ? 'this failed generation' : `these ${toClear.length} failed generations`;
-    if (!window.confirm(`Clear ${label}? They'll be archived out of your chat list.`)) return;
-    const ids = new Set(toClear.map((c) => c.id));
-    setChats((p) => p.filter((c) => !ids.has(c.id))); // optimistic
-    if (chatIdRef.current && ids.has(chatIdRef.current)) {
-      setMessages([]); setToolRuns({}); setChat(null); setActiveProject(null);
-      try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
+    if (toClear.length === 0 || clearingFailed) return;
+    const n = toClear.length;
+    const warning = [
+      `Permanently delete ${n === 1 ? 'this failed generation' : `these ${n} failed generations`}?`,
+      '',
+      'This cannot be undone. It will permanently delete:',
+      `• ${n === 1 ? 'This chat\'s' : 'These chats\''} full message history`,
+      '• Any generated video, image, or audio files they produced',
+      '• The underlying generation run records',
+      '',
+      'Pinned chats and chats with a successful generation are never touched.',
+    ].join('\n');
+    if (!window.confirm(warning)) return;
+    setClearingFailed(true);
+    setError(null);
+    try {
+      const r = await fetch('/api/v1/agent/chats/purge-failed', { method: 'POST', credentials: 'include' });
+      const j = (await r.json().catch(() => null)) as { deleted_chats?: number; error?: { message?: string } } | null;
+      if (!r.ok) {
+        setError(j?.error?.message ?? 'Failed to delete failed generations.');
+        return;
+      }
+      const ids = new Set(toClear.map((c) => c.id));
+      if (chatIdRef.current && ids.has(chatIdRef.current)) {
+        setMessages([]); setToolRuns({}); setChat(null); setActiveProject(null);
+        try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
+      }
+      await fetchChats(); // authoritative post-delete list, not an optimistic guess
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setClearingFailed(false);
     }
-    for (const c of toClear) {
-      void fetch(`/api/v1/agent/chats/${c.id}`, { method: 'DELETE', credentials: 'include' }).catch(() => { /* best-effort */ });
-    }
-    void fetchChats();
   }
   function setActiveProject(id: string | null) { activeProjectIdRef.current = id; setActiveProjectId(id); }
 
@@ -1736,10 +1766,14 @@ export default function AgentPage() {
       )}
       {chats.some((c) => c.last_run_status === 'failed' && !c.pinned) && (
         <div className="px-2.5 pb-1.5">
-          <button type="button" onClick={clearFailedChats}
-            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12.5px] transition-colors hover:bg-white/[0.06]"
+          <button type="button" onClick={() => void clearFailedChats()} disabled={clearingFailed}
+            title="Permanently deletes failed chats, their generated media, and the run records behind them"
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12.5px] transition-colors hover:bg-white/[0.06] disabled:opacity-50"
             style={{ border: '1px solid rgba(248,113,113,0.25)', color: 'rgba(248,113,113,0.85)' }}>
-            <Trash2 className="h-3.5 w-3.5" /> Clear failed generations
+            {clearingFailed
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <Trash2 className="h-3.5 w-3.5" />}
+            {clearingFailed ? 'Deleting…' : 'Delete failed generations'}
           </button>
         </div>
       )}

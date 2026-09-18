@@ -115,8 +115,30 @@ export function getConfig(): WorkerConfig {
       // The worker's own egress to api.openai.com is broken (persistent
       // HeadersTimeout from this container). gpt-image calls are proxied through
       // api-v2's healthy egress over Railway's private network.
+      //
+      // Bugfix: API_V2_INTERNAL_URL is undocumented and unset in every env
+      // file this repo ships (.env.prod, .env.example, .env.local) AND unset
+      // in docker-compose.yml's own primitive-worker-vnext service -- only
+      // the hosted Railway deployment ever set it. Every self-host deploy via
+      // docker-compose.yml therefore silently fell through to the
+      // '.railway.internal' literal below, which cannot resolve outside
+      // Railway's own private network. The failure mode is not a fast, loud
+      // error: generateImageViaApiV2's own 75s fetch timeout classifies a DNS
+      // failure as PROXY_UNREACHABLE/retryable, and character_sheet_gpt2 /
+      // portrait_gpt2's proxyActivities retry policy (make-ugc-video.ts:
+      // maximumAttempts 3) exhausts and fails the WORKFLOW within a few
+      // minutes -- so this alone doesn't explain an indefinitely-stuck run,
+      // but it does mean self-host image generation was broken outright
+      // whenever the worker WAS healthy and actually attempted the call.
+      // docker-compose.yml already sets API_V2_URL (http://api-v2:3001) on
+      // this exact service for every other internal call this worker makes
+      // (TEMPORAL_ADDRESS aside) -- reuse it here as the second choice,
+      // before the Railway-only literal, so a plain `docker compose up`
+      // resolves correctly with zero extra configuration. Explicitly setting
+      // API_V2_INTERNAL_URL (e.g. on the hosted Railway deployment, or to
+      // point the proxy somewhere else entirely) still overrides both.
       imageProxyUrl:
-        optional('API_V2_INTERNAL_URL') ?? 'http://api-v2.railway.internal:3001',
+        optional('API_V2_INTERNAL_URL') ?? optional('API_V2_URL') ?? 'http://api-v2.railway.internal:3001',
       imageProxySecret: simulate
         ? (optional('INTERNAL_API_SECRET') ?? 'simulate')
         : required('INTERNAL_API_SECRET'),

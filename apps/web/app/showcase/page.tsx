@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { MarketingShell, PageHero } from '@/components/landing/marketing-shell';
 import { CtaSection } from '@/components/landing/cta-section';
+import { PromptExamplesPreview } from '@/components/landing/prompt-examples-preview';
 
 const CLIPS: Array<{ src: string; label: string }> = [
   {
@@ -93,6 +94,8 @@ export default function ShowcasePage() {
           ))}
         </div>
       </section>
+
+      <PromptExamplesPreview />
 
       <CtaSection />
     </MarketingShell>

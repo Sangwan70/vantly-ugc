@@ -21,23 +21,25 @@
 
 import { Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { Images, FolderOpen, Palette, Wand2 } from 'lucide-react';
+import { Images, FolderOpen, Palette, Wand2, BookOpen } from 'lucide-react';
 import { GenerationsTab } from './_generations-tab';
 import { MyMediaTab } from './_my-media-tab';
 import { BrandKitTab } from './_brand-kit-tab';
 import { MyPromptsTab } from './_my-prompts-tab';
+import { PromptExamplesTab } from './_prompt-examples-tab';
 
-type MainTab = 'generations' | 'media' | 'brand' | 'prompts';
+type MainTab = 'generations' | 'media' | 'brand' | 'prompts' | 'examples';
 
 const MAIN_TABS: { id: MainTab; label: string; icon: typeof Images }[] = [
   { id: 'generations', label: 'Generations', icon: Images },
   { id: 'media',       label: 'My Media',    icon: FolderOpen },
   { id: 'brand',       label: 'Brand Kit',   icon: Palette },
   { id: 'prompts',     label: 'My Prompts',  icon: Wand2 },
+  { id: 'examples',    label: 'Prompt Examples', icon: BookOpen },
 ];
 
 function isMainTab(v: string | null): v is MainTab {
-  return v === 'generations' || v === 'media' || v === 'brand' || v === 'prompts';
+  return v === 'generations' || v === 'media' || v === 'brand' || v === 'prompts' || v === 'examples';
 }
 
 export default function GalleryPage() {
@@ -86,6 +88,11 @@ function GalleryPageInner() {
       eyebrow: 'Gallery',
       heading: 'My Prompts',
       sub: 'Describe what you want in plain language — we’ll turn it into a ready-to-run prompt, and you can still edit every field before generating.',
+    },
+    examples: {
+      eyebrow: 'Gallery',
+      heading: 'Prompt Examples',
+      sub: 'A category-wise library of ready-to-adapt example prompts with placeholder characters — see what a good prompt looks like before you write your own.',
     },
   };
   const t = titles[tab];
@@ -140,7 +147,8 @@ function GalleryPageInner() {
         {tab === 'generations' ? <GenerationsTab />
           : tab === 'media' ? <MyMediaTab />
           : tab === 'brand' ? <BrandKitTab />
-          : <MyPromptsTab />}
+          : tab === 'prompts' ? <MyPromptsTab />
+          : <PromptExamplesTab />}
       </div>
     </div>
   );

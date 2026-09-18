@@ -76,11 +76,12 @@ const selectStyle: React.CSSProperties = {
   fontWeight: 600,
 };
 
-export function CreateComposer({ onGenerate, onUseSavedPrompt, onRunDifferentSkill }: {
+export function CreateComposer({ onGenerate, onUseSavedPrompt, onBrowseExamples, onRunDifferentSkill }: {
   onGenerate: (result: RunResult) => void;
   /** Wired straight into the script box's own "+" menu — see ScriptAiField
-   *  in ../skills/_run-panel.tsx. Omit either to hide that menu item. */
+   *  in ../skills/_run-panel.tsx. Omit any of the three to hide that menu item. */
   onUseSavedPrompt?: () => void;
+  onBrowseExamples?: () => void;
   onRunDifferentSkill?: () => void;
 }) {
   const [videoType, setVideoType] = useState<VideoType>('talking_head');
@@ -120,6 +121,7 @@ export function CreateComposer({ onGenerate, onUseSavedPrompt, onRunDifferentSki
         submitLabel="Generate Video"
         hideHeading
         onUseSavedPrompt={onUseSavedPrompt}
+        onBrowseExamples={onBrowseExamples}
         onRunDifferentSkill={onRunDifferentSkill}
       />
     </div>

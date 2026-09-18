@@ -20,7 +20,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Loader2, Play, Plus, Sparkles, UploadCloud, Volume2, Wand2, Wrench, X } from 'lucide-react';
+import { BookOpen, Loader2, Play, Plus, Sparkles, UploadCloud, Volume2, Wand2, Wrench, X } from 'lucide-react';
 import type { Field, SkillForm } from './_forms';
 
 interface CharacterItem { name: string; description: string; ref: string; ref_base64: string }
@@ -153,6 +153,7 @@ export function RunPanel({
   submitLabel = 'Run skill',
   hideHeading,
   onUseSavedPrompt,
+  onBrowseExamples,
   onRunDifferentSkill,
 }: {
   skill: SkillEntry;
@@ -172,8 +173,9 @@ export function RunPanel({
    *  this panel, so a second generic heading doesn't compete with it. */
   hideHeading?: boolean;
   /** Wired into the script-ai field's "+" menu, alongside its built-in
-   *  photo upload — omit either to just not show that menu item. */
+   *  photo upload — omit any of these to just not show that menu item. */
   onUseSavedPrompt?: () => void;
+  onBrowseExamples?: () => void;
   onRunDifferentSkill?: () => void;
 }) {
   const initial = useMemo(() => {
@@ -290,7 +292,7 @@ export function RunPanel({
       {form ? (
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           {stackedFields.map((f) => (
-            <FieldRow key={f.name} field={f} value={values[f.name]} allValues={values} onChange={(v) => onChangeAny(f.name, v)} onChangeAny={onChangeAny} onUseSavedPrompt={onUseSavedPrompt} onRunDifferentSkill={onRunDifferentSkill} />
+            <FieldRow key={f.name} field={f} value={values[f.name]} allValues={values} onChange={(v) => onChangeAny(f.name, v)} onChangeAny={onChangeAny} onUseSavedPrompt={onUseSavedPrompt} onBrowseExamples={onBrowseExamples} onRunDifferentSkill={onRunDifferentSkill} />
           ))}
           {pillFields.length > 0 && (
             <div className="flex flex-wrap items-start gap-2">
@@ -353,9 +355,9 @@ export function RunPanel({
   );
 }
 
-function FieldRow({ field, value, onChange, allValues, onChangeAny, onUseSavedPrompt, onRunDifferentSkill }: {
+function FieldRow({ field, value, onChange, allValues, onChangeAny, onUseSavedPrompt, onBrowseExamples, onRunDifferentSkill }: {
   field: Field; value: unknown; onChange: (v: unknown) => void; allValues?: Record<string, unknown>; onChangeAny?: (name: string, v: unknown) => void;
-  onUseSavedPrompt?: () => void; onRunDifferentSkill?: () => void;
+  onUseSavedPrompt?: () => void; onBrowseExamples?: () => void; onRunDifferentSkill?: () => void;
 }) {
   const inputStyle: React.CSSProperties = { backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 10px', fontSize: 13, width: '100%' };
   const labelEl = (
@@ -399,7 +401,7 @@ function FieldRow({ field, value, onChange, allValues, onChangeAny, onUseSavedPr
     return <CharacterPickerField field={field} value={value} onChange={onChange} />;
   }
   if (field.kind === 'script-ai') {
-    return <ScriptAiField field={field} value={value} onChange={onChange} allValues={allValues} onChangeAny={onChangeAny} onUseSavedPrompt={onUseSavedPrompt} onRunDifferentSkill={onRunDifferentSkill} />;
+    return <ScriptAiField field={field} value={value} onChange={onChange} allValues={allValues} onChangeAny={onChangeAny} onUseSavedPrompt={onUseSavedPrompt} onBrowseExamples={onBrowseExamples} onRunDifferentSkill={onRunDifferentSkill} />;
   }
   if (field.kind === 'voice-picker') {
     return <VoicePickerField field={field} value={value} onChange={onChange} />;
@@ -718,13 +720,14 @@ function CharacterPickerField({ field, value, onChange }: { field: Extract<Field
  *    POST /v1/assist/draft-script, and replaces the box's content with the
  *    result (still a plain editable textarea afterward).
  */
-function ScriptAiField({ field, value, onChange, allValues, onChangeAny, onUseSavedPrompt, onRunDifferentSkill }: {
+function ScriptAiField({ field, value, onChange, allValues, onChangeAny, onUseSavedPrompt, onBrowseExamples, onRunDifferentSkill }: {
   field: Extract<Field, { kind: 'script-ai' }>;
   value: unknown;
   onChange: (v: unknown) => void;
   allValues?: Record<string, unknown>;
   onChangeAny?: (name: string, v: unknown) => void;
   onUseSavedPrompt?: () => void;
+  onBrowseExamples?: () => void;
   onRunDifferentSkill?: () => void;
 }) {
   const inputStyle: React.CSSProperties = { backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '10px 44px 40px 10px', fontSize: 13, width: '100%' };
@@ -771,7 +774,7 @@ function ScriptAiField({ field, value, onChange, allValues, onChangeAny, onUseSa
     reader.readAsDataURL(file);
   };
 
-  const hasMenu = Boolean(field.photoFieldName || onUseSavedPrompt || onRunDifferentSkill);
+  const hasMenu = Boolean(field.photoFieldName || onUseSavedPrompt || onBrowseExamples || onRunDifferentSkill);
 
   return (
     <div className="flex flex-col gap-1">
@@ -815,6 +818,11 @@ function ScriptAiField({ field, value, onChange, allValues, onChangeAny, onUseSa
                 {onUseSavedPrompt && (
                   <button type="button" onClick={() => { setMenuOpen(false); onUseSavedPrompt(); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors hover:bg-white/[0.06]" style={{ color: '#E9E9F0' }}>
                     <Wand2 className="h-4 w-4" style={{ color: 'rgba(255,255,255,0.5)' }} /> Use a saved prompt
+                  </button>
+                )}
+                {onBrowseExamples && (
+                  <button type="button" onClick={() => { setMenuOpen(false); onBrowseExamples(); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors hover:bg-white/[0.06]" style={{ color: '#E9E9F0' }}>
+                    <BookOpen className="h-4 w-4" style={{ color: 'rgba(255,255,255,0.5)' }} /> Browse examples
                   </button>
                 )}
                 {onRunDifferentSkill && (

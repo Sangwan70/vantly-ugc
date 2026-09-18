@@ -17,13 +17,17 @@
  * refresh restores the conversation AND re-attaches to an in-flight render.
  */
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { Loader2, Send, Square, Sparkles, Wrench, Check, AlertCircle, ArrowDown, Plus, Trash2, X, RotateCcw, PanelRight, ListChecks, Users, Images, CornerDownLeft, Pencil, MessageSquarePlus, History, Pin, PinOff, Archive, Search, MoreHorizontal, Folder, FolderPlus, ChevronRight, ChevronDown, UploadCloud, Wand2 } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Loader2, Send, Square, Sparkles, Wrench, Check, AlertCircle, ArrowDown, Plus, Trash2, X, RotateCcw, PanelRight, ListChecks, Users, Images, CornerDownLeft, Pencil, MessageSquarePlus, History, Pin, PinOff, Archive, Search, MoreHorizontal, Folder, FolderPlus, ChevronRight, ChevronDown, UploadCloud, Wand2, BookOpen } from 'lucide-react';
 import { invokeFn } from '@/lib/supabase/fn-proxy';
 import { createClient } from '@/lib/supabase/client';
 
-import { SAMPLE_PROMPTS } from '@/lib/sample-prompts';
+import {
+  SAMPLE_PROMPTS, PROMPT_EXAMPLE_CATEGORIES, promptExampleToDraftMessage,
+  type PromptExample, type PromptExampleCategory,
+} from '@/lib/sample-prompts';
 import { RunPanel, estimateSkillEta, type SkillEntry as SkillCatalogEntry, type RunResult as SkillLaunchResult } from '../skills/_run-panel';
 import { FORMS as SKILL_FORMS } from '../skills/_forms';
 import { CreateComposer, MAKE_UGC_ENTRY } from './_create-composer';
@@ -248,7 +252,9 @@ function rebuildToolRuns(msgs: Msg[]): Record<string, ToolRun> {
 // the rest live in the docs page's full reference.
 const SUGGESTIONS = SAMPLE_PROMPTS.slice(0, 4);
 
-export default function AgentPage() {
+function AgentPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [toolRuns, setToolRuns] = useState<Record<string, ToolRun>>({});
   // A run that finishes while the user isn't staring at this panel (or
@@ -303,6 +309,12 @@ export default function AgentPage() {
   const [promptPickerOpen, setPromptPickerOpen] = useState(false);
   const [savedPrompts, setSavedPrompts] = useState<AgentSavedPrompt[] | null>(null);
   const [promptsLoadErr, setPromptsLoadErr] = useState<string | null>(null);
+  // "+" menu -> "Browse examples" (lib/sample-prompts.ts's Prompt Examples
+  //  Library, also browsable on Gallery > Prompt Examples). Selecting one
+  //  works exactly like a saved prompt: drops an editable draft into the
+  //  composer, never auto-sends.
+  const [examplesPickerOpen, setExamplesPickerOpen] = useState(false);
+  const [examplesPickerCategory, setExamplesPickerCategory] = useState<string | null>(null);
   // "+" menu -> "Run a skill" (task: one interface for both chatting and
   // running any skill from the Skill Center). skillPickerOpen shows a searchable
   // list; picking one opens runSkillTarget's form (the SAME RunPanel the
@@ -1442,6 +1454,43 @@ export default function AgentPage() {
     textareaRef.current?.focus();
   }
 
+  // "+" menu -> "Browse examples" picker (see examplesPicker modal below).
+  function openExamplesPicker() {
+    setComposerMenuOpen(false);
+    setExamplesPickerCategory(null);
+    setExamplesPickerOpen(true);
+  }
+  function applyExample(category: PromptExampleCategory, example: PromptExample) {
+    setInput(promptExampleToDraftMessage(category, example));
+    setExamplesPickerOpen(false);
+    textareaRef.current?.focus();
+  }
+  function findExampleById(id: string): { category: PromptExampleCategory; example: PromptExample } | null {
+    for (const c of PROMPT_EXAMPLE_CATEGORIES) {
+      const ex = c.examples.find((e) => e.id === id);
+      if (ex) return { category: c, example: ex };
+    }
+    return null;
+  }
+  // A "Use this" link from Gallery > Prompt Examples (or the public Showcase
+  // pages) lands here as /dashboard/agent?example=<id> — same "editable
+  // draft, never auto-sent" rule as picking one from the in-composer picker.
+  // The param is stripped right after so a refresh doesn't reapply it.
+  useEffect(() => {
+    const id = searchParams.get('example');
+    if (!id) return;
+    const found = findExampleById(id);
+    if (found) {
+      setInput(promptExampleToDraftMessage(found.category, found.example));
+      textareaRef.current?.focus();
+    }
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('example');
+    const qs = params.toString();
+    router.replace(qs ? `/dashboard/agent?${qs}` : '/dashboard/agent', { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   // "+" menu -> "Run a skill". Loads the same catalog /dashboard/skills lists.
   const loadSkillsCatalog = useCallback(async () => {
     setSkillsLoadErr(null);
@@ -1661,6 +1710,9 @@ export default function AgentPage() {
                 </button>
                 <button type="button" onClick={openPromptPicker} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors hover:bg-white/[0.06]" style={{ color: '#E9E9F0' }}>
                   <Wand2 className="h-4 w-4" style={{ color: 'rgba(255,255,255,0.5)' }} /> Use a saved prompt
+                </button>
+                <button type="button" onClick={openExamplesPicker} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors hover:bg-white/[0.06]" style={{ color: '#E9E9F0' }}>
+                  <BookOpen className="h-4 w-4" style={{ color: 'rgba(255,255,255,0.5)' }} /> Browse examples
                 </button>
                 <button type="button" onClick={openSkillPicker} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors hover:bg-white/[0.06]" style={{ color: '#E9E9F0' }}>
                   <Wrench className="h-4 w-4" style={{ color: 'rgba(255,255,255,0.5)' }} /> Run a skill
@@ -1985,6 +2037,59 @@ export default function AgentPage() {
     </div>
   ) : null;
 
+  // "+" menu -> "Browse examples" picker (lib/sample-prompts.ts's Prompt
+  // Examples Library — the same content as Gallery > Prompt Examples).
+  // Two-level: pick a category, then an example within it; picking an
+  // example drops the same kind of editable draft applySavedPrompt does.
+  const examplesPickerActiveCategory = examplesPickerCategory
+    ? PROMPT_EXAMPLE_CATEGORIES.find((c) => c.key === examplesPickerCategory) ?? null
+    : null;
+  const examplesPicker = examplesPickerOpen ? (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={() => setExamplesPickerOpen(false)}>
+      <div onClick={(e) => e.stopPropagation()} className="flex max-h-[70vh] w-full max-w-md flex-col rounded-2xl p-5" style={{ background: '#14151F', border: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+        <div className="mb-1 flex items-center gap-2">
+          {examplesPickerActiveCategory && (
+            <button type="button" onClick={() => setExamplesPickerCategory(null)} aria-label="Back to categories" className="opacity-60 hover:opacity-100">
+              <ChevronRight className="h-4 w-4 rotate-180" style={{ color: '#E9E9F0' }} />
+            </button>
+          )}
+          <BookOpen className="h-4 w-4" style={{ color: '#A78BFA' }} />
+          <span className="text-[15px] font-medium" style={{ color: '#E9E9F0' }}>{examplesPickerActiveCategory ? examplesPickerActiveCategory.label : 'Browse examples'}</span>
+        </div>
+        <p className="mb-3 text-[12.5px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>
+          {examplesPickerActiveCategory
+            ? 'Placeholder character — swap it for one of your own before you send this.'
+            : 'A category-wise library of ready-to-adapt example prompts. Pick a category, then an example, and it drops into the message box ready to edit.'}
+        </p>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {!examplesPickerActiveCategory ? (
+            <div className="flex flex-col gap-1.5">
+              {PROMPT_EXAMPLE_CATEGORIES.map((c) => (
+                <button key={c.key} type="button" onClick={() => setExamplesPickerCategory(c.key)} className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-white/[0.06]" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#0F1015' }}>
+                  <span className="text-[13px] font-medium" style={{ color: '#E9E9F0' }}>{c.emoji} {c.label}</span>
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0" style={{ color: 'rgba(255,255,255,0.35)' }} />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {examplesPickerActiveCategory.examples.map((ex) => (
+                <button key={ex.id} type="button" onClick={() => applyExample(examplesPickerActiveCategory, ex)} className="flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-white/[0.06]" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#0F1015' }}>
+                  <span className="truncate text-[13px] font-medium" style={{ color: '#E9E9F0' }}>{ex.title}{ex.character ? ` — ${ex.character}` : ''}</span>
+                  <span className="line-clamp-1 text-[11.5px]" style={{ color: 'rgba(255,255,255,0.45)' }}>{ex.script ?? ex.introLine ?? ex.turns?.[0]?.line ?? ex.scenes?.[0]?.line ?? ex.notes ?? ''}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="mt-4 flex items-center justify-between">
+          <Link href="/dashboard/gallery?tab=examples" className="text-[12px] underline" style={{ color: '#A78BFA' }} onClick={() => setExamplesPickerOpen(false)}>See all on Gallery</Link>
+          <button type="button" onClick={() => setExamplesPickerOpen(false)} className="rounded-lg px-3 py-1.5 text-[13px]" style={{ color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.12)' }}>Close</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   // "+" menu -> "Run a skill", step 1: pick which skill (searchable, same
   // catalog as /dashboard/skills).
   const filteredSkillsCatalog = (skillsCatalog ?? []).filter((s) => {
@@ -2064,6 +2169,7 @@ export default function AgentPage() {
       <div className="flex h-screen w-full">
         {projectEditor}
         {promptPicker}
+        {examplesPicker}
         {skillPicker}
         {skillRunModal}
         {historyRail}
@@ -2072,6 +2178,7 @@ export default function AgentPage() {
           <CreateComposer
             onGenerate={(r) => void launchSkillFromPicker(MAKE_UGC_ENTRY, r)}
             onUseSavedPrompt={openPromptPicker}
+            onBrowseExamples={openExamplesPicker}
             onRunDifferentSkill={openSkillPicker}
           />
         </div>
@@ -2086,6 +2193,7 @@ export default function AgentPage() {
       <style>{`.am-noscroll::-webkit-scrollbar{display:none}`}</style>
       {projectEditor}
       {promptPicker}
+      {examplesPicker}
       {skillPicker}
       {skillRunModal}
       {historyRail}
@@ -2422,5 +2530,13 @@ export default function AgentPage() {
         </aside>
       )}
     </div>
+  );
+}
+
+export default function AgentPage() {
+  return (
+    <Suspense fallback={null}>
+      <AgentPageInner />
+    </Suspense>
   );
 }

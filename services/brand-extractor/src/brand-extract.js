@@ -25,6 +25,7 @@ import { chromium, devices } from 'playwright';
 import sharp from 'sharp';
 import { r2Upload } from './r2.js';
 import { callVision, cropLogo } from './ai-vision.js';
+import { selectProductImageCandidates } from './product-image-candidates.js';
 
 const DESKTOP_VIEWPORT = { width: 1280, height: 800 };
 const DESKTOP_UA =
@@ -164,7 +165,31 @@ async function readMeta(page) {
       attr('meta[property="og:logo"]', 'content');
     const themeColor = attr('meta[name="theme-color"]', 'content');
     const h1 = text('h1');
-    return { title, description, image, logo, themeColor, h1 };
+
+    // Raw <img> descriptors for selectProductImageCandidates (a plain,
+    // DOM-free Node module -- see product-image-candidates.js) to filter
+    // and rank outside the browser context. This function stays a dumb
+    // DOM walk on purpose: Playwright serializes page.evaluate's return
+    // value as plain JSON across the browser/Node boundary, so it can't
+    // return the imported function's result directly anyway, and keeping
+    // the actual decision logic (size/aspect/alt-text filtering, ranking,
+    // capping) in real Node code is what makes it unit-testable.
+    function collectImageCandidates() {
+      const items = [];
+      for (const img of Array.from(document.querySelectorAll('img'))) {
+        const rect = img.getBoundingClientRect();
+        items.push({
+          src: img.currentSrc || img.getAttribute('src') || '',
+          width: rect.width || img.naturalWidth || 0,
+          height: rect.height || img.naturalHeight || 0,
+          alt: img.getAttribute('alt') || '',
+          inChrome: !!img.closest('header, nav, footer'),
+        });
+      }
+      return items;
+    }
+
+    return { title, description, image, logo, themeColor, h1, imageCandidates: collectImageCandidates() };
   });
 }
 
@@ -195,6 +220,24 @@ async function captureShot({ browser, contextOpts, url, label, jobId, readMetaTo
       await page.waitForLoadState('networkidle', { timeout: 4000 });
     } catch {
       // ignore
+    }
+    if (readMetaToo) {
+      // Scroll down and back before reading meta so scroll-triggered
+      // lazy-loaded <img> tags (common for product galleries below the
+      // fold) have a chance to populate their real `src`/`currentSrc`
+      // before pickProductImageCandidates() runs -- otherwise a typical
+      // lazy-load placeholder (blank pixel / low-res blur-up) is all
+      // that's in the DOM. Scrolled back to top afterward so the
+      // fullPage:false screenshot below is unaffected.
+      try {
+        await page.evaluate(() => window.scrollTo(0, 1500));
+        await page.waitForTimeout(600);
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await page.waitForTimeout(300);
+      } catch {
+        // best-effort -- a page that errors on scroll still gets
+        // whatever candidates were already in the DOM
+      }
     }
     const meta = readMetaToo ? await readMeta(page) : null;
     const buf = await page.screenshot({ type: 'png', fullPage: false });
@@ -305,6 +348,20 @@ export async function extractBrand({ url, jobId = `brand-${Date.now()}` }) {
       screenshot: desktop.publicUrl,
       screenshot_mobile: mobile.publicUrl,
       image: absolutize(meta.image, target),
+      // Ranked by selectProductImageCandidates (product-image-candidates.js)
+      // for a human to pick "the" product shot from -- og:image (above)
+      // is often a lifestyle/banner image, not a clean isolated product
+      // photo suitable as make_ugc's product_image input. Deliberately
+      // NOT auto-selected into `image`: picking wrong here means
+      // generating a video around the wrong product photo with no
+      // obvious way for the user to notice before it renders.
+      product_image_candidates: Array.from(
+        new Set(
+          selectProductImageCandidates(meta.imageCandidates)
+            .map((src) => absolutize(src, target))
+            .filter(Boolean),
+        ),
+      ),
       logo: aiLogoUrl ?? headLogo,
       logo_source: aiLogoUrl ? 'ai-crop' : headLogo ? 'meta' : null,
       theme_color: meta.themeColor ?? null,

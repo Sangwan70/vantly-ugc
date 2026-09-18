@@ -13,12 +13,31 @@
  *
  * Reuses the same Anthropic call path as the agent chat (callAnthropicMessages),
  * no new provider wiring.
+ *
+ * POST /v1/assist/draft-script-from-url (Video Generation Flow audit
+ * improvement #10: "paste a URL, get a drafted ad" — Creatify/Pippit's
+ * biggest UX win, per the audit) is the same drafter fed a pitch it
+ * synthesizes itself from a URL, via the brand-extractor service (see
+ * lib/brand-extractor-client.ts) instead of one the user typed. Kept
+ * deliberately human-in-the-loop, per the audit's own warning that this
+ * item "most changes the product's shape (from 'you already know what
+ * you want' to 'we help you decide what to make')": it drafts a script
+ * AND returns candidate product images for the caller to show and let
+ * the user pick from — it never auto-submits a make_ugc run, and the
+ * returned script still lands in the same editable textarea every other
+ * draft does.
  */
 
 import type { Request, Response as ExpressResponse } from 'express';
 import { z } from 'zod';
 import { callAnthropicMessages } from '../../lib/anthropic-client.js';
 import { captureAiRouteFailure } from '../../lib/ai-route-alert.js';
+import {
+  extractBrandFromUrl,
+  BrandExtractorNotConfiguredError,
+  BrandExtractionFailedError,
+  type ExtractedBrand,
+} from '../../lib/brand-extractor-client.js';
 
 const MODEL = process.env.ANTHROPIC_AGENT_MODEL || 'claude-sonnet-4-6';
 
@@ -163,6 +182,111 @@ Respond in this exact shape:
 (the spoken script goes here, and only here)
 </script>`;
 
+interface DraftOutcome {
+  status: number;
+  body: Record<string, unknown>;
+}
+
+/**
+ * The shared core of drafting a script from a pitch: build the user
+ * message, run the primary-then-fallback model attempt, extract the
+ * <script> tag. Extracted out of draftScriptRoute (unchanged behavior)
+ * so draftScriptFromUrlRoute can reuse the exact same drafting logic and
+ * SYSTEM_PROMPT against a pitch it synthesizes from an extracted brand
+ * kit instead of one the user typed -- see buildPitchFromBrand below.
+ * Returns a response descriptor rather than writing to `res` directly so
+ * both callers can still add their own fields (e.g. draft-from-url's
+ * `source`) on top of a successful result.
+ */
+async function draftScriptFromPitch(
+  pitch: string,
+  target_duration: '5' | '10' | '15' | 'auto',
+  look: 'natural' | 'commercial' | 'raw_iphone' | undefined,
+  tone_notes: string | undefined,
+  routeNameForAlert: string,
+): Promise<DraftOutcome> {
+  const userMessageParts = [
+    `Pitch: ${pitch.trim()}`,
+    `Target length: ${WORD_BRACKET[target_duration]}`,
+  ];
+  if (look) userMessageParts.push(`Look/tone: ${LOOK_GUIDANCE[look]}`);
+  if (tone_notes?.trim()) userMessageParts.push(`Extra guidance: ${tone_notes.trim()}`);
+  userMessageParts.push('Write the script now.');
+
+  const userMessage = userMessageParts.join('\n');
+
+  let rawText: string;
+  try {
+    rawText = await attemptDraft(MODEL, DRAFT_TIMEOUT_MS, userMessage);
+  } catch (primaryErr) {
+    const primaryDetail = primaryErr instanceof DraftAttemptError ? primaryErr.body.error.code : 'unknown';
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[${routeNameForAlert}] primary model (${MODEL}) failed (${primaryDetail}: ${(primaryErr as Error).message}) -- retrying once with fallback model ${FALLBACK_MODEL}`,
+    );
+    try {
+      rawText = await attemptDraft(FALLBACK_MODEL, FALLBACK_TIMEOUT_MS, userMessage);
+    } catch (fallbackErr) {
+      captureAiRouteFailure(routeNameForAlert, fallbackErr, {
+        primaryModel: MODEL,
+        fallbackModel: FALLBACK_MODEL,
+      });
+      if (fallbackErr instanceof DraftAttemptError) {
+        if (fallbackErr.httpStatus === 504) {
+          return {
+            status: 504,
+            body: {
+              error: {
+                code: 'UPSTREAM_TIMEOUT',
+                message:
+                  'The AI script writer took too long to respond, even after automatically retrying with a faster fallback model — please try again in a moment.',
+              },
+            },
+          };
+        }
+        return { status: fallbackErr.httpStatus, body: fallbackErr.body };
+      }
+      return { status: 502, body: { error: { code: 'UPSTREAM_ERROR', message: (fallbackErr as Error).message } } };
+    }
+  }
+
+  // Pull ONLY what's inside <script>…</script> — this is what actually
+  // keeps a model's inline reasoning (word-counting, draft attempts, "Let's
+  // try...") out of the result, regardless of whether it obeyed the "only
+  // the script text" instruction on its own. A raw dump of that reasoning
+  // was reaching make_ugc's script field (>1200 chars, tripping its Zod
+  // max length) before this tag existed.
+  const tagMatch = rawText.match(/<script>([\s\S]*?)<\/script>/i);
+  const script = (tagMatch ? tagMatch[1] : rawText)
+    .trim()
+    // Strip a wrapping quote pair if the model added one despite instructions.
+    .replace(/^["“"](.*)["”"]$/s, '$1')
+    .trim();
+
+  if (!script) {
+    return { status: 502, body: { error: { code: 'EMPTY_RESULT', message: 'The model returned an empty script — try again.' } } };
+  }
+
+  // Sanity guard for the no-tag fallback path: a real script for this
+  // prompt is at most ~35 words (see WORD_BRACKET). Anything wildly longer
+  // is reasoning that leaked through without the tag, not a script — fail
+  // loudly instead of handing the caller something make_ugc will 400 on.
+  const MAX_PLAUSIBLE_SCRIPT_CHARS = 500;
+  if (!tagMatch && script.length > MAX_PLAUSIBLE_SCRIPT_CHARS) {
+    return {
+      status: 502,
+      body: {
+        error: {
+          code: 'DRAFT_LOOKS_LIKE_REASONING',
+          message: 'The draft came back malformed (looked like reasoning, not a script) — try again.',
+        },
+      },
+    };
+  }
+
+  return { status: 200, body: { script } };
+}
+
 export async function draftScriptRoute(req: Request, res: ExpressResponse): Promise<void> {
   const userId = (req as { userId?: string }).userId;
   if (!userId) {
@@ -182,87 +306,112 @@ export async function draftScriptRoute(req: Request, res: ExpressResponse): Prom
     return;
   }
   const { pitch, target_duration, look, tone_notes } = parsed.data;
+  const outcome = await draftScriptFromPitch(pitch, target_duration, look, tone_notes, 'assist.draft-script');
+  res.status(outcome.status).json(outcome.body);
+}
 
-  const userMessageParts = [
-    `Pitch: ${pitch.trim()}`,
-    `Target length: ${WORD_BRACKET[target_duration]}`,
-  ];
-  if (look) userMessageParts.push(`Look/tone: ${LOOK_GUIDANCE[look]}`);
-  if (tone_notes?.trim()) userMessageParts.push(`Extra guidance: ${tone_notes.trim()}`);
-  userMessageParts.push('Write the script now.');
 
-  const userMessage = userMessageParts.join('\n');
+const DraftScriptFromUrlRequestSchema = z.object({
+  url: z.string().url().max(2000).describe('A public product/landing page URL to draft an ad from.'),
+  target_duration: z.enum(['5', '10', '15', 'auto']).default('auto'),
+  look: z.enum(['natural', 'commercial', 'raw_iphone']).optional(),
+  tone_notes: z.string().max(200).optional().describe('Optional extra guidance, e.g. brand voice, a phrase to include, an audience.'),
+});
 
-  let rawText: string;
-  try {
-    rawText = await attemptDraft(MODEL, DRAFT_TIMEOUT_MS, userMessage);
-  } catch (primaryErr) {
-    const primaryDetail = primaryErr instanceof DraftAttemptError ? primaryErr.body.error.code : 'unknown';
-    // eslint-disable-next-line no-console
-    console.warn(
-      `[assist.draft-script] primary model (${MODEL}) failed (${primaryDetail}: ${(primaryErr as Error).message}) -- retrying once with fallback model ${FALLBACK_MODEL}`,
-    );
-    try {
-      rawText = await attemptDraft(FALLBACK_MODEL, FALLBACK_TIMEOUT_MS, userMessage);
-    } catch (fallbackErr) {
-      // Both attempts failed. Prefer a message that's honest about having
-      // already retried, rather than the fallback's own generic per-attempt
-      // wording (which would otherwise say e.g. "over 20s" and read like
-      // only one short attempt was ever made).
-      captureAiRouteFailure('assist.draft-script', fallbackErr, {
-        primaryModel: MODEL,
-        fallbackModel: FALLBACK_MODEL,
-      });
-      if (fallbackErr instanceof DraftAttemptError) {
-        if (fallbackErr.httpStatus === 504) {
-          res.status(504).json({
-            error: {
-              code: 'UPSTREAM_TIMEOUT',
-              message: 'The AI script writer took too long to respond, even after automatically retrying with a faster fallback model — please try again in a moment.',
-            },
-          });
-          return;
-        }
-        res.status(fallbackErr.httpStatus).json(fallbackErr.body);
-        return;
-      }
-      res.status(502).json({ error: { code: 'UPSTREAM_ERROR', message: (fallbackErr as Error).message } });
-      return;
-    }
-  }
+/**
+ * Synthesizes the same "Pitch: ..." line draftScriptFromPitch expects from
+ * an extracted brand kit — capped to DraftScriptRequestSchema's own 400-char
+ * pitch limit so a URL-sourced pitch behaves exactly like a user-typed one
+ * downstream. Pure (no I/O), so it's unit-testable without a live brand-
+ * extractor call. Returns null when the page yielded nothing usable (no
+ * brand_name/title/description/hero at all) — an empty/garbage pitch would
+ * just produce a garbage script, so the caller should fail clearly instead
+ * of drafting from nothing.
+ */
+export function buildPitchFromBrand(
+  brand: Pick<ExtractedBrand, 'brand_name' | 'title' | 'description' | 'hero'>,
+): string | null {
+  const name = brand.brand_name?.trim() || brand.title?.trim() || null;
+  const detail = brand.description?.trim() || brand.hero?.trim() || null;
+  if (!name && !detail) return null;
+  return [name, detail].filter(Boolean).join(': ').slice(0, 400);
+}
 
-  // Pull ONLY what's inside <script>…</script> — this is what actually
-  // keeps a model's inline reasoning (word-counting, draft attempts, "Let's
-  // try...") out of the result, regardless of whether it obeyed the "only
-  // the script text" instruction on its own. A raw dump of that reasoning
-  // was reaching make_ugc's script field (>1200 chars, tripping its Zod
-  // max length) before this tag existed.
-  const tagMatch = rawText.match(/<script>([\s\S]*?)<\/script>/i);
-  const script = (tagMatch ? tagMatch[1] : rawText)
-    .trim()
-    // Strip a wrapping quote pair if the model added one despite instructions.
-    .replace(/^["“"](.*)["”"]$/s, '$1')
-    .trim();
-
-  if (!script) {
-    res.status(502).json({ error: { code: 'EMPTY_RESULT', message: 'The model returned an empty script — try again.' } });
+export async function draftScriptFromUrlRoute(req: Request, res: ExpressResponse): Promise<void> {
+  const userId = (req as { userId?: string }).userId;
+  if (!userId) {
+    res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Auth required' } });
     return;
   }
 
-  // Sanity guard for the no-tag fallback path: a real script for this
-  // prompt is at most ~35 words (see WORD_BRACKET). Anything wildly longer
-  // is reasoning that leaked through without the tag, not a script — fail
-  // loudly instead of handing the caller something make_ugc will 400 on.
-  const MAX_PLAUSIBLE_SCRIPT_CHARS = 500;
-  if (!tagMatch && script.length > MAX_PLAUSIBLE_SCRIPT_CHARS) {
-    res.status(502).json({
+  const parsed = DraftScriptFromUrlRequestSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({
       error: {
-        code: 'DRAFT_LOOKS_LIKE_REASONING',
-        message: 'The draft came back malformed (looked like reasoning, not a script) — try again.',
+        code: 'VALIDATION_ERROR',
+        message: parsed.error.issues[0]?.message ?? 'Invalid request',
+        issues: parsed.error.issues,
+      },
+    });
+    return;
+  }
+  const { url, target_duration, look, tone_notes } = parsed.data;
+
+  let brand: ExtractedBrand;
+  try {
+    brand = await extractBrandFromUrl(url, `draft-from-url-${userId}-${Date.now()}`);
+  } catch (err) {
+    if (err instanceof BrandExtractorNotConfiguredError) {
+      res.status(503).json({ error: { code: 'NOT_CONFIGURED', message: err.message } });
+      return;
+    }
+    if (err instanceof BrandExtractionFailedError) {
+      res.status(err.status).json({
+        error: { code: 'EXTRACTION_FAILED', message: `Could not read that page: ${err.message}` },
+      });
+      return;
+    }
+    captureAiRouteFailure('assist.draft-script-from-url', err, { url });
+    res.status(502).json({
+      error: { code: 'EXTRACTION_FAILED', message: err instanceof Error ? err.message : 'brand extraction failed' },
+    });
+    return;
+  }
+
+  const pitch = buildPitchFromBrand(brand);
+  if (!pitch) {
+    res.status(422).json({
+      error: {
+        code: 'NOTHING_TO_DRAFT_FROM',
+        message:
+          "That page didn't have enough on it (no title, description, or heading) to draft a script from — try writing a pitch directly instead.",
       },
     });
     return;
   }
 
-  res.status(200).json({ script });
+  const outcome = await draftScriptFromPitch(pitch, target_duration, look, tone_notes, 'assist.draft-script-from-url');
+  if (outcome.status !== 200) {
+    res.status(outcome.status).json(outcome.body);
+    return;
+  }
+
+  // Candidate product images + brand context ride alongside the script so
+  // the caller can show "drafted from <url>" with a picker for the actual
+  // product photo — see this file's header comment for why that picker is
+  // mandatory, not auto-resolved.
+  res.status(200).json({
+    ...outcome.body,
+    source: {
+      url: brand.url,
+      title: brand.title,
+      description: brand.description,
+      brand_name: brand.brand_name,
+      image: brand.image,
+      screenshot: brand.screenshot,
+      product_image_candidates: brand.product_image_candidates,
+      logo: brand.logo,
+      palette: brand.palette,
+    },
+  });
 }

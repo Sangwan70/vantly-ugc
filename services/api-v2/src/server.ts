@@ -72,7 +72,7 @@ import { asyncHandler } from './lib/async-handler.js';
 import { getMyGalleryRoute } from './routes/v1/me-gallery.js';
 import { deleteRunRoute, purgeFailedRunsRoute } from './routes/v1/runs.js';
 import { listApiKeysRoute, createApiKeyRoute, revokeApiKeyRoute } from './routes/v1/me-api-keys.js';
-import { listSocialProvidersRoute, listSocialChannelsRoute, connectSocialRoute, deleteSocialChannelRoute, publishSocialRoute, resolvePublicationUrlRoute } from './routes/v1/social.js';
+import { listSocialProvidersRoute, listSocialChannelsRoute, connectSocialRoute, deleteSocialChannelRoute, publishSocialRoute, resolvePublicationUrlRoute, recordPublicationMetricsRoute, getSocialPerformanceRoute } from './routes/v1/social.js';
 import { videoConcurrencyGate } from './concurrency.js';
 import { agentRoute } from './routes/v1/agent.js';
 import { draftScriptRoute } from './routes/v1/assist.js';
@@ -967,6 +967,8 @@ app.get('/v1/voices/elevenlabs', readLimiter, authMiddleware, listElevenLabsVoic
   app.delete('/v1/social/channels/:channelId', generateLimiter, authMiddleware, deleteSocialChannelRoute);
   app.post('/v1/social/publish', generateLimiter, authMiddleware, publishSocialRoute);
   app.get('/v1/social/publications/:id/resolve-url', readLimiter, authMiddleware, resolvePublicationUrlRoute);
+  app.patch('/v1/social/publications/:id/metrics', generateLimiter, authMiddleware, recordPublicationMetricsRoute);
+  app.get('/v1/social/performance', readLimiter, authMiddleware, getSocialPerformanceRoute);
   app.post('/v1/agent', generateLimiter, authMiddleware, agentRoute);
   app.post('/v1/assist/draft-script', generateLimiter, authMiddleware, draftScriptRoute);
   app.post('/v1/assist/draft-blog-post', generateLimiter, authMiddleware, draftBlogPostRoute);

@@ -245,6 +245,21 @@ function firstClause(script: string): string {
 }
 
 /**
+ * Classifies a script's opener as weak/direct/absent. Exported (not just
+ * used inline by scorePrePublishChecklist below) so GET /v1/social/
+ * performance (routes/v1/social.ts) can bucket ALREADY-PUBLISHED videos'
+ * real engagement numbers by the same "weak vs direct opener" split this
+ * checklist warns about at dispatch time -- Milestone 2 item 3 (improvement
+ * #7, "close the loop with published performance data") answering, with
+ * real numbers, whether this heuristic actually predicts anything.
+ */
+export function classifyHookOpener(script: string | null | undefined): 'no_script' | 'weak_opener' | 'direct_opener' {
+  const trimmed = script?.trim();
+  if (!trimmed) return 'no_script';
+  return WEAK_OPENERS.test(firstClause(trimmed)) ? 'weak_opener' : 'direct_opener';
+}
+
+/**
  * Scores ONE routed request. Pure -- reads only `props` (the caller's
  * make_ugc input) and `routed` (decideMakeUgcRoute's own output), same
  * "no I/O, no side effects" contract as decideMakeUgcRoute itself, so the
@@ -259,9 +274,10 @@ export function scorePrePublishChecklist(
   const items: PrePublishChecklistItem[] = [];
 
   // 1. Hook in the first ~3 seconds.
-  if (script) {
-    const opener = firstClause(script);
-    const weak = WEAK_OPENERS.test(opener);
+  const hookVerdict = classifyHookOpener(script);
+  if (hookVerdict !== 'no_script') {
+    const opener = firstClause(script as string);
+    const weak = hookVerdict === 'weak_opener';
     items.push({
       id: 'hook_in_first_3s',
       passed: !weak,

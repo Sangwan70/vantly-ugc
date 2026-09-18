@@ -25,6 +25,11 @@ import {
   createPost,
   listPosts,
 } from '../../lib/vantly.js';
+import { classifyHookOpener } from '../../skills/make-ugc-router.js';
+import {
+  rollupPerformance,
+  type PerformancePublication,
+} from '../../skills/social-performance.js';
 
 // The providers we expose in the UI (user asked for TikTok, Instagram, X).
 // Every network vantly-ugc can build a valid createPost `settings` payload
@@ -460,4 +465,153 @@ export async function resolvePublicationUrlRoute(req: Request, res: Response): P
   } catch (e) {
     respondVantlyError(res, e);
   }
+}
+
+
+/**
+ * PATCH /v1/social/publications/:id/metrics
+ *   { views?: number, completion_rate?: number, ctr?: number }
+ *
+ * Manual entry point for Video Generation Flow improvement #7 ("close the
+ * loop with published performance data"). See this migration's header
+ * comment (20260918160000_vantly_publications_performance_metrics.sql) for
+ * why this is manual rather than auto-pulled: Vantly/Postiz's public API
+ * (lib/vantly.ts) only ever returns delivery status + a permalink for a
+ * post, never engagement numbers, and no other platform integration in
+ * this codebase can pull them automatically. `completion_rate`/`ctr` are
+ * fractions in [0,1] (0.42 = 42%), matching the DB's own CHECK constraint.
+ * A merge, not a replace -- only the fields sent are touched, so a user can
+ * fill in views today and completion rate next week. At least one field
+ * required.
+ */
+export async function recordPublicationMetricsRoute(req: Request, res: Response): Promise<void> {
+  const userId = uid(req);
+  if (!userId) { res.status(401).json({ error: 'unauthorized' }); return; }
+  const id = String(req.params.id ?? '');
+  if (!id) { res.status(400).json({ error: 'missing_id' }); return; }
+
+  const body = req.body ?? {};
+  const fieldToColumn: Array<['views' | 'completion_rate' | 'ctr', string]> = [
+    ['views', 'metrics_views'],
+    ['completion_rate', 'metrics_completion_rate'],
+    ['ctr', 'metrics_ctr'],
+  ];
+  const update: Record<string, unknown> = {};
+  for (const [field, column] of fieldToColumn) {
+    const raw = body[field];
+    if (raw === undefined || raw === null) continue;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) {
+      res.status(400).json({ error: 'invalid_metric', detail: `${field} must be a non-negative number` });
+      return;
+    }
+    if (field !== 'views' && n > 1) {
+      res.status(400).json({ error: 'invalid_metric', detail: `${field} must be a fraction between 0 and 1 (e.g. 0.42 for 42%)` });
+      return;
+    }
+    update[column] = n;
+  }
+  if (Object.keys(update).length === 0) {
+    res.status(400).json({ error: 'no_metrics_provided', detail: 'send at least one of views, completion_rate, ctr' });
+    return;
+  }
+
+  const { data: row, error: fetchErr } = await supabase
+    .from('vantly_publications')
+    .select('id, status')
+    .eq('id', id)
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (fetchErr || !row) { res.status(404).json({ error: 'not_found' }); return; }
+  if (row.status !== 'published') {
+    res.status(400).json({ error: 'not_published', detail: 'metrics can only be recorded for a published post' });
+    return;
+  }
+
+  update.metrics_source = 'manual';
+  update.metrics_updated_at = new Date().toISOString();
+  const { error: updateErr } = await supabase.from('vantly_publications').update(update).eq('id', id);
+  if (updateErr) { res.status(500).json({ error: 'update_failed', detail: updateErr.message }); return; }
+  res.status(200).json({ success: true });
+}
+
+
+/**
+ * GET /v1/social/performance -- the other half of improvement #7:
+ * surfacing recorded metrics next to the generation that produced each
+ * video, plus a "this hook/actor combo performed better" rollup (the
+ * audit doc's own example) grouped by classifyHookOpener and by actor.
+ *
+ * Only resolves hook/actor metadata for source IN ('vnext_skill',
+ * 'vnext_primitive') -- what "most videos generated today go through" per
+ * the manual-publish migration's own comment (20260911140000). Legacy
+ * generation_jobs rows (source='legacy' or unset) still appear with their
+ * recorded metrics, just without a resolved hook/actor -- the legacy path
+ * predates skill_runs/primitive_runs' input jsonb entirely, so there's
+ * nothing there to resolve.
+ */
+export async function getSocialPerformanceRoute(req: Request, res: Response): Promise<void> {
+  const userId = uid(req);
+  if (!userId) { res.status(401).json({ error: 'unauthorized' }); return; }
+
+  const { data: pubs, error } = await supabase
+    .from('vantly_publications')
+    .select(
+      'id, integration_id, run_id, source, release_url, published_at, metrics_views, metrics_completion_rate, metrics_ctr, metrics_updated_at',
+    )
+    .eq('user_id', userId)
+    .eq('status', 'published')
+    .not('metrics_updated_at', 'is', null)
+    .order('metrics_updated_at', { ascending: false })
+    .limit(500);
+  if (error) { res.status(500).json({ error: 'lookup_failed', detail: error.message }); return; }
+  const rows = pubs ?? [];
+
+  const skillRunIds = rows.filter((r) => r.source === 'vnext_skill' && r.run_id).map((r) => r.run_id as string);
+  const primitiveRunIds = rows.filter((r) => r.source === 'vnext_primitive' && r.run_id).map((r) => r.run_id as string);
+
+  const inputById = new Map<string, Record<string, unknown>>();
+  if (skillRunIds.length > 0) {
+    const { data } = await supabase.from('skill_runs').select('id, input').in('id', skillRunIds);
+    for (const r of data ?? []) inputById.set(r.id as string, (r.input as Record<string, unknown>) ?? {});
+  }
+  if (primitiveRunIds.length > 0) {
+    const { data } = await supabase.from('primitive_runs').select('id, input').in('id', primitiveRunIds);
+    for (const r of data ?? []) inputById.set(r.id as string, (r.input as Record<string, unknown>) ?? {});
+  }
+
+  const publications: PerformancePublication[] = rows.map((r) => {
+    const input = r.run_id ? inputById.get(r.run_id as string) : undefined;
+    const script = typeof input?.script === 'string' ? (input.script as string) : null;
+    const actor =
+      typeof input?.character === 'string'
+        ? (input.character as string)
+        : typeof input?.person === 'string'
+          ? (input.person as string)
+          : null;
+    const captionStyle = typeof input?.caption_style === 'string' ? (input.caption_style as string) : null;
+    return {
+      id: r.id as string,
+      integration_id: r.integration_id as string,
+      run_id: (r.run_id as string | null) ?? null,
+      source: (r.source as string | null) ?? null,
+      release_url: (r.release_url as string | null) ?? null,
+      published_at: (r.published_at as string | null) ?? null,
+      hook: classifyHookOpener(script),
+      actor,
+      caption_style: captionStyle,
+      metrics: {
+        views: (r.metrics_views as number | null) ?? null,
+        completion_rate: (r.metrics_completion_rate as number | null) ?? null,
+        ctr: (r.metrics_ctr as number | null) ?? null,
+        updated_at: (r.metrics_updated_at as string | null) ?? null,
+      },
+    };
+  });
+
+  res.status(200).json({
+    publications,
+    by_hook: rollupPerformance(publications, (p) => p.hook),
+    by_actor: rollupPerformance(publications, (p) => p.actor),
+  });
 }

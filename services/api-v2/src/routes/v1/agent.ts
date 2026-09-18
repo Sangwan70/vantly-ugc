@@ -17,6 +17,7 @@ import { zodToJsonSchema } from 'zod-to-json-schema';
 import { SKILLS } from '../../skills/registry.js';
 import { supabase } from '../../server.js';
 import { callAnthropicMessages, hasProviderCredential, missingCredentialEnvVar } from '../../lib/anthropic-client.js';
+import { captureAiRouteFailure } from '../../lib/ai-route-alert.js';
 
 const MODEL = process.env.ANTHROPIC_AGENT_MODEL || 'claude-sonnet-4-6';
 
@@ -311,11 +312,17 @@ export async function agentRoute(req: Request, res: Response): Promise<void> {
   try {
     const result = await callWithRetry();
     if (!result.ok) {
+      // Both the first attempt and callWithRetry's single retry failed.
+      captureAiRouteFailure('agent', new Error(`agent call failed after retry: ${JSON.stringify(result.body)}`), {
+        userId,
+        status: result.status,
+      });
       res.status(result.status).json(result.body);
       return;
     }
     res.status(200).json({ stop_reason: result.stop_reason, content: result.content });
   } catch (err) {
+    captureAiRouteFailure('agent', err, { userId });
     res.status(502).json({ error: 'agent_error', detail: (err as Error).message });
   }
 }

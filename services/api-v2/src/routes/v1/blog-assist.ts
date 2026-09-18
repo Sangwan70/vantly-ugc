@@ -28,6 +28,7 @@
 import type { Request, Response as ExpressResponse } from 'express';
 import { z } from 'zod';
 import { callAnthropicMessages } from '../../lib/anthropic-client.js';
+import { captureAiRouteFailure } from '../../lib/ai-route-alert.js';
 import { isAdminEmail } from '../../lib/admin-allowlist.js';
 import { supabase } from '../../server.js';
 
@@ -205,12 +206,16 @@ export async function draftBlogPostRoute(req: Request, res: ExpressResponse): Pr
       { signal: AbortSignal.timeout(45_000) },
     );
   } catch (err) {
+    captureAiRouteFailure('blog-assist.draft', err);
     res.status(502).json({ error: { code: 'UPSTREAM_ERROR', message: (err as Error).message } });
     return;
   }
 
   if (!upstream.ok) {
     const text = await upstream.text().catch(() => '');
+    captureAiRouteFailure('blog-assist.draft', new Error(`Model call failed (${upstream.status}): ${text.slice(0, 500)}`), {
+      status: upstream.status,
+    });
     res.status(502).json({ error: { code: 'UPSTREAM_ERROR', message: `Model call failed (${upstream.status})`, detail: text.slice(0, 500) } });
     return;
   }
@@ -218,7 +223,8 @@ export async function draftBlogPostRoute(req: Request, res: ExpressResponse): Pr
   let data: { content?: Array<{ type?: string; text?: string }> };
   try {
     data = (await upstream.json()) as typeof data;
-  } catch {
+  } catch (parseErr) {
+    captureAiRouteFailure('blog-assist.draft', parseErr);
     res.status(502).json({ error: { code: 'UPSTREAM_ERROR', message: 'Model returned an unparseable response' } });
     return;
   }
@@ -238,6 +244,9 @@ export async function draftBlogPostRoute(req: Request, res: ExpressResponse): Pr
   const modelBody = bodyMatch?.[1]?.trim();
 
   if (!title || !modelBody) {
+    captureAiRouteFailure('blog-assist.draft', new Error('Model returned an unexpected format (missing TITLE/BODY)'), {
+      rawHead: raw.slice(0, 500),
+    });
     res.status(502).json({ error: { code: 'EMPTY_RESULT', message: 'The model returned an unexpected format — try again.' } });
     return;
   }

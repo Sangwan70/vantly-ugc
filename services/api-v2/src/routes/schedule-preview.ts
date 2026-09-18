@@ -26,6 +26,7 @@
 
 import type { Request, Response } from 'express';
 import { callAnthropicMessages, hasProviderCredential, missingCredentialEnvVar } from '../lib/anthropic-client.js';
+import { captureAiRouteFailure } from '../lib/ai-route-alert.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 // Brief generation is user-visible and quality-sensitive — Opus 4.7 only.
@@ -260,6 +261,7 @@ export async function schedulePreviewRoute(req: Request, res: Response): Promise
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Generation failed';
     console.error(`[schedule-preview] generation failed: ${msg}`);
+    captureAiRouteFailure('schedule-preview', err);
     res.status(502).json({ error: { code: 'GENERATION_FAILED', message: 'Sample generation failed. Try again.' } });
     return;
   }

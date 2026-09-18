@@ -18,6 +18,7 @@
 import type { Request, Response as ExpressResponse } from 'express';
 import { z } from 'zod';
 import { callAnthropicMessages } from '../../lib/anthropic-client.js';
+import { captureAiRouteFailure } from '../../lib/ai-route-alert.js';
 
 const MODEL = process.env.ANTHROPIC_AGENT_MODEL || 'claude-sonnet-4-6';
 
@@ -208,6 +209,10 @@ export async function draftScriptRoute(req: Request, res: ExpressResponse): Prom
       // already retried, rather than the fallback's own generic per-attempt
       // wording (which would otherwise say e.g. "over 20s" and read like
       // only one short attempt was ever made).
+      captureAiRouteFailure('assist.draft-script', fallbackErr, {
+        primaryModel: MODEL,
+        fallbackModel: FALLBACK_MODEL,
+      });
       if (fallbackErr instanceof DraftAttemptError) {
         if (fallbackErr.httpStatus === 504) {
           res.status(504).json({

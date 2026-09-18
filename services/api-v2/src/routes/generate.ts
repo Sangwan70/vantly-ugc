@@ -25,6 +25,7 @@ import {
 import { supabase } from '../server.js';
 import { USE_DURABLE_QUEUE, enqueueDispatch, type DispatchTarget } from '../queue.js';
 import { callAnthropicMessages, hasProviderCredential, missingCredentialEnvVar } from '../lib/anthropic-client.js';
+import { captureAiRouteFailure } from '../lib/ai-route-alert.js';
 
 const WORKER_V2_URL = process.env.WORKER_V2_URL;
 const WORKER_SECRET = process.env.WORKER_SECRET;
@@ -1117,6 +1118,7 @@ export async function generateRoute(req: Request, res: Response): Promise<void> 
           generatedScript = await generateProductActingScript(body, duration);
           script = generatedScript;
         } catch (err) {
+          captureAiRouteFailure('generate.product-acting-script', err);
           res.status(500).json({ error: { code: 'SCRIPT_GENERATION_FAILED', message: err instanceof Error ? err.message : 'Script generation failed' } });
           return;
         }
@@ -1366,6 +1368,7 @@ export async function generateRoute(req: Request, res: Response): Promise<void> 
       generatedScript = await generateScript(body.prompt, body.product_url ?? null, body.template ?? null, body.target_duration ?? 10);
       script = generatedScript;
     } catch (err) {
+      captureAiRouteFailure('generate.prompt-script', err);
       res.status(500).json({ error: { code: 'SCRIPT_GENERATION_FAILED', message: err instanceof Error ? err.message : 'Script generation failed' } });
       return;
     }

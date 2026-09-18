@@ -23,6 +23,7 @@
 import type { Request, Response } from 'express';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { callAnthropicMessages, hasProviderCredential, missingCredentialEnvVar } from '../lib/anthropic-client.js';
+import { captureAiRouteFailure } from '../lib/ai-route-alert.js';
 
 const OPUS_MODEL = process.env.CHARACTER_STORYBOARD_MODEL ?? 'claude-opus-4-7';
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -246,6 +247,7 @@ export async function characterStoryboardSuggestRoute(
     console.error('[storyboard-suggest] generation failed:', message);
     // If Claude returned malformed JSON, fall back gracefully
     const isParseError = /JSON|Expected/i.test(message);
+    captureAiRouteFailure('character-storyboard.suggest', err, { isParseError });
     res.status(isParseError ? 502 : 500).json({
       error: {
         code: isParseError ? 'LLM_PARSE_ERROR' : 'INTERNAL_ERROR',

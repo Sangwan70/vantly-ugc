@@ -155,6 +155,8 @@ export function RunPanel({
   onUseSavedPrompt,
   onBrowseExamples,
   onRunDifferentSkill,
+  prefillValues,
+  onPrefillApplied,
 }: {
   skill: SkillEntry;
   form?: SkillForm;
@@ -177,6 +179,15 @@ export function RunPanel({
   onUseSavedPrompt?: () => void;
   onBrowseExamples?: () => void;
   onRunDifferentSkill?: () => void;
+  /** A saved prompt / library example picked from the "+" menu (or a
+   *  /dashboard/agent?example=<id> deep link) lands here when THIS screen
+   *  has no chat yet — the freeform chat textarea those otherwise write
+   *  into isn't even rendered in that case, so this form needs its own way
+   *  in. Applied once via onChangeAny, then the caller is told to clear it
+   *  (onPrefillApplied) so it doesn't stomp on further edits the user
+   *  makes to the same field. */
+  prefillValues?: Record<string, string> | null;
+  onPrefillApplied?: () => void;
 }) {
   const initial = useMemo(() => {
     const o: Record<string, unknown> = {};
@@ -273,6 +284,18 @@ export function RunPanel({
       return next;
     });
   };
+
+  // Apply a prefill (see the `prefillValues` prop doc above) the instant one
+  // arrives, then tell the caller it's been consumed. Runs whenever the
+  // OBJECT reference changes -- the caller passes a fresh object per
+  // example/prompt picked, and null/undefined the rest of the time, so this
+  // never re-fires for the same pick and never fights the user's own edits.
+  useEffect(() => {
+    if (!prefillValues) return;
+    for (const [name, value] of Object.entries(prefillValues)) onChangeAny(name, value);
+    onPrefillApplied?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillValues]);
 
   // Toggle/expandable fields ("Background Music", "Language", …) render as
   // a wrapping row of pills rather than stacked full-width rows — tap one

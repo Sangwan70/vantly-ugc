@@ -76,13 +76,18 @@ const selectStyle: React.CSSProperties = {
   fontWeight: 600,
 };
 
-export function CreateComposer({ onGenerate, onUseSavedPrompt, onBrowseExamples, onRunDifferentSkill }: {
+export function CreateComposer({
+  onGenerate, onUseSavedPrompt, onBrowseExamples, onRunDifferentSkill, prefillValues, onPrefillApplied,
+}: {
   onGenerate: (result: RunResult) => void;
   /** Wired straight into the script box's own "+" menu — see ScriptAiField
    *  in ../skills/_run-panel.tsx. Omit any of the three to hide that menu item. */
   onUseSavedPrompt?: () => void;
   onBrowseExamples?: () => void;
   onRunDifferentSkill?: () => void;
+  /** Passed straight through to RunPanel — see its own doc comment. */
+  prefillValues?: Record<string, string> | null;
+  onPrefillApplied?: () => void;
 }) {
   const [videoType, setVideoType] = useState<VideoType>('talking_head');
   const [platform, setPlatform] = useState<Platform>('9:16');
@@ -123,6 +128,8 @@ export function CreateComposer({ onGenerate, onUseSavedPrompt, onBrowseExamples,
         onUseSavedPrompt={onUseSavedPrompt}
         onBrowseExamples={onBrowseExamples}
         onRunDifferentSkill={onRunDifferentSkill}
+        prefillValues={prefillValues}
+        onPrefillApplied={onPrefillApplied}
       />
     </div>
   );

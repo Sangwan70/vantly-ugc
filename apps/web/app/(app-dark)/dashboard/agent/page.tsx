@@ -25,7 +25,7 @@ import { invokeFn } from '@/lib/supabase/fn-proxy';
 import { createClient } from '@/lib/supabase/client';
 
 import {
-  SAMPLE_PROMPTS, PROMPT_EXAMPLE_CATEGORIES, promptExampleToDraftMessage,
+  SAMPLE_PROMPTS, PROMPT_EXAMPLE_CATEGORIES, promptExampleToDraftMessage, promptExampleToStructuredFields,
   type PromptExample, type PromptExampleCategory,
 } from '@/lib/sample-prompts';
 import { RunPanel, estimateSkillEta, type SkillEntry as SkillCatalogEntry, type RunResult as SkillLaunchResult } from '../skills/_run-panel';
@@ -315,6 +315,14 @@ function AgentPageInner() {
   //  composer, never auto-sends.
   const [examplesPickerOpen, setExamplesPickerOpen] = useState(false);
   const [examplesPickerCategory, setExamplesPickerCategory] = useState<string | null>(null);
+  // A saved prompt / library example picked while there's no chat yet lands
+  // on the structured make_ugc form (CreateComposer/RunPanel) instead of
+  // the freeform composer below -- that screen doesn't read `input` at
+  // all, so applySavedPrompt/applyExample/the ?example= deep link all also
+  // set this, and CreateComposer's RunPanel applies it to its own script/
+  // person fields the moment it sees a new value (see RunPanel's
+  // `prefillValues` prop).
+  const [emptyStatePrefill, setEmptyStatePrefill] = useState<Record<string, string> | null>(null);
   // "+" menu -> "Run a skill" (task: one interface for both chatting and
   // running any skill from the Skill Center). skillPickerOpen shows a searchable
   // list; picking one opens runSkillTarget's form (the SAME RunPanel the
@@ -1450,6 +1458,10 @@ function AgentPageInner() {
   }
   function applySavedPrompt(p: AgentSavedPrompt) {
     setInput(promptToDraftMessage(p));
+    setEmptyStatePrefill({
+      script: p.script,
+      ...(p.person_mode === 'describe' && p.person_text ? { person: p.person_text } : {}),
+    });
     setPromptPickerOpen(false);
     textareaRef.current?.focus();
   }
@@ -1462,6 +1474,7 @@ function AgentPageInner() {
   }
   function applyExample(category: PromptExampleCategory, example: PromptExample) {
     setInput(promptExampleToDraftMessage(category, example));
+    setEmptyStatePrefill(promptExampleToStructuredFields(example));
     setExamplesPickerOpen(false);
     textareaRef.current?.focus();
   }
@@ -1482,6 +1495,7 @@ function AgentPageInner() {
     const found = findExampleById(id);
     if (found) {
       setInput(promptExampleToDraftMessage(found.category, found.example));
+      setEmptyStatePrefill(promptExampleToStructuredFields(found.example));
       textareaRef.current?.focus();
     }
     const params = new URLSearchParams(searchParams.toString());
@@ -2074,9 +2088,12 @@ function AgentPageInner() {
           ) : (
             <div className="flex flex-col gap-1.5">
               {examplesPickerActiveCategory.examples.map((ex) => (
-                <button key={ex.id} type="button" onClick={() => applyExample(examplesPickerActiveCategory, ex)} className="flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-white/[0.06]" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#0F1015' }}>
-                  <span className="truncate text-[13px] font-medium" style={{ color: '#E9E9F0' }}>{ex.title}{ex.character ? ` — ${ex.character}` : ''}</span>
-                  <span className="line-clamp-1 text-[11.5px]" style={{ color: 'rgba(255,255,255,0.45)' }}>{ex.script ?? ex.introLine ?? ex.turns?.[0]?.line ?? ex.scenes?.[0]?.line ?? ex.notes ?? ''}</span>
+                <button key={ex.id} type="button" onClick={() => applyExample(examplesPickerActiveCategory, ex)} className="flex w-full items-start justify-between gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-white/[0.06]" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#0F1015' }}>
+                  <span className="flex min-w-0 flex-col items-start gap-0.5">
+                    <span className="truncate text-[13px] font-medium" style={{ color: '#E9E9F0' }}>{ex.title}{ex.character ? ` — ${ex.character}` : ''}</span>
+                    <span className="line-clamp-1 text-[11.5px]" style={{ color: 'rgba(255,255,255,0.45)' }}>{ex.script ?? ex.introLine ?? ex.turns?.[0]?.line ?? ex.scenes?.[0]?.line ?? ex.notes ?? ''}</span>
+                  </span>
+                  <span className="shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium" style={{ background: 'rgba(167,139,250,0.15)', color: '#A78BFA' }}>Use this</span>
                 </button>
               ))}
             </div>
@@ -2180,6 +2197,8 @@ function AgentPageInner() {
             onUseSavedPrompt={openPromptPicker}
             onBrowseExamples={openExamplesPicker}
             onRunDifferentSkill={openSkillPicker}
+            prefillValues={emptyStatePrefill}
+            onPrefillApplied={() => setEmptyStatePrefill(null)}
           />
         </div>
         {error && <div className="mt-4 rounded-xl px-4 py-2.5 text-sm" style={{ border: '1px solid rgba(255,79,79,0.3)', background: 'rgba(255,79,79,0.08)', color: '#FCA5A5' }}>{error}</div>}

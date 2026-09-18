@@ -495,3 +495,35 @@ export function promptExampleToDraftMessage(category: PromptExampleCategory, exa
 
   return lines.join('\n');
 }
+
+/**
+ * Maps a library example onto the discrete `script` / `person` fields the
+ * structured make_ugc form (CreateComposer + RunPanel, the "no chat yet"
+ * screen at /dashboard/agent) actually reads — as opposed to
+ * promptExampleToDraftMessage()'s single free-text blob, which only the
+ * ongoing-chat composer's `input` textarea understands. Turns/scenes have
+ * no literal "script" field to map onto (they belong to make_podcast /
+ * make_storybook, not make_ugc), so they're flattened into readable
+ * multi-line text the user can still see and edit as a starting point.
+ */
+export function promptExampleToStructuredFields(example: PromptExample): Record<string, string> {
+  const fields: Record<string, string> = {};
+
+  if (example.script) {
+    fields.script = example.script;
+  } else if (example.introLine || example.narrationLine) {
+    fields.script = `${example.introLine ?? ''}\n\n---\n\n${example.narrationLine ?? ''}`;
+  } else if (example.turns?.length) {
+    fields.script = example.turns.map((t) => `${t.speaker}: ${t.line}`).join('\n');
+  } else if (example.scenes?.length) {
+    fields.script = example.scenes.map((s, i) => `${i + 1}. ${s.speaker} — ${s.visual} — "${s.line}"`).join('\n');
+  } else if (example.notes) {
+    fields.script = example.notes;
+  }
+
+  if (example.character) {
+    fields.person = `[PLACEHOLDER] ${example.character}${example.persona ? ` — ${example.persona}` : ''} — swap for one of your saved characters, or your own description, before generating.`;
+  }
+
+  return fields;
+}

@@ -236,8 +236,19 @@ export async function draftPodcastRoute(req: Request, res: ExpressResponse): Pro
   userMessageParts.push('Write the conversation now.');
 
   const outcome = await draftRawText(userMessageParts.join('\n\n'), PODCAST_SYSTEM_PROMPT, 'assist.draft-podcast', PODCAST_DRAFT_MAX_TOKENS);
-  if (outcome.status !== 200 || !outcome.text) {
+  if (outcome.status !== 200) {
     res.status(outcome.status).json(outcome.body ?? { error: { code: 'UPSTREAM_ERROR', message: 'draft failed' } });
+    return;
+  }
+  // A "successful" (200) call can still come back with empty text -- e.g.
+  // the model returned only a non-text block, or nothing at all. Bug fixed
+  // here: this used to fall into the same branch as a real failure but
+  // WITHOUT overriding outcome.status (still 200), so the caller got a 200
+  // response with an {error:...} body -- confusing on its own, and it
+  // meant the frontend's `if (!resp.ok)` check never even fired. Give it
+  // its own real error status instead.
+  if (!outcome.text) {
+    res.status(502).json({ error: { code: 'EMPTY_RESULT', message: 'The AI writer returned an empty response — try again.' } });
     return;
   }
 
@@ -353,8 +364,14 @@ export async function draftStorybookRoute(req: Request, res: ExpressResponse): P
   userMessageParts.push('Write the cast and scenes now.');
 
   const outcome = await draftRawText(userMessageParts.join('\n\n'), STORYBOOK_SYSTEM_PROMPT, 'assist.draft-storybook', STORYBOOK_DRAFT_MAX_TOKENS);
-  if (outcome.status !== 200 || !outcome.text) {
+  if (outcome.status !== 200) {
     res.status(outcome.status).json(outcome.body ?? { error: { code: 'UPSTREAM_ERROR', message: 'draft failed' } });
+    return;
+  }
+  // See the identical fix in draftPodcastRoute above: a 200 with empty text
+  // used to be reported to the caller as status 200 with an error body.
+  if (!outcome.text) {
+    res.status(502).json({ error: { code: 'EMPTY_RESULT', message: 'The AI writer returned an empty response — try again.' } });
     return;
   }
 

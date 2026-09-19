@@ -2191,7 +2191,7 @@ function AgentPageInner() {
         {skillRunModal}
         {historyRail}
         <div className="mx-auto flex h-full min-w-0 flex-1 flex-col items-center justify-center px-6">
-        <div className="w-full max-w-3xl">
+        <div className="flex max-h-full w-full max-w-3xl flex-col overflow-y-auto py-8">
           <CreateComposer
             onGenerate={(skill, r) => void launchSkillFromPicker(skill, r)}
             onUseSavedPrompt={openPromptPicker}
@@ -2200,8 +2200,8 @@ function AgentPageInner() {
             prefillValues={emptyStatePrefill}
             onPrefillApplied={() => setEmptyStatePrefill(null)}
           />
+          {error && <div className="mt-4 rounded-xl px-4 py-2.5 text-sm" style={{ border: '1px solid rgba(255,79,79,0.3)', background: 'rgba(255,79,79,0.08)', color: '#FCA5A5' }}>{error}</div>}
         </div>
-        {error && <div className="mt-4 rounded-xl px-4 py-2.5 text-sm" style={{ border: '1px solid rgba(255,79,79,0.3)', background: 'rgba(255,79,79,0.08)', color: '#FCA5A5' }}>{error}</div>}
         </div>
       </div>
     );

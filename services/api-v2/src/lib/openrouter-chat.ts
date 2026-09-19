@@ -70,6 +70,18 @@ export async function callOpenRouterChatCompletion(
         { role: 'system', content: params.system },
         { role: 'user', content: params.userMessage },
       ],
+      // Free reasoning-capable models (deepseek/nemotron, etc.) spend from
+      // the SAME max_tokens budget as the visible answer -- OpenRouter's own
+      // docs: "the request's max_tokens limit applies to reasoning and
+      // visible output combined." A model that reasons at its default
+      // effort can burn the entire budget before ever writing the
+      // <characters>/<scenes> tags, coming back with finish_reason:"length"
+      // and EMPTY content -- exactly the "AI writer returned an empty
+      // response" users started seeing after the free-model switch. `effort:
+      // low` caps how much of the budget reasoning is allowed to eat;
+      // `exclude: true` keeps any reasoning that does happen out of
+      // `message.content` on providers that would otherwise inline it there.
+      reasoning: { effort: 'low', exclude: true },
     }),
     signal: opts.signal,
   });
@@ -80,7 +92,24 @@ export async function callOpenRouterChatCompletion(
   }
 
   const data = (await resp.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
+    choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+    usage?: { completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number } };
   };
-  return data.choices?.[0]?.message?.content ?? '';
+  const content = data.choices?.[0]?.message?.content ?? '';
+  if (!content.trim()) {
+    // Surface WHY it's empty instead of returning '' silently -- this throws,
+    // so it flows through the caller's existing primary/fallback retry +
+    // captureAiRouteFailure path (assist-compose.ts) instead of being
+    // swallowed as an unremarkable "empty result" with zero server-side
+    // trace, which is what made this failure mode undiagnosable before.
+    const finishReason = data.choices?.[0]?.finish_reason ?? 'unknown';
+    const reasoningTokens = data.usage?.completion_tokens_details?.reasoning_tokens;
+    const completionTokens = data.usage?.completion_tokens;
+    throw new Error(
+      `OpenRouter model ${params.model} returned empty content (finish_reason=${finishReason}` +
+        (reasoningTokens != null ? `, reasoning_tokens=${reasoningTokens}/${completionTokens ?? '?'}` : '') +
+        `) -- likely spent its whole max_tokens budget reasoning before writing an answer`,
+    );
+  }
+  return content;
 }

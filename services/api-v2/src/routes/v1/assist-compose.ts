@@ -28,6 +28,7 @@
 
 import type { Request, Response as ExpressResponse } from 'express';
 import { z } from 'zod';
+import * as Sentry from '@sentry/node';
 import {
   MODEL,
   FALLBACK_MODEL,
@@ -351,6 +352,16 @@ export async function draftPodcastRoute(req: Request, res: ExpressResponse): Pro
 
   const { turns, room } = parsePodcastDraft(outcome.text);
   if (turns.length < 2) {
+    // Was previously a silent 502 -- the raw model text that failed to
+    // parse into >=2 turns vanished with no server-side trace, making a
+    // free-model formatting drift undiagnosable from logs/Sentry alone.
+    // eslint-disable-next-line no-console
+    console.warn(`[assist.draft-podcast] parsed only ${turns.length} turn(s) from model output -- raw text (first 500 chars): ${outcome.text.slice(0, 500)}`);
+    Sentry.captureMessage('assist.draft-podcast: model output parsed to an unusable conversation', {
+      level: 'warning',
+      tags: { kind: 'ai_draft_unparseable', route: 'assist.draft-podcast' },
+      extra: { turnsFound: turns.length, rawTextSample: outcome.text.slice(0, 1000) },
+    });
     res.status(502).json({
       error: { code: 'EMPTY_RESULT', message: 'The AI writer returned an unusable conversation — try again or rephrase the topic.' },
     });
@@ -474,6 +485,15 @@ export async function draftStorybookRoute(req: Request, res: ExpressResponse): P
 
   const { title, characters, scenes } = parseStorybookDraft(outcome.text);
   if (characters.length === 0 || scenes.length === 0) {
+    // Same observability fix as draft-podcast above: capture the raw text
+    // that failed to parse into a cast/scenes instead of silently 502ing.
+    // eslint-disable-next-line no-console
+    console.warn(`[assist.draft-storybook] parsed ${characters.length} character(s)/${scenes.length} scene(s) from model output -- raw text (first 500 chars): ${outcome.text.slice(0, 500)}`);
+    Sentry.captureMessage('assist.draft-storybook: model output parsed to an unusable story', {
+      level: 'warning',
+      tags: { kind: 'ai_draft_unparseable', route: 'assist.draft-storybook' },
+      extra: { charactersFound: characters.length, scenesFound: scenes.length, rawTextSample: outcome.text.slice(0, 1000) },
+    });
     res.status(502).json({
       error: { code: 'EMPTY_RESULT', message: 'The AI writer returned an unusable story — try again or rephrase the premise.' },
     });

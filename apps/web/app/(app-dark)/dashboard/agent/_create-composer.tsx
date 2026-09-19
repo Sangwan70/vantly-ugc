@@ -9,7 +9,7 @@
  * vague chat message could trigger from the LLM router).
  *
  * One line at the top reads as a sentence with two inline dropdowns:
- *   "Create a [video type] for [platform] using exactly this script.."
+ *   "Create a [video type] for [platform] using..."
  * — video type picks one of three underlying skills:
  *   - the four original make_ugc identity shapes (a plain talking head / a
  *     product-in-hands ad / a b-roll narrated review / a silent action
@@ -170,7 +170,7 @@ export function CreateComposer({
         <select value={platform} onChange={(e) => setPlatform(e.target.value as Platform)} disabled={videoType === 'podcast'} title={videoType === 'podcast' ? 'Podcast always renders vertical (9:16)' : undefined} style={{ ...selectStyle, opacity: videoType === 'podcast' ? 0.5 : 1 }}>
           {PLATFORM_OPTIONS.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
         </select>
-        <span>{TRAILING_TEXT_BY_TYPE[videoType] ?? 'using exactly this script..'}</span>
+        <span>{TRAILING_TEXT_BY_TYPE[videoType] ?? 'using...'}</span>
       </div>
 
       <RunPanel

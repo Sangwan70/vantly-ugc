@@ -92,7 +92,16 @@ export type Field =
   // `toggle`, `name` here is a UI-only key (prefixed with `_` by
   // convention so RunPanel's submit strips it) — the value that actually
   // gets submitted lives under `child.name`.
-  | { kind: 'expandable'; name: string; label: string; child: Field };
+  | { kind: 'expandable'; name: string; label: string; child: Field }
+  // AI-drafting panel for the "bare minimum: just type a prompt" flow on
+  // make_podcast/make_storybook -- sits ABOVE the manual editor(s) it fills
+  // (turn-list for podcast; character-list + scene-list for storybook) so a
+  // generated draft is always a fully editable starting point, never a
+  // black box. `name` is a UI-only key (prefixed with `_` by convention so
+  // RunPanel's submit strips it); mode picks the endpoint
+  // (/v1/assist/draft-podcast or /v1/assist/draft-storybook) and which
+  // sibling fields the result is written into via onChangeAny.
+  | { kind: 'ai-draft-panel'; name: string; label: string; mode: 'podcast' | 'storybook'; help?: string };
 
 export interface SkillForm {
   fields: Field[];
@@ -333,6 +342,11 @@ export const FORMS: Record<string, SkillForm> = {
     fields: [
       { kind: 'character-source', name: 'character_a', label: 'Character A', generateField: '_character_a_desc', generatePlaceholder: 'e.g. a warm, curious podcast host in their 30s, glasses, casual sweater', uploadField: 'character_a_base64', existingField: 'character_a', generateViaPortrait: true, help: 'Who speaks the \'A\' lines below.' },
       { kind: 'character-source', name: 'character_b', label: 'Character B', generateField: '_character_b_desc', generatePlaceholder: 'e.g. a friendly guest in their 40s, relaxed, warm smile', uploadField: 'character_b_base64', existingField: 'character_b', generateViaPortrait: true, help: 'Who speaks the \'B\' lines below.' },
+      // Bare-minimum path: type what they're discussing (+ optional source
+      // URL + orientation) and POST /v1/assist/draft-podcast writes a full
+      // conversation into `script` (and a `room` suggestion) below — still
+      // a normal editable turn-list afterward, never auto-submitted.
+      { kind: 'ai-draft-panel', name: '_ai_draft_podcast', label: 'Conversation', mode: 'podcast', help: 'Optional — describe the topic and generate a full back-and-forth, or just write the turns below by hand.' },
       // 24 mirrors PODCAST_MAX_TURNS in services/api-v2/src/skills/registry.ts.
       { kind: 'turn-list', name: 'script', label: 'Conversation (in order)', max: 24, help: 'Each turn needs 5+ words to fill a clip — the camera cuts to whoever speaks. Long lines auto-split into ≤ 15s takes.' },
       { kind: 'text', name: 'room', label: 'Studio / room look (optional)', placeholder: 'a warm modern podcast studio, two mics, wood desk', help: 'Defaults to a warm modern podcast studio.' },
@@ -344,10 +358,17 @@ export const FORMS: Record<string, SkillForm> = {
     composed: true,
     fields: [
       { kind: 'text', name: 'title', label: 'Title (optional)', placeholder: 'Pip the Fox and the Lost Scarf' },
+      // Bare-minimum path: type the story's premise (+ optional source URL)
+      // and POST /v1/assist/draft-storybook writes a full cast + ordered
+      // scenes into `characters`/`scenes` (and `title`, if left blank)
+      // below -- this is "Auto Generate Required Characters" for the whole
+      // story, not just one character; the cast/scene lists stay fully
+      // editable afterward, never auto-submitted.
+      { kind: 'ai-draft-panel', name: '_ai_draft_storybook', label: 'Story', mode: 'storybook', help: 'Optional — describe the premise and generate a cast + scenes, or build them below by hand.' },
       // 1-4 characters (STORYBOOK_MAX_CHARACTERS in @vantly-ugc/schema); each
       // row needs a name plus at least one identity source — a description
       // alone is the common case, matching MakeStorybookSkillInputSchema.
-      { kind: 'character-list', name: 'characters', label: 'Characters (cast)', max: 4, help: 'Up to 4 characters. Each needs a name, plus a description, an uploaded photo, or a saved character — a description alone works great (e.g. "a curious fox cub in a blue scarf").' },
+      { kind: 'character-list', name: 'characters', label: 'Characters (cast)', max: 4, help: 'Up to 4 characters. Each needs a name, plus a description, an uploaded photo, or a saved character — a description alone works great (e.g. "a curious fox cub in a blue scarf"). Or use "Story" above to auto-generate the whole cast from a one-line premise.' },
       { kind: 'select', name: 'art_style', label: 'Art style', options: ['flat_vector_cartoon', 'storybook_watercolor', 'crayon_sketch', 'felt_stopmotion', 'classic_storybook_ink'], defaultValue: 'flat_vector_cartoon' },
       { kind: 'text', name: 'style_notes', label: 'Style notes (optional)', placeholder: 'warm pastel palette, cozy autumn mood' },
       // Ordered scenes (1-12, STORYBOOK_MAX_SCENES); each speaker must match

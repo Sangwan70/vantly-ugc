@@ -76,6 +76,7 @@ import { listSocialProvidersRoute, listSocialChannelsRoute, connectSocialRoute, 
 import { videoConcurrencyGate } from './concurrency.js';
 import { agentRoute } from './routes/v1/agent.js';
 import { draftScriptRoute, draftScriptFromUrlRoute } from './routes/v1/assist.js';
+import { draftPodcastRoute, draftStorybookRoute } from './routes/v1/assist-compose.js';
 import { draftBlogPostRoute } from './routes/v1/blog-assist.js';
 import { creditsCheckRoute } from './routes/v1/credits-check.js';
 import { checkoutRoute } from './routes/v1/billing/checkout.js';
@@ -972,6 +973,8 @@ app.get('/v1/voices/elevenlabs', readLimiter, authMiddleware, listElevenLabsVoic
   app.post('/v1/agent', generateLimiter, authMiddleware, agentRoute);
   app.post('/v1/assist/draft-script', generateLimiter, authMiddleware, draftScriptRoute);
   app.post('/v1/assist/draft-script-from-url', generateLimiter, authMiddleware, draftScriptFromUrlRoute);
+  app.post('/v1/assist/draft-podcast', generateLimiter, authMiddleware, draftPodcastRoute);
+  app.post('/v1/assist/draft-storybook', generateLimiter, authMiddleware, draftStorybookRoute);
   app.post('/v1/assist/draft-blog-post', generateLimiter, authMiddleware, draftBlogPostRoute);
   // Agent chat persistence (Phase 1) — reopenable sessions. Client-driven,
   // additive: the brain + /v1/skills/run are untouched. See agent-chats.ts.

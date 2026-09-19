@@ -39,12 +39,12 @@ import {
   type ExtractedBrand,
 } from '../../lib/brand-extractor-client.js';
 
-const MODEL = process.env.ANTHROPIC_AGENT_MODEL || 'claude-sonnet-4-6';
+export const MODEL = process.env.ANTHROPIC_AGENT_MODEL || 'claude-sonnet-4-6';
 
 // 45s: generous enough for a reasoning-heavy model to think through word
 // count/phrasing before emitting the <script> tag (see max_tokens above)
 // without making a stuck request hang the wizard indefinitely.
-const DRAFT_TIMEOUT_MS = 45_000;
+export const DRAFT_TIMEOUT_MS = 45_000;
 
 // Fallback model tried ONCE if the primary model times out, errors, or
 // returns something unparseable -- 'claude-haiku-4-5' is already this
@@ -58,17 +58,17 @@ const DRAFT_TIMEOUT_MS = 45_000;
 // a connection failure; this one switches MODEL on a latency/quality
 // failure, so it also covers the model returning something unparseable,
 // not just a timeout.
-const FALLBACK_MODEL = process.env.ANTHROPIC_AGENT_FALLBACK_MODEL || 'claude-haiku-4-5';
+export const FALLBACK_MODEL = process.env.ANTHROPIC_AGENT_FALLBACK_MODEL || 'claude-haiku-4-5';
 // Shorter than the primary's: haiku is materially faster, and the two
 // timeouts stack (worst case ~65s total) only on the rare request that
 // exhausts both -- most fall back well before this.
-const FALLBACK_TIMEOUT_MS = 20_000;
+export const FALLBACK_TIMEOUT_MS = 20_000;
 
 /** AbortSignal.timeout() rejects/aborts with a DOMException named 'TimeoutError' — detect that
  * specifically so a slow model call is reported as a timeout, not mislabeled as a parse failure
  * (a real bug that shipped: the AbortSignal could also fire mid-body-read, after `upstream.ok`
  * was already true, and got swallowed by the JSON.parse catch below as "unparseable response"). */
-function isTimeoutError(err: unknown): boolean {
+export function isTimeoutError(err: unknown): boolean {
   return err instanceof Error && err.name === 'TimeoutError';
 }
 
@@ -78,7 +78,7 @@ function isTimeoutError(err: unknown): boolean {
  * lets the route try a second (fallback) model on ANY of these without
  * duplicating the status/body logic for each failure kind.
  */
-class DraftAttemptError extends Error {
+export class DraftAttemptError extends Error {
   constructor(
     readonly httpStatus: number,
     readonly body: { error: { code: string; message: string; detail?: string } },
@@ -93,7 +93,7 @@ class DraftAttemptError extends Error {
  *  once, after whichever attempt succeeds). Throws DraftAttemptError on any
  *  failure so the caller can retry with a different model without re-deriving
  *  the response shape. */
-async function attemptDraft(model: string, timeoutMs: number, userMessage: string): Promise<string> {
+export async function attemptDraft(model: string, timeoutMs: number, userMessage: string, systemPrompt: string = SYSTEM_PROMPT): Promise<string> {
   let upstream: globalThis.Response;
   try {
     upstream = await callAnthropicMessages(
@@ -107,7 +107,7 @@ async function attemptDraft(model: string, timeoutMs: number, userMessage: strin
         // draftScriptRoute, which is what actually keeps stray reasoning
         // out of the result.
         max_tokens: 700,
-        system: SYSTEM_PROMPT,
+        system: systemPrompt,
         messages: [{ role: 'user', content: userMessage }],
       },
       { signal: AbortSignal.timeout(timeoutMs) },

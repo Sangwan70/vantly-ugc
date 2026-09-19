@@ -558,6 +558,9 @@ function FieldRow({ field, value, onChange, allValues, onChangeAny, onUseSavedPr
   if (field.kind === 'character-source') {
     return <CharacterSourceField field={field} allValues={allValues} onChangeAny={onChangeAny} />;
   }
+  if (field.kind === 'ai-draft-panel') {
+    return <AiDraftPanelField field={field} allValues={allValues} onChangeAny={onChangeAny} />;
+  }
   if (field.kind === 'image') {
     const dataUrl = typeof value === 'string' ? value : '';
     const onFile = (file: File | null) => {
@@ -1533,6 +1536,127 @@ function TurnListField({ field, value, onChange }: {
           + add turn
         </button>
       )}
+      {field.help && <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{field.help}</span>}
+    </div>
+  );
+}
+
+/**
+ * "Bare minimum: type a prompt" panel for make_podcast/make_storybook --
+ * sits above the manual editor(s) it fills (TurnListField for podcast;
+ * CharacterListField + SceneListField for storybook). Calls
+ * POST /v1/assist/draft-podcast or /v1/assist/draft-storybook and writes
+ * the result straight into the named sibling fields via onChangeAny; the
+ * manual editors underneath stay fully visible and editable afterward, so
+ * a generated draft is always just a starting point, matching the same
+ * "still shown in an editable textarea afterward" rule ScriptAiField
+ * follows for make_ugc's script.
+ */
+function AiDraftPanelField({ field, allValues, onChangeAny }: {
+  field: Extract<Field, { kind: 'ai-draft-panel' }>;
+  allValues?: Record<string, unknown>;
+  onChangeAny?: (name: string, v: unknown) => void;
+}) {
+  const isPodcast = field.mode === 'podcast';
+  const inputStyle: React.CSSProperties = { backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 10px', fontSize: 13, width: '100%' };
+
+  const [prompt, setPrompt] = useState('');
+  const [sourceUrl, setSourceUrl] = useState('');
+  const [orientation, setOrientation] = useState<'positive' | 'negative' | 'neutral'>('neutral');
+  const [generating, setGenerating] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [notes, setNotes] = useState<string[] | null>(null);
+
+  const generate = async () => {
+    if (!prompt.trim() || generating || !onChangeAny) return;
+    setGenerating(true);
+    setErr(null);
+    setNotes(null);
+    try {
+      const endpoint = isPodcast ? '/api/v1/assist/draft-podcast' : '/api/v1/assist/draft-storybook';
+      const body = isPodcast
+        ? { topic: prompt.trim(), source_url: sourceUrl.trim() || undefined, orientation }
+        : { premise: prompt.trim(), source_url: sourceUrl.trim() || undefined };
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = (await resp.json()) as Record<string, unknown>;
+      if (!resp.ok) {
+        const msg = (data as { error?: { message?: string } })?.error?.message;
+        setErr(typeof msg === 'string' ? msg : `Could not generate (HTTP ${resp.status}) — try again.`);
+        return;
+      }
+      if (isPodcast) {
+        const turns = Array.isArray(data.turns) ? data.turns : [];
+        if (turns.length) onChangeAny('script', turns);
+        if (typeof data.room === 'string' && data.room.trim()) onChangeAny('room', data.room);
+      } else {
+        const characters = Array.isArray(data.characters) ? (data.characters as Array<{ name?: string; description?: string }>) : [];
+        const scenes = Array.isArray(data.scenes) ? data.scenes : [];
+        if (characters.length) {
+          onChangeAny(
+            'characters',
+            characters.map((c) => ({ name: c.name ?? '', description: c.description ?? '', ref: '', ref_base64: '' })),
+          );
+        }
+        if (scenes.length) onChangeAny('scenes', scenes);
+        const title = typeof data.title === 'string' ? data.title.trim() : '';
+        if (title && !String(allValues?.title ?? '').trim()) onChangeAny('title', title);
+      }
+      if (Array.isArray(data.warnings) && data.warnings.length) setNotes(data.warnings as string[]);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2 rounded-xl p-3" style={{ background: 'rgba(167,139,250,0.06)', border: '1px solid rgba(167,139,250,0.25)' }}>
+      <div className="flex items-center gap-1.5">
+        <Sparkles className="h-3.5 w-3.5" style={{ color: '#A78BFA' }} />
+        <span className="text-[12px] font-semibold" style={{ color: '#E9E9F0' }}>{field.label}</span>
+      </div>
+      <textarea
+        rows={2}
+        value={prompt}
+        onChange={(e) => setPrompt(e.target.value)}
+        placeholder={isPodcast ? 'What are they discussing? e.g. "whether remote work is actually more productive"' : 'What is the story about? e.g. "a shy fox who learns to make friends at a forest picnic"'}
+        style={inputStyle}
+      />
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <input
+          type="text"
+          value={sourceUrl}
+          onChange={(e) => setSourceUrl(e.target.value)}
+          placeholder="Website / blog / page URL (optional)"
+          style={{ ...inputStyle, flex: 1 }}
+        />
+        {isPodcast && (
+          <select value={orientation} onChange={(e) => setOrientation(e.target.value as typeof orientation)} style={{ ...inputStyle, width: 'auto', flexShrink: 0 }}>
+            <option value="neutral">Neutral</option>
+            <option value="positive">Positive</option>
+            <option value="negative">Negative</option>
+          </select>
+        )}
+        <button
+          type="button"
+          onClick={generate}
+          disabled={generating || !prompt.trim()}
+          className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium transition-opacity disabled:opacity-40"
+          style={{ backgroundColor: 'rgba(167,139,250,0.18)', border: '1px solid rgba(167,139,250,0.4)', color: '#A78BFA' }}
+        >
+          {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+          {generating ? 'Generating…' : isPodcast ? 'Generate conversation' : 'Generate story'}
+        </button>
+      </div>
+      {err && <span className="text-[11px]" style={{ color: '#F87171' }}>{err}</span>}
+      {notes?.map((n) => (
+        <span key={n} className="text-[11px]" style={{ color: 'rgba(255,255,255,0.45)' }}>{n}</span>
+      ))}
       {field.help && <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{field.help}</span>}
     </div>
   );

@@ -19,7 +19,8 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { prettyStepLabel } from '../skills/_step-labels';
+import { prettyStepLabel, prettyPrimitiveLabel } from '../skills/_step-labels';
+import { popRetryDraft } from '../skills/_retry';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, Send, Square, Sparkles, Wrench, Check, AlertCircle, ArrowDown, Plus, Trash2, X, RotateCcw, PanelRight, ListChecks, Users, Images, CornerDownLeft, Pencil, MessageSquarePlus, History, Pin, PinOff, Archive, Search, MoreHorizontal, Folder, FolderPlus, ChevronRight, ChevronDown, UploadCloud, Wand2, BookOpen } from 'lucide-react';
 import { invokeFn } from '@/lib/supabase/fn-proxy';
@@ -65,7 +66,7 @@ interface AgentSavedPrompt {
 }
 interface StepArtifact { url?: string; kind?: string; mime?: string }
 interface StepInfo { primitive_run_id: string; primitive: string; status: string; artifacts?: StepArtifact[]; error?: { message?: string } | null }
-interface ToolRun { skill: string; status: 'running' | 'succeeded' | 'failed'; mediaUrl?: string; note?: string; runId?: string; composed?: boolean; characters?: SavedCharacter[]; currentStep?: string; steps?: StepInfo[]; orphaned?: boolean }
+interface ToolRun { skill: string; status: 'running' | 'succeeded' | 'failed'; mediaUrl?: string; note?: string; runId?: string; composed?: boolean; characters?: SavedCharacter[]; currentStep?: string; steps?: StepInfo[]; orphaned?: boolean; stalled?: boolean; stalledForSeconds?: number }
 interface AskOption { label: string; description?: string; recommended?: boolean }
 interface PendingAsk { toolUseId: string; question: string; options: AskOption[]; allowOther: boolean }
 
@@ -86,11 +87,18 @@ const SKILL_LABEL: Record<string, string> = {
   make_podcast: 'Podcast', make_storybook: 'Storybook', list_my_characters: 'Your characters',
 };
 function stepLabels(steps: StepInfo[]): string[] {
-  const clipKinds = new Set(['simple_selfie', 'lip_sync']);
+  // storybook_character/storybook_take (make_storybook) are numbered the
+  // same way simple_selfie/lip_sync already were, for the same reason: a
+  // run can have several of the same primitive (one per character, one per
+  // scene take) and "Character portrait" x4 with no numbers would be
+  // useless. prettyPrimitiveLabel (_step-labels.ts, shared with the
+  // run-detail page) supplies the base label so this reads the same way in
+  // both places instead of keeping a second, divergent label map here.
+  const clipKinds = new Set(['simple_selfie', 'lip_sync', 'storybook_character', 'storybook_take']);
   const totalClips = steps.filter((s) => clipKinds.has(s.primitive)).length;
   let clipN = 0;
   return steps.map((s) => {
-    const base = STEP_LABEL[s.primitive] ?? s.primitive.replace(/_/g, ' ');
+    const base = STEP_LABEL[s.primitive] ?? prettyPrimitiveLabel(s.primitive);
     if (clipKinds.has(s.primitive) && totalClips > 1) { clipN += 1; return `${base} ${clipN}`; }
     return base;
   });
@@ -335,6 +343,14 @@ function AgentPageInner() {
   const [skillsLoadErr, setSkillsLoadErr] = useState<string | null>(null);
   const [skillPickerQuery, setSkillPickerQuery] = useState('');
   const [runSkillTarget, setRunSkillTarget] = useState<SkillCatalogEntry | null>(null);
+  // "Retry" from dashboard/jobs / dashboard/skills/runs/[id] lands here as
+  // ?resume_skill=<slug> with the original run's input stashed in
+  // sessionStorage by _retry.tsx just before the redirect -- see the two
+  // effects below. runSkillInitialValues feeds RunPanel's own
+  // `initialValues` prop (applied once, on mount) so the reopened form is
+  // pre-filled instead of blank.
+  const [runSkillInitialValues, setRunSkillInitialValues] = useState<Record<string, unknown> | undefined>(undefined);
+  const [pendingResumeSlug, setPendingResumeSlug] = useState<string | null>(null);
   const [pendingAsk, setPendingAsk] = useState<PendingAsk | null>(null);
   const [askHighlight, setAskHighlight] = useState(0);
   const askResolverRef = useRef<((answer: string) => void) | null>(null);
@@ -792,6 +808,8 @@ function AgentPageInner() {
             ...p[toolUseId], skill: p[toolUseId]?.skill ?? skillSlug,
             currentStep: composed ? (d.current_step ?? undefined) : p[toolUseId]?.currentStep,
             steps: composed && Array.isArray(d.steps) ? (d.steps as StepInfo[]) : p[toolUseId]?.steps,
+            stalled: composed ? Boolean(d.stalled) : p[toolUseId]?.stalled,
+            stalledForSeconds: composed ? (d.stalled_for_seconds ?? undefined) : p[toolUseId]?.stalledForSeconds,
             note: note ?? p[toolUseId]?.note,
           },
         }));
@@ -829,6 +847,8 @@ function AgentPageInner() {
             ...p[toolUseId], skill: p[toolUseId]?.skill ?? skillSlug,
             currentStep: composed ? (tick.current_step ?? undefined) : p[toolUseId]?.currentStep,
             steps: composed && Array.isArray(tick.steps) ? (tick.steps as StepInfo[]) : p[toolUseId]?.steps,
+            stalled: composed ? Boolean(tick.stalled) : p[toolUseId]?.stalled,
+            stalledForSeconds: composed ? (tick.stalled_for_seconds ?? undefined) : p[toolUseId]?.stalledForSeconds,
             note: elapsedRunningNote(tick.started_at) ?? p[toolUseId]?.note,
           },
         }));
@@ -861,6 +881,8 @@ function AgentPageInner() {
         ...p[toolUseId], status: 'running',
         currentStep: d.current_step ?? p[toolUseId]?.currentStep,
         steps: Array.isArray(d.steps) ? (d.steps as StepInfo[]) : p[toolUseId]?.steps,
+        stalled: Boolean(d.stalled),
+        stalledForSeconds: d.stalled_for_seconds ?? undefined,
         note: elapsedRunningNote(d.started_at) ?? p[toolUseId]?.note,
       },
     }));
@@ -871,6 +893,8 @@ function AgentPageInner() {
           ...p[toolUseId],
           currentStep: tick.current_step ?? p[toolUseId]?.currentStep,
           steps: Array.isArray(tick.steps) ? (tick.steps as StepInfo[]) : p[toolUseId]?.steps,
+          stalled: Boolean(tick.stalled),
+          stalledForSeconds: tick.stalled_for_seconds ?? undefined,
           note: elapsedRunningNote(tick.started_at) ?? p[toolUseId]?.note,
         },
       }));
@@ -1203,7 +1227,30 @@ function AgentPageInner() {
     abortRef.current = new AbortController();
     setBusy(true); setError(null);
     try {
-      const { text: resultText, runId, runKind } = await runSkill(tu, parent.cmid);
+      // A RunPanel/skill-picker-launched run's tool_use only ever carries
+      // {run_id, composed} (see launchSkillFromPicker below) -- the real
+      // characters/scenes/style notes/etc. live in skill_runs.input, never
+      // in the chat transcript itself. Re-posting {run_id, composed}
+      // straight to the dispatcher 400s (it expects the real fields), so
+      // retrying one of these blindly re-posting tu.input never worked.
+      // Detect that shape and fetch the real input first (the same
+      // endpoint dashboard/jobs's and the run-detail page's Retry buttons
+      // use) so an in-chat retry works the same way regardless of how the
+      // run was originally launched.
+      let effectiveTu = tu;
+      const inputObj = tu.input && typeof tu.input === 'object' ? (tu.input as Record<string, unknown>) : {};
+      const inputKeys = Object.keys(inputObj);
+      const looksLikeRunRefOnly = inputKeys.length > 0 && inputKeys.every((k) => k === 'run_id' || k === 'composed');
+      if (looksLikeRunRefOnly && typeof inputObj.run_id === 'string') {
+        try {
+          const r = await fetch(`/api/v1/skills/runs/${encodeURIComponent(inputObj.run_id)}/input`, { credentials: 'include' });
+          if (r.ok) {
+            const data = (await r.json()) as { skill?: string; input?: Record<string, unknown> };
+            if (data.input) effectiveTu = { ...tu, input: data.input };
+          }
+        } catch { /* fall through and let runSkill's own error handling report it */ }
+      }
+      const { text: resultText, runId, runKind } = await runSkill(effectiveTu, parent.cmid);
       const trMsg: Msg = { role: 'user', content: [{ type: 'tool_result', tool_use_id: tu.id, content: resultText }], cmid: genId(), skillRunId: runId ?? null, runKind: runKind ?? null };
       setMessages((prev) => [...prev, trMsg]);
       persist([trMsg]);
@@ -1506,6 +1553,40 @@ function AgentPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
+  // "Retry" redirect lands here as /dashboard/agent?resume_skill=<slug>.
+  // Pop the stashed draft, strip the param immediately (so a refresh
+  // doesn't reapply it), and remember which skill to open once the
+  // catalog is loaded -- loadSkillsCatalog is async and may not have
+  // resolved yet on first render, see the follow-up effect below.
+  useEffect(() => {
+    const slug = searchParams.get('resume_skill');
+    if (!slug) return;
+    const draft = popRetryDraft();
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('resume_skill');
+    const qs = params.toString();
+    router.replace(qs ? `/dashboard/agent?${qs}` : '/dashboard/agent', { scroll: false });
+    if (draft && draft.skill === slug) {
+      setRunSkillInitialValues(draft.input);
+      setPendingResumeSlug(slug);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // Once the skill catalog is available (already loaded, or freshly
+  // fetched below), open the RunPanel modal for the pending resume slug.
+  useEffect(() => {
+    if (!pendingResumeSlug) return;
+    if (skillsCatalog === null) {
+      void loadSkillsCatalog();
+      return;
+    }
+    const found = skillsCatalog.find((s) => s.slug === pendingResumeSlug);
+    if (found) setRunSkillTarget(found);
+    setPendingResumeSlug(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingResumeSlug, skillsCatalog]);
+
   // "+" menu -> "Run a skill". Loads the same catalog /dashboard/skills lists.
   const loadSkillsCatalog = useCallback(async () => {
     setSkillsLoadErr(null);
@@ -1535,6 +1616,7 @@ function AgentPageInner() {
    *  brain to run it, so there's no driveLoop continuation afterward. */
   async function launchSkillFromPicker(target: SkillCatalogEntry, result: SkillLaunchResult) {
     setRunSkillTarget(null);
+    setRunSkillInitialValues(undefined);
     const cid = await ensureChat(`Generated ${skillLabel(target.slug)}`);
     if (!cid) { setError('Could not start a chat for this run.'); return; }
     setRailOpen(true);
@@ -2161,21 +2243,31 @@ function AgentPageInner() {
   // uses, embedded in a modal. onLaunched wires the finished submission into
   // THIS chat (see launchSkillFromPicker above) instead of the per-skill page's
   // own polling card.
+  function closeSkillRunModal() {
+    setRunSkillTarget(null);
+    setRunSkillInitialValues(undefined);
+  }
   const skillRunModal = runSkillTarget ? (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={() => setRunSkillTarget(null)}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={closeSkillRunModal}>
       <div onClick={(e) => e.stopPropagation()} className="flex max-h-[85vh] w-full max-w-lg flex-col gap-3 overflow-y-auto rounded-2xl p-5" style={{ background: '#14151F', border: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Wrench className="h-4 w-4" style={{ color: '#A78BFA' }} />
             <span className="text-[15px] font-medium" style={{ color: '#E9E9F0' }}>{runSkillTarget.name}</span>
           </div>
-          <button type="button" onClick={() => setRunSkillTarget(null)} aria-label="Close" className="opacity-60 hover:opacity-100"><X className="h-4 w-4" style={{ color: '#E9E9F0' }} /></button>
+          <button type="button" onClick={closeSkillRunModal} aria-label="Close" className="opacity-60 hover:opacity-100"><X className="h-4 w-4" style={{ color: '#E9E9F0' }} /></button>
         </div>
         <p className="text-[12.5px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>{runSkillTarget.description}</p>
+        {runSkillInitialValues && (
+          <p className="-mt-1 rounded-lg px-3 py-2 text-[12px]" style={{ background: 'rgba(167,139,250,0.1)', color: '#C4B5FD' }}>
+            Filled in from your previous attempt — review the details below and hit Generate when ready.
+          </p>
+        )}
         <RunPanel
           skill={runSkillTarget}
           form={SKILL_FORMS[runSkillTarget.slug]}
           activeRun={null}
+          initialValues={runSkillInitialValues}
           onLaunched={(r) => void launchSkillFromPicker(runSkillTarget, r)}
         />
       </div>
@@ -2329,21 +2421,30 @@ function AgentPageInner() {
                       // "still running for 6 min" that never says what's happening.
                       const elapsedSuffix = run?.note?.match(/running for (\d+ min)/)?.[1];
                       const milestone = run?.composed && run?.currentStep && run.currentStep !== 'done' ? prettyStepLabel(run.currentStep) : undefined;
+                      // A stalled-but-not-yet-failed composed run (see
+                      // lib/skill-run-status.ts's computeRunHealth on the
+                      // backend) gets its own wording + an early Retry/Cancel
+                      // offer right here in the chat, instead of the user only
+                      // finding out something's wrong once it eventually times
+                      // out on its own.
+                      const isStalled = run?.status === 'running' && Boolean(run?.stalled);
                       const statusText = run?.status === 'succeeded' ? 'done'
                         : run?.status === 'failed' ? `failed${run.note ? ` — ${run.note}` : ''}`
                         : b.name === 'list_my_characters' ? 'loading…'
+                        : isStalled ? `${milestone ?? 'still working'} · no progress in a while`
                         : milestone ? `${milestone}${elapsedSuffix ? ` · ${elapsedSuffix}` : '…'}`
                         : run?.note ? run.note
                         : `generating… · ${estimateSkillEta(b.name, (b.input as Record<string, unknown>) ?? {})}`;
                       return (
                         <div key={j} className="inline-flex max-w-full flex-col gap-2">
-                          <div className="inline-flex items-center gap-2 self-start rounded-xl px-3 py-2 text-[13px]" style={{ background: '#14151F', border: '1px solid rgba(255,255,255,0.08)' }}>
+                          <div className="inline-flex items-center gap-2 self-start rounded-xl px-3 py-2 text-[13px]" style={{ background: '#14151F', border: `1px solid ${isStalled ? 'rgba(251,191,36,0.35)' : 'rgba(255,255,255,0.08)'}` }}>
                             {run?.status === 'succeeded' ? <Check className="h-4 w-4 shrink-0" style={{ color: '#34D399' }} />
                               : run?.status === 'failed' ? <AlertCircle className="h-4 w-4 shrink-0" style={{ color: '#F87171' }} />
+                              : isStalled ? <AlertCircle className="h-4 w-4 shrink-0" style={{ color: '#FCD34D' }} />
                               : <Loader2 className="h-4 w-4 shrink-0 animate-spin" style={{ color: '#A78BFA' }} />}
                             <Wrench className="h-3.5 w-3.5 shrink-0" style={{ color: 'rgba(255,255,255,0.35)' }} />
                             <span style={{ color: '#E9E9F0' }}>{label}</span>
-                            <span className="truncate" style={{ color: 'rgba(255,255,255,0.4)' }}>· {statusText}</span>
+                            <span className="truncate" style={{ color: isStalled ? '#FCD34D' : 'rgba(255,255,255,0.4)' }}>· {statusText}</span>
                             {run?.status === 'failed' && b.name !== 'list_my_characters' && (
                               /(credit|insufficient)/i.test(run.note ?? '')
                                 // Out of credits: retrying just fails again — offer the fix.
@@ -2353,6 +2454,18 @@ function AgentPageInner() {
                                 : <button type="button" onClick={() => void retryRun(b)} disabled={busy} title="Retry" className="ml-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] transition-opacity disabled:opacity-40" style={{ border: '1px solid rgba(255,255,255,0.14)', color: '#E9E9F0' }}>
                                     <RotateCcw className="h-3 w-3" /> Retry
                                   </button>
+                            )}
+                            {isStalled && run?.runId && (
+                              <button
+                                type="button"
+                                onClick={() => { void (async () => { try { await fetch(`/api/v1/skills/runs/${run.runId}/cancel`, { method: 'POST', credentials: 'include' }); } catch { /* best-effort */ } void retryRun(b); })(); }}
+                                disabled={busy}
+                                title="Cancel this run and retry with the same details"
+                                className="ml-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] transition-opacity disabled:opacity-40"
+                                style={{ border: '1px solid rgba(251,191,36,0.4)', color: '#FCD34D' }}
+                              >
+                                <RotateCcw className="h-3 w-3" /> Retry
+                              </button>
                             )}
                           </div>
                           {/* The finished video/image stays inline (the deliverable). */}

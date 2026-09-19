@@ -99,3 +99,63 @@ export function goToMarketingSite(): void {
   clearSessionHint();
   window.location.href = MARKETING_URL;
 }
+
+/**
+ * This deployment's own app-host origin, resolved the same
+ * runtime-appPublicUrl-with-current-origin-fallback way getOAuthRedirectTo
+ * does (see its comment above for why this can't be a build-time
+ * NEXT_PUBLIC_* read). On a plain single-host self-install, where
+ * appPublicUrl is unset, this is just the current origin -- exactly
+ * correct, since there's nowhere else to send anyone.
+ */
+function getAppOrigin(): string {
+  return getVar('appPublicUrl', typeof window !== 'undefined' ? window.location.origin : '');
+}
+
+/**
+ * Where every marketing-page "Get Started" / "Start generating" CTA
+ * should send a signed-out visitor to sign in.
+ *
+ * These buttons render on the marketing host (vantly-ugc.com). A session
+ * created by a login MODAL opened from there is a cookie scoped to THAT
+ * host -- app.vantly-ugc.com's middleware, which is what actually guards
+ * /dashboard, can never see it. A visitor who "logged in" via a homepage
+ * modal would look signed in right there and still hit /login all over
+ * again the moment they reached the app. That's why these buttons are
+ * plain links straight to the app host's real /login page rather than
+ * openLogin() calls -- sign-in always has to happen on the origin that
+ * will actually need to read the resulting cookie.
+ */
+export function getAppLoginUrl(): string {
+  return `${getAppOrigin()}/login`;
+}
+
+/** Where the header's "Dashboard" link (shown to an already-signed-in
+ *  visitor, via hasSessionHint() below) should go -- same cross-host
+ *  reasoning as getAppLoginUrl(). */
+export function getAppDashboardUrl(): string {
+  return `${getAppOrigin()}/dashboard`;
+}
+
+/** Where the header's "Logout" link should go: a small page on the app
+ *  host (where the real session cookie lives) that signs out and bounces
+ *  back here. Plain link rather than a client-side supabase.auth.signOut()
+ *  call from the marketing origin, which would have no session to sign out
+ *  of in the first place. */
+export function getAppLogoutUrl(): string {
+  return `${getAppOrigin()}/logout`;
+}
+
+/**
+ * Whether THIS browser looks signed in, per the cross-domain hint cookie
+ * middleware.ts writes (`am_session_hint`, Domain=SESSION_HINT_DOMAIN, no
+ * credential in it -- see that file's own comment). This is the only way
+ * the marketing host can know: the real Supabase session cookie is scoped
+ * to the app host and never reaches here. False (and always false) when
+ * SESSION_HINT_DOMAIN isn't configured, same as a single-host install
+ * where this whole cross-host question doesn't arise.
+ */
+export function hasSessionHint(): boolean {
+  if (typeof document === 'undefined') return false;
+  return document.cookie.split('; ').some((c) => c === `${SESSION_HINT}=1`);
+}

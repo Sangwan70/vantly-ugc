@@ -3,7 +3,7 @@
 'use client';
 
 import Link from 'next/link';
-import type { ComponentType, MouseEvent, ReactNode } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import {
   BookOpenText,
@@ -19,9 +19,8 @@ import {
   Webhook,
   X,
 } from 'lucide-react';
-import { useLogin } from '@/components/login-context';
 import { Home2CTAButton } from '@/components/home2-cta-button';
-import { createClient } from '@/lib/supabase/client';
+import { getAppDashboardUrl, getAppLoginUrl, getAppLogoutUrl, hasSessionHint } from '@/lib/marketing';
 
 const primaryLinks = [
   { href: '/use-cases', label: 'Use Cases' },
@@ -220,39 +219,24 @@ function NavMenu({
 }
 
 export function LandingHeader() {
-  const { openLogin } = useLogin();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  // Whether THIS browser already holds a valid session, checked client-side
-  // on mount. Middleware already redirects a signed-in visitor away from `/`
-  // server-side (see app/page.tsx) -- this is a client-side backstop for the
-  // cases that slips past that: a page served from the browser's own
-  // back/forward cache after closing and reopening (no fresh request, so
-  // middleware never re-runs), or any other stale render. Starts `false` so
-  // a first paint never flashes "Dashboard" at a genuinely signed-out
-  // visitor; flips to `true` only once a real session is confirmed.
+  // Whether THIS browser looks signed in. This page (vantly-ugc.com) never
+  // holds the real Supabase session cookie -- sign-in now always happens
+  // on the app host (app.vantly-ugc.com), see getAppLoginUrl's comment --
+  // so the only thing to check here is the cross-domain hint cookie
+  // middleware.ts writes once SESSION_HINT_DOMAIN is configured. Starts
+  // `false` so a first paint never flashes "Dashboard" at a genuinely
+  // signed-out visitor (and matches what the server-rendered HTML had,
+  // since `document` doesn't exist there); flips to `true` in an effect,
+  // right after hydration, if the hint says so.
   const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {
-    let active = true;
-    const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => {
-      if (active) setSignedIn(Boolean(data.user));
-    }).catch(() => {
-      // Network hiccup or not configured (shouldn't happen on this page) --
-      // fail closed, same as a genuinely signed-out visitor.
-    });
-    return () => {
-      active = false;
-    };
+    setSignedIn(hasSessionHint());
   }, []);
 
   function closeMobileMenu() {
     setMobileMenuOpen(false);
-  }
-
-  function handleGenerateClick(event: MouseEvent<HTMLDivElement>) {
-    event.preventDefault();
-    openLogin();
   }
 
   return (
@@ -277,16 +261,22 @@ export function LandingHeader() {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {signedIn ? (
-            <Home2CTAButton href="/dashboard" variant="dark" size="md" showArrow={false}>
-              Dashboard
-            </Home2CTAButton>
-          ) : (
-            <div onClick={handleGenerateClick}>
-              <Home2CTAButton href="#" variant="dark" size="md" showArrow={false}>
-                <span className="sm:hidden">Generate</span>
-                <span className="hidden sm:inline">Start generating</span>
+            <>
+              <a
+                href={getAppLogoutUrl()}
+                className="hidden text-sm text-white/65 transition-colors hover:text-white sm:inline"
+              >
+                Logout
+              </a>
+              <Home2CTAButton href={getAppDashboardUrl()} variant="dark" size="md" showArrow={false}>
+                Dashboard
               </Home2CTAButton>
-            </div>
+            </>
+          ) : (
+            <Home2CTAButton href={getAppLoginUrl()} variant="dark" size="md" showArrow={false}>
+              <span className="sm:hidden">Generate</span>
+              <span className="hidden sm:inline">Start generating</span>
+            </Home2CTAButton>
           )}
           <button
             type="button"

@@ -24,6 +24,7 @@ export default function AuthLayout({
   // render children directly.
   const ownLayout =
     pathname === '/login' ||
+    pathname === '/logout' ||
     pathname === '/onboarding' ||
     pathname?.startsWith('/onboarding/') === true;
 

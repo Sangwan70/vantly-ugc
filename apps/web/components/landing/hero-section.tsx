@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Home2CTAButton } from '@/components/home2-cta-button';
-import { useLogin } from '@/components/login-context';
+import { getAppLoginUrl } from '@/lib/marketing';
 import { HeroClipGrid } from '@/components/landing/hero-clip-grid';
 
 // Same tool line-up the pipeline visualization below cycles through -
@@ -52,12 +52,11 @@ export function HeroSection({
   title?: string | null;
   subtitle?: string | null;
 } = {}) {
-  const { openLogin } = useLogin();
-
-  const handleClick = (event: MouseEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    openLogin();
-  };
+  // Links straight to the app host's real /login page rather than opening
+  // a login modal here -- see getAppLoginUrl's comment: a session created by
+  // a modal on this host would be a cookie the app host's middleware can
+  // never see.
+  const loginUrl = getAppLoginUrl();
 
   return (
     <section className="relative z-10 mx-auto w-full max-w-4xl px-6 pb-6 pt-20 text-center sm:pt-28">
@@ -82,11 +81,9 @@ export function HeroSection({
         {subtitle?.trim() || 'Trigger a full UGC video pipeline, from prompt to preview to export-ready assets.'}
       </p>
       <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-        <div onClick={handleClick}>
-          <Home2CTAButton href="#" variant="dark" size="lg">
-            Start generating
-          </Home2CTAButton>
-        </div>
+        <Home2CTAButton href={loginUrl} variant="dark" size="lg">
+          Start generating
+        </Home2CTAButton>
       </div>
 
       <HeroClipGrid />

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCurrencyDisplay, formatPlanPrice } from '@/lib/billing/currency-display';
+import { getAppLoginUrl } from '@/lib/marketing';
 
 export const plans = [
   {
@@ -21,7 +22,6 @@ export const plans = [
     ],
     popular: false,
     cta: 'Get Started',
-    ctaHref: '/login',
   },
   {
     name: 'Pro',
@@ -36,7 +36,6 @@ export const plans = [
     ],
     popular: true,
     cta: 'Get Started',
-    ctaHref: '/login',
   },
   {
     name: 'Pro Plus',
@@ -53,12 +52,16 @@ export const plans = [
     ],
     popular: false,
     cta: 'Get Started',
-    ctaHref: '/login',
   },
 ];
 
 export function PricingCards() {
   const currency = useCurrencyDisplay();
+  // Every plan links to the app host's real /login page rather than a
+  // relative /login (which would resolve on THIS host) -- see
+  // getAppLoginUrl's comment for why a session needs to be created on the
+  // app host to be visible to its own middleware.
+  const loginUrl = getAppLoginUrl();
   return (
     <div>
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -107,7 +110,7 @@ export function PricingCards() {
                 </li>
               ))}
             </ul>
-            <Link href={plan.ctaHref} className="mt-8">
+            <Link href={loginUrl} className="mt-8">
               <Button
                 size="lg"
                 variant={plan.popular ? 'secondary' : 'outline'}

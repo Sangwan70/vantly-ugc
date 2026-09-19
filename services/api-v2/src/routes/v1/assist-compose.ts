@@ -31,8 +31,6 @@ import { z } from 'zod';
 import {
   MODEL,
   FALLBACK_MODEL,
-  DRAFT_TIMEOUT_MS,
-  FALLBACK_TIMEOUT_MS,
   DraftAttemptError,
   attemptDraft,
 } from './assist.js';
@@ -41,6 +39,26 @@ import { webSearch, WebSearchNotConfiguredError, type WebSearchResult } from '..
 import { fetchUrlText } from '../../lib/url-text-fetcher.js';
 import { PODCAST_MAX_TURNS } from '../../skills/registry.js';
 import { STORYBOOK_MAX_CHARACTERS, STORYBOOK_MAX_SCENES } from '@vantly-ugc/schema';
+
+// draft-script's DRAFT_TIMEOUT_MS/FALLBACK_TIMEOUT_MS (45s/20s) were tuned
+// for a ~35-word script. These two routes write far more (up to 16 dialogue
+// turns, or a 1-4 character cast + up to 12 scenes) -- a real generation
+// legitimately takes longer, and the smaller budget was hitting "took too
+// long to respond, even after automatically retrying with a faster
+// fallback model" on ordinary requests, not just slow ones. Give both
+// attempts more room before giving up.
+const COMPOSE_DRAFT_TIMEOUT_MS = 75_000;
+const COMPOSE_FALLBACK_TIMEOUT_MS = 40_000;
+
+// Output-length ceilings passed to attemptDraft's maxTokens (default 700,
+// sized for draft-script). Podcast tops out at PODCAST_MAX_TURNS (24) turns
+// of dialogue; storybook at a 4-character cast + STORYBOOK_MAX_SCENES (12)
+// scenes, each with a line AND a visual description -- both need
+// meaningfully more headroom, plus the same inline-reasoning buffer
+// attemptDraft's own comment describes for models that think before the
+// tag.
+const PODCAST_DRAFT_MAX_TOKENS = 1600;
+const STORYBOOK_DRAFT_MAX_TOKENS = 2400;
 
 // ── Shared: gather optional context, run primary+fallback model ──────────
 
@@ -96,9 +114,9 @@ interface DraftRawOutcome {
  *  draft-podcast/draft-storybook can each supply their own instead of
  *  draft-script's SYSTEM_PROMPT. Returns raw model text (not yet tag-
  *  parsed) since the two callers parse completely different tag shapes. */
-async function draftRawText(userMessage: string, systemPrompt: string, routeNameForAlert: string): Promise<DraftRawOutcome> {
+async function draftRawText(userMessage: string, systemPrompt: string, routeNameForAlert: string, maxTokens: number): Promise<DraftRawOutcome> {
   try {
-    const text = await attemptDraft(MODEL, DRAFT_TIMEOUT_MS, userMessage, systemPrompt);
+    const text = await attemptDraft(MODEL, COMPOSE_DRAFT_TIMEOUT_MS, userMessage, systemPrompt, maxTokens);
     return { status: 200, text };
   } catch (primaryErr) {
     const primaryDetail = primaryErr instanceof DraftAttemptError ? primaryErr.body.error.code : 'unknown';
@@ -107,7 +125,7 @@ async function draftRawText(userMessage: string, systemPrompt: string, routeName
       `[${routeNameForAlert}] primary model (${MODEL}) failed (${primaryDetail}: ${(primaryErr as Error).message}) -- retrying once with fallback model ${FALLBACK_MODEL}`,
     );
     try {
-      const text = await attemptDraft(FALLBACK_MODEL, FALLBACK_TIMEOUT_MS, userMessage, systemPrompt);
+      const text = await attemptDraft(FALLBACK_MODEL, COMPOSE_FALLBACK_TIMEOUT_MS, userMessage, systemPrompt, maxTokens);
       return { status: 200, text };
     } catch (fallbackErr) {
       captureAiRouteFailure(routeNameForAlert, fallbackErr, { primaryModel: MODEL, fallbackModel: FALLBACK_MODEL });
@@ -217,7 +235,7 @@ export async function draftPodcastRoute(req: Request, res: ExpressResponse): Pro
   if (context) userMessageParts.push(context);
   userMessageParts.push('Write the conversation now.');
 
-  const outcome = await draftRawText(userMessageParts.join('\n\n'), PODCAST_SYSTEM_PROMPT, 'assist.draft-podcast');
+  const outcome = await draftRawText(userMessageParts.join('\n\n'), PODCAST_SYSTEM_PROMPT, 'assist.draft-podcast', PODCAST_DRAFT_MAX_TOKENS);
   if (outcome.status !== 200 || !outcome.text) {
     res.status(outcome.status).json(outcome.body ?? { error: { code: 'UPSTREAM_ERROR', message: 'draft failed' } });
     return;
@@ -334,7 +352,7 @@ export async function draftStorybookRoute(req: Request, res: ExpressResponse): P
   if (context) userMessageParts.push(context);
   userMessageParts.push('Write the cast and scenes now.');
 
-  const outcome = await draftRawText(userMessageParts.join('\n\n'), STORYBOOK_SYSTEM_PROMPT, 'assist.draft-storybook');
+  const outcome = await draftRawText(userMessageParts.join('\n\n'), STORYBOOK_SYSTEM_PROMPT, 'assist.draft-storybook', STORYBOOK_DRAFT_MAX_TOKENS);
   if (outcome.status !== 200 || !outcome.text) {
     res.status(outcome.status).json(outcome.body ?? { error: { code: 'UPSTREAM_ERROR', message: 'draft failed' } });
     return;

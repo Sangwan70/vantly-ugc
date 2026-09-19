@@ -93,7 +93,20 @@ export class DraftAttemptError extends Error {
  *  once, after whichever attempt succeeds). Throws DraftAttemptError on any
  *  failure so the caller can retry with a different model without re-deriving
  *  the response shape. */
-export async function attemptDraft(model: string, timeoutMs: number, userMessage: string, systemPrompt: string = SYSTEM_PROMPT): Promise<string> {
+export async function attemptDraft(
+  model: string,
+  timeoutMs: number,
+  userMessage: string,
+  systemPrompt: string = SYSTEM_PROMPT,
+  // Overridable per caller: draft-script's own output is at most ~35 words
+  // (700 is already generous headroom for that), but draft-podcast/
+  // draft-storybook (assist-compose.ts) write far more -- up to 16 dialogue
+  // turns, or up to 4 characters + 12 scenes -- and were truncating mid-tag
+  // at the same 700-token cap, which both wasted the request (unparseable/
+  // empty result) and made the model spend the full timeout budget without
+  // ever finishing. Each caller passes its own realistic ceiling instead.
+  maxTokens: number = 700,
+): Promise<string> {
   let upstream: globalThis.Response;
   try {
     upstream = await callAnthropicMessages(
@@ -106,7 +119,7 @@ export async function attemptDraft(model: string, timeoutMs: number, userMessage
         // ever emitting the tag -- see the <script> extraction in
         // draftScriptRoute, which is what actually keeps stray reasoning
         // out of the result.
-        max_tokens: 700,
+        max_tokens: maxTokens,
         system: systemPrompt,
         messages: [{ role: 'user', content: userMessage }],
       },

@@ -1577,6 +1577,40 @@ function AiDraftPanelField({ field, allValues, onChangeAny }: {
   const [err, setErr] = useState<string | null>(null);
   const [notes, setNotes] = useState<string[] | null>(null);
 
+  // Progress feedback while generating -- there's no streaming from the
+  // backend (attemptDraft is one request/response), so this is an eased
+  // ESTIMATE that keeps climbing toward 92% the longer it runs rather than
+  // a real percent-complete, snapping to 100% only once the response
+  // actually lands. Still gives real reassurance during the 10-60s a
+  // podcast/storybook draft can take (see COMPOSE_DRAFT_TIMEOUT_MS /
+  // STORYBOOK_DRAFT_MAX_TOKENS in assist-compose.ts) instead of a frozen
+  // button with no feedback at all.
+  const [progress, setProgress] = useState(0);
+  const [elapsedSec, setElapsedSec] = useState(0);
+
+  useEffect(() => {
+    if (!generating) return;
+    const start = Date.now();
+    setProgress(4);
+    setElapsedSec(0);
+    const id = window.setInterval(() => {
+      const elapsed = Date.now() - start;
+      setElapsedSec(Math.floor(elapsed / 1000));
+      setProgress(92 * (1 - Math.exp(-elapsed / 20000)));
+    }, 250);
+    return () => window.clearInterval(id);
+  }, [generating]);
+
+  const stepLabel = (() => {
+    const steps = isPodcast
+      ? ['Reading your topic…', 'Thinking through the conversation…', 'Writing the dialogue…', 'Almost there — polishing…']
+      : ['Reading your premise…', 'Designing the cast…', 'Writing the scenes…', 'Almost there — polishing…'];
+    if (elapsedSec < 5) return steps[0];
+    if (elapsedSec < 15) return steps[1];
+    if (elapsedSec < 35) return steps[2];
+    return steps[3];
+  })();
+
   const generate = async () => {
     if (!prompt.trim() || generating || !onChangeAny) return;
     setGenerating(true);
@@ -1617,6 +1651,9 @@ function AiDraftPanelField({ field, allValues, onChangeAny }: {
         if (title && !String(allValues?.title ?? '').trim()) onChangeAny('title', title);
       }
       if (Array.isArray(data.warnings) && data.warnings.length) setNotes(data.warnings as string[]);
+      // Let the bar visibly complete instead of vanishing mid-fill.
+      setProgress(100);
+      await new Promise((resolve) => setTimeout(resolve, 350));
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -1668,6 +1705,19 @@ function AiDraftPanelField({ field, allValues, onChangeAny }: {
         <span key={n} className="text-[11px]" style={{ color: 'rgba(255,255,255,0.45)' }}>{n}</span>
       ))}
       {field.help && <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{field.help}</span>}
+      {generating && (
+        <div className="flex flex-col gap-1.5 pt-0.5">
+          <div className="h-1.5 w-full overflow-hidden rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+            <div
+              className="h-full rounded-full"
+              style={{ width: `${progress}%`, background: 'linear-gradient(90deg, #7C3AED, #A78BFA)', transition: 'width 400ms ease-out' }}
+            />
+          </div>
+          <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.5)' }}>
+            {stepLabel}{elapsedSec >= 3 ? ` (${elapsedSec}s)` : ''}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

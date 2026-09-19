@@ -242,59 +242,67 @@ export function makeStorybookTakeActivity(cfg: WorkerConfig) {
       );
       Context.current().heartbeat({ stage: 'r2_uploaded' });
 
-      if (providerTaskId) {
-        await db.from('provider_tasks').insert({
-          primitive_run_id: activityInput.primitive_run_id,
-          provider: 'seedance-2-0',
-          external_task_id: providerTaskId,
-          status: 'succeeded',
-          raw_response: { provider_video_url: providerVideoUrl },
-        });
-      }
-
-      const { data: artifact, error: artErr } = await db
-        .from('primitive_artifacts')
-        .insert({
-          primitive_run_id: activityInput.primitive_run_id,
-          kind: 'storybook_take_video',
-          url: publicUrl,
-          bytes: videoBytes.byteLength,
-          mime: 'video/mp4',
-          metadata: {
+      // Same rationale as storybook-character.ts's finalizing_writes wrapper:
+      // heartbeat the provider_tasks/artifact-insert/finalize-update tail too,
+      // so a Supabase stall here doesn't silently exceed heartbeatTimeout and
+      // read to Temporal as a dead activity while these writes are still
+      // actually in flight (and will land late, looking like a "lost" write).
+      const artifactId = await withHeartbeat('finalizing_writes', async () => {
+        if (providerTaskId) {
+          await db.from('provider_tasks').insert({
+            primitive_run_id: activityInput.primitive_run_id,
             provider: 'seedance-2-0',
-            // Standard tier by default -- 'mini' is a draft/preview model (see the
-            // model catalog) that visibly loses identity fidelity vs the portrait/
-            // character-sheet references. Override via EVOLINK_SEEDANCE_MODEL.
-            model: process.env.EVOLINK_SEEDANCE_MODEL || 'seedance-2.0-reference-to-video',
-            simulated: cfg.openai.simulate,
-            aspect_ratio: activityInput.aspect_ratio,
-            duration_seconds: activityInput.duration,
-            art_style: activityInput.art_style,
-            source_character_ref_url: activityInput.character_ref_url,
-          },
-        })
-        .select('id')
-        .single();
-      if (artErr || !artifact) {
-        throw new Error(`primitive_artifacts insert failed: ${artErr?.message ?? 'no row'}`);
-      }
-      const { error: finErr } = await db
-        .from('primitive_runs')
-        .update({
-          status: 'succeeded',
-          actual_credits_usd: estimatedUsd,
-          finished_at: new Date().toISOString(),
-          provider_task_id: providerTaskId,
-        })
-        .eq('id', activityInput.primitive_run_id);
-      if (finErr) throw new Error(`primitive_runs finalize failed: ${finErr.message}`);
+            external_task_id: providerTaskId,
+            status: 'succeeded',
+            raw_response: { provider_video_url: providerVideoUrl },
+          });
+        }
+
+        const { data: artifact, error: artErr } = await db
+          .from('primitive_artifacts')
+          .insert({
+            primitive_run_id: activityInput.primitive_run_id,
+            kind: 'storybook_take_video',
+            url: publicUrl,
+            bytes: videoBytes.byteLength,
+            mime: 'video/mp4',
+            metadata: {
+              provider: 'seedance-2-0',
+              // Standard tier by default -- 'mini' is a draft/preview model (see the
+              // model catalog) that visibly loses identity fidelity vs the portrait/
+              // character-sheet references. Override via EVOLINK_SEEDANCE_MODEL.
+              model: process.env.EVOLINK_SEEDANCE_MODEL || 'seedance-2.0-reference-to-video',
+              simulated: cfg.openai.simulate,
+              aspect_ratio: activityInput.aspect_ratio,
+              duration_seconds: activityInput.duration,
+              art_style: activityInput.art_style,
+              source_character_ref_url: activityInput.character_ref_url,
+            },
+          })
+          .select('id')
+          .single();
+        if (artErr || !artifact) {
+          throw new Error(`primitive_artifacts insert failed: ${artErr?.message ?? 'no row'}`);
+        }
+        const { error: finErr } = await db
+          .from('primitive_runs')
+          .update({
+            status: 'succeeded',
+            actual_credits_usd: estimatedUsd,
+            finished_at: new Date().toISOString(),
+            provider_task_id: providerTaskId,
+          })
+          .eq('id', activityInput.primitive_run_id);
+        if (finErr) throw new Error(`primitive_runs finalize failed: ${finErr.message}`);
+        return artifact.id as string;
+      });
 
       return {
         primitive_run_id: activityInput.primitive_run_id,
         video_url: publicUrl,
         provider: 'seedance-2-0',
         credits_actual_usd: estimatedUsd,
-        artifact_id: artifact.id as string,
+        artifact_id: artifactId,
         duration_seconds: activityInput.duration,
       };
     } catch (err) {

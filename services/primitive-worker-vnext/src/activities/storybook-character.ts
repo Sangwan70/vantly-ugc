@@ -166,39 +166,54 @@ export function makeStorybookCharacterActivity(cfg: WorkerConfig) {
     );
     Context.current().heartbeat({ stage: 'r2_uploaded' });
 
-    const { data: artifact, error: artErr } = await db
-      .from('primitive_artifacts')
-      .insert({
-        primitive_run_id: activityInput.primitive_run_id,
-        kind: 'storybook_character',
-        url: publicUrl,
-        bytes: bytes.byteLength,
-        mime: 'image/png',
-        metadata: {
-          provider: 'gpt-image-2',
-          model: cfg.openai.imageModel,
-          simulated: cfg.openai.simulate,
-          name: activityInput.name,
-          art_style: activityInput.art_style,
-          ref_url: activityInput.ref_url ?? null,
-        },
-      })
-      .select('id')
-      .single();
-    if (artErr || !artifact) {
-      throw new Error(`primitive_artifacts insert failed: ${artErr?.message ?? 'no row'}`);
-    }
-    const { error: finErr } = await db
-      .from('primitive_runs')
-      .update({ status: 'succeeded', actual_credits_usd: 0, finished_at: new Date().toISOString() })
-      .eq('id', activityInput.primitive_run_id);
-    if (finErr) throw new Error(`primitive_runs finalize failed: ${finErr.message}`);
+    // Heartbeat across the artifact-insert -> finalize-status-update tail too,
+    // not just the provider call above: these are normally sub-second, but a
+    // Supabase stall here (connection-pool exhaustion, a slow query) with zero
+    // heartbeats for heartbeatTimeout (5min for this activity, see
+    // workflows/make-storybook.ts's videoRetry) reads to Temporal exactly like
+    // a dead activity. Temporal then retries on a fresh attempt while THIS
+    // attempt's writes are still in flight (Node doesn't cancel them), and
+    // when they land afterwards the run looks like the DB "lost" a write that
+    // actually succeeded, just late and unheartbeated -- the write path never
+    // had a bug, it just went quiet at the one moment quiet gets misread as
+    // dead. See withHeartbeat's own doc comment for the identical failure
+    // mode this codebase already fixed once for the provider-call phase.
+    const artifactId = await withHeartbeat('finalizing_writes', async () => {
+      const { data: artifact, error: artErr } = await db
+        .from('primitive_artifacts')
+        .insert({
+          primitive_run_id: activityInput.primitive_run_id,
+          kind: 'storybook_character',
+          url: publicUrl,
+          bytes: bytes.byteLength,
+          mime: 'image/png',
+          metadata: {
+            provider: 'gpt-image-2',
+            model: cfg.openai.imageModel,
+            simulated: cfg.openai.simulate,
+            name: activityInput.name,
+            art_style: activityInput.art_style,
+            ref_url: activityInput.ref_url ?? null,
+          },
+        })
+        .select('id')
+        .single();
+      if (artErr || !artifact) {
+        throw new Error(`primitive_artifacts insert failed: ${artErr?.message ?? 'no row'}`);
+      }
+      const { error: finErr } = await db
+        .from('primitive_runs')
+        .update({ status: 'succeeded', actual_credits_usd: 0, finished_at: new Date().toISOString() })
+        .eq('id', activityInput.primitive_run_id);
+      if (finErr) throw new Error(`primitive_runs finalize failed: ${finErr.message}`);
+      return artifact.id as string;
+    });
 
     return {
       primitive_run_id: activityInput.primitive_run_id,
       character_url: publicUrl,
       provider: 'gpt-image-2',
-      artifact_id: artifact.id as string,
+      artifact_id: artifactId,
     };
   };
 }

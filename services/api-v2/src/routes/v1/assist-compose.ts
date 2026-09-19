@@ -33,12 +33,15 @@ import {
   FALLBACK_MODEL,
   DraftAttemptError,
   attemptDraft,
+  isTimeoutError,
 } from './assist.js';
 import { captureAiRouteFailure } from '../../lib/ai-route-alert.js';
 import { webSearch, WebSearchNotConfiguredError, type WebSearchResult } from '../../lib/web-search-client.js';
 import { fetchUrlText } from '../../lib/url-text-fetcher.js';
 import { PODCAST_MAX_TURNS } from '../../skills/registry.js';
 import { STORYBOOK_MAX_CHARACTERS, STORYBOOK_MAX_SCENES } from '@vantly-ugc/schema';
+import { callOpenRouterChatCompletion } from '../../lib/openrouter-chat.js';
+import { currentModelProvider } from '../../lib/anthropic-client.js';
 
 // draft-script's DRAFT_TIMEOUT_MS/FALLBACK_TIMEOUT_MS (45s/20s) were tuned
 // for a ~35-word script. These two routes write far more (up to 16 dialogue
@@ -59,6 +62,19 @@ const COMPOSE_FALLBACK_TIMEOUT_MS = 40_000;
 // tag.
 const PODCAST_DRAFT_MAX_TOKENS = 1600;
 const STORYBOOK_DRAFT_MAX_TOKENS = 2400;
+
+// Text-generation-only model switch (titles/story/dialogue): when
+// MODEL_PROVIDER=openrouter, draft-podcast/draft-storybook route through
+// OpenRouter's OpenAI-compatible /api/v1/chat/completions endpoint (see
+// lib/openrouter-chat.ts's header comment for why -- in short, the
+// Anthropic-Messages-compatible endpoint callAnthropicMessages/attemptDraft
+// use is only guaranteed reliable for Claude models, not these free ones)
+// using two genuinely different free models rather than reusing whatever
+// single model OPENROUTER_MODEL happens to be pinned to elsewhere in the
+// app. Both overridable per-deployment; defaults are free-tier OpenRouter
+// slugs confirmed live as of Sept 2026.
+const FREE_MODEL = process.env.ASSIST_COMPOSE_FREE_MODEL || 'deepseek/deepseek-v4-flash-0731:free';
+const FREE_FALLBACK_MODEL = process.env.ASSIST_COMPOSE_FREE_FALLBACK_MODEL || 'nvidia/nemotron-3-super-120b-a12b:free';
 
 // ── Shared: gather optional context, run primary+fallback model ──────────
 
@@ -113,8 +129,11 @@ interface DraftRawOutcome {
  *  draftScriptFromPitch, generalized over an arbitrary system prompt so
  *  draft-podcast/draft-storybook can each supply their own instead of
  *  draft-script's SYSTEM_PROMPT. Returns raw model text (not yet tag-
- *  parsed) since the two callers parse completely different tag shapes. */
-async function draftRawText(userMessage: string, systemPrompt: string, routeNameForAlert: string, maxTokens: number): Promise<DraftRawOutcome> {
+ *  parsed) since the two callers parse completely different tag shapes.
+ *  Always calls the Anthropic-Messages-compatible path (Claude direct, or
+ *  Claude-via-OpenRouter) -- see draftRawText below for the dispatcher that
+ *  picks this vs. the free-OpenRouter-model path. */
+async function draftRawTextViaClaude(userMessage: string, systemPrompt: string, routeNameForAlert: string, maxTokens: number): Promise<DraftRawOutcome> {
   try {
     const text = await attemptDraft(MODEL, COMPOSE_DRAFT_TIMEOUT_MS, userMessage, systemPrompt, maxTokens);
     return { status: 200, text };
@@ -146,6 +165,84 @@ async function draftRawText(userMessage: string, systemPrompt: string, routeName
       return { status: 502, body: { error: { code: 'UPSTREAM_ERROR', message: (fallbackErr as Error).message } } };
     }
   }
+}
+
+/** attemptDraft's OpenRouter-chat-completions-endpoint counterpart: same
+ *  timeout-signal + typed-error shape (DraftAttemptError / isTimeoutError),
+ *  just calling callOpenRouterChatCompletion instead of
+ *  callAnthropicMessages under the hood, since free (non-Claude) OpenRouter
+ *  models need the OpenAI-compatible endpoint to work reliably. */
+async function attemptOpenRouterDraft(model: string, timeoutMs: number, userMessage: string, systemPrompt: string, maxTokens: number): Promise<string> {
+  try {
+    const text = await callOpenRouterChatCompletion(
+      { model, system: systemPrompt, userMessage, maxTokens },
+      { signal: AbortSignal.timeout(timeoutMs) },
+    );
+    return text;
+  } catch (err) {
+    if (isTimeoutError(err)) {
+      throw new DraftAttemptError(504, {
+        error: { code: 'UPSTREAM_TIMEOUT', message: `OpenRouter model ${model} timed out after ${timeoutMs}ms` },
+      });
+    }
+    throw new DraftAttemptError(502, {
+      error: { code: 'UPSTREAM_ERROR', message: (err as Error).message, detail: model },
+    });
+  }
+}
+
+/** Same primary-then-fallback shape as draftRawTextViaClaude, but over two
+ *  free OpenRouter models via the OpenAI-compatible chat-completions
+ *  endpoint (lib/openrouter-chat.ts) instead of the Anthropic-Messages
+ *  endpoint -- used when MODEL_PROVIDER=openrouter, so "cheapest/free
+ *  models to generate the text" doesn't inherit the Claude-only reliability
+ *  assumption callAnthropicMessages's /v1/messages route depends on. */
+async function draftRawTextViaFreeOpenRouter(userMessage: string, systemPrompt: string, routeNameForAlert: string, maxTokens: number): Promise<DraftRawOutcome> {
+  try {
+    const text = await attemptOpenRouterDraft(FREE_MODEL, COMPOSE_DRAFT_TIMEOUT_MS, userMessage, systemPrompt, maxTokens);
+    return { status: 200, text };
+  } catch (primaryErr) {
+    const primaryDetail = primaryErr instanceof DraftAttemptError ? primaryErr.body.error.code : 'unknown';
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[${routeNameForAlert}] free model (${FREE_MODEL}) failed (${primaryDetail}: ${(primaryErr as Error).message}) -- retrying once with fallback free model ${FREE_FALLBACK_MODEL}`,
+    );
+    try {
+      const text = await attemptOpenRouterDraft(FREE_FALLBACK_MODEL, COMPOSE_FALLBACK_TIMEOUT_MS, userMessage, systemPrompt, maxTokens);
+      return { status: 200, text };
+    } catch (fallbackErr) {
+      captureAiRouteFailure(routeNameForAlert, fallbackErr, { primaryModel: FREE_MODEL, fallbackModel: FREE_FALLBACK_MODEL });
+      if (fallbackErr instanceof DraftAttemptError) {
+        if (fallbackErr.httpStatus === 504) {
+          return {
+            status: 504,
+            body: {
+              error: {
+                code: 'UPSTREAM_TIMEOUT',
+                message: 'The AI writer took too long to respond, even after automatically retrying with a fallback model — please try again in a moment.',
+              },
+            },
+          };
+        }
+        return { status: fallbackErr.httpStatus, body: fallbackErr.body };
+      }
+      return { status: 502, body: { error: { code: 'UPSTREAM_ERROR', message: (fallbackErr as Error).message } } };
+    }
+  }
+}
+
+/** Dispatcher draft-podcast/draft-storybook actually call: routes to the
+ *  free-OpenRouter-model path when the deployment is configured for
+ *  OpenRouter (MODEL_PROVIDER=openrouter), Claude otherwise -- same
+ *  provider switch lib/anthropic-client.ts's callAnthropicMessages already
+ *  respects, kept in sync here rather than introducing a second env var.
+ *  Scoped deliberately to just these two routes' title/story/dialogue text
+ *  generation; draft-script and the agent chat are unaffected and keep
+ *  using the Claude/Anthropic-Messages path via MODEL/FALLBACK_MODEL. */
+async function draftRawText(userMessage: string, systemPrompt: string, routeNameForAlert: string, maxTokens: number): Promise<DraftRawOutcome> {
+  return currentModelProvider() === 'openrouter'
+    ? draftRawTextViaFreeOpenRouter(userMessage, systemPrompt, routeNameForAlert, maxTokens)
+    : draftRawTextViaClaude(userMessage, systemPrompt, routeNameForAlert, maxTokens);
 }
 
 /** Splits a "field | field | field" line into exactly `parts` fields,

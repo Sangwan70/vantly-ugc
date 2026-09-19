@@ -675,19 +675,28 @@ function AgentPageInner() {
     void fetchChats();
   }
 
-  /** A run finished with real media — tell the user via a small banner and
-   *  best-effort pop a Gallery tab (many browsers block window.open() that
-   *  isn't a direct click, so the banner's own button is the fallback that
-   *  always works). Deduped per toolUseId so the background watcher and a
-   *  later reconciliation pass can't double-fire it for the same run. */
+  /** A run finished with real media — tell the user via a small banner
+   *  with its own "Open Gallery" link (a real click-through Link, so it
+   *  always works and never triggers the browser's popup blocker).
+   *  Deduped per toolUseId so the background watcher and a later
+   *  reconciliation pass can't double-fire it for the same run.
+   *
+   *  This used to ALSO best-effort `window.open('/dashboard/gallery', ...)`
+   *  here. That call is only ever reached from an async continuation
+   *  (pollRun's own loop, the background watcher's `.then`, or the on-load
+   *  reconciliation pass added in 047d5db) — never directly inside a click
+   *  handler — so by the time it runs, the browser no longer considers it
+   *  user-initiated and Chrome's popup blocker catches it every time,
+   *  surfacing a confusing "Pop-ups blocked" notification on page load
+   *  whenever a run finished in the background while the tab was away
+   *  (confirmed live: reported as /dashboard/agent "redirecting" on load).
+   *  The banner's own link below was already the documented, reliable
+   *  fallback for exactly this case, so the always-blocked window.open()
+   *  call was pure downside — removed rather than reworked. */
   function notifyArtifactReady(toolUseId: string, skillSlug: string) {
     if (notifiedRunsRef.current.has(toolUseId)) return;
     notifiedRunsRef.current.add(toolUseId);
     setReadyToast({ id: toolUseId, label: skillLabel(skillSlug), ts: Date.now() });
-    try {
-      const w = window.open('/dashboard/gallery', '_blank', 'noopener');
-      if (!w) { /* popup blocked — the banner button is the fallback */ }
-    } catch { /* ignore — banner still shows */ }
   }
 
   /** "The job is still running for 4 min." — recomputed on every poll tick

@@ -209,6 +209,33 @@ export function makeStorybookCharacterActivity(cfg: WorkerConfig) {
       return artifact.id as string;
     });
 
+    // Auto-save this design as a reusable character, mirroring
+    // character-sheet-gpt2.ts's autoSaveCharacter (make_character_sheet) --
+    // storybook characters previously only ever lived inside their
+    // skill_run/primitive_artifacts rows, so they never appeared in
+    // /dashboard/actors ("My Characters") or any skill's saved-character
+    // picker, even though the design itself is exactly as reusable as one
+    // from make_character_sheet. Unlike that sibling activity (which only
+    // gets a generic description, hence its 'Untitled character' fallback),
+    // storybook already carries a real `name` input (e.g. "Winny"), so this
+    // saves under that name directly. BEST-EFFORT: the character is already
+    // generated + finalized above, so a failure here must never fail the
+    // activity. Idempotent (dedup by user_id+character_sheet_url) — a
+    // Temporal retry re-enters at the top-of-function early return before
+    // ever reaching here again.
+    try {
+      await autoSaveCharacter(db, {
+        userId: activityInput.user_id,
+        name: activityInput.name.trim() || 'Untitled character',
+        characterSheetUrl: publicUrl,
+      });
+    } catch (err) {
+      Context.current().heartbeat({
+        stage: 'autosave_character_warning',
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     return {
       primitive_run_id: activityInput.primitive_run_id,
       character_url: publicUrl,
@@ -216,6 +243,50 @@ export function makeStorybookCharacterActivity(cfg: WorkerConfig) {
       artifact_id: artifactId,
     };
   };
+}
+
+/**
+ * Idempotently save a generated storybook character design as a reusable
+ * user character. Deduped by (user_id, character_sheet_url) -- mirrors
+ * character-sheet-gpt2.ts's helper of the same name (not shared as a common
+ * module since each activity's input shape differs slightly; kept in sync
+ * by hand -- see that file if this one needs a matching update).
+ */
+async function autoSaveCharacter(
+  db: ReturnType<typeof getDb>,
+  p: { userId: string; name: string; characterSheetUrl: string },
+): Promise<void> {
+  const { data: existing } = await db
+    .from('user_characters')
+    .select('id')
+    .eq('user_id', p.userId)
+    .eq('character_sheet_url', p.characterSheetUrl)
+    .maybeSingle();
+  if (existing) return;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { error } = await db.from('user_characters').insert({
+      user_id: p.userId,
+      name: p.name.slice(0, 80),
+      source_kind: 'description',
+      public_id: makePublicId(),
+      character_sheet_url: p.characterSheetUrl,
+      portrait_url: p.characterSheetUrl,
+      thumbnail_url: p.characterSheetUrl,
+    });
+    if (!error) return;
+    if (error.code === '23505' && attempt < 2) continue; // public_id collision -> re-mint
+    throw new Error(`user_characters insert failed: ${error.message}`);
+  }
+}
+
+/** char_ + 10 Crockford base32 chars (no I/L/O/U). Mirrors character-sheet-gpt2.ts's
+ *  helper of the same name; the unique index on user_characters.public_id
+ *  catches any collision. */
+function makePublicId(): string {
+  const ALPHA = '0123456789ABCDEFGHJKLMNPQRSTVWXYZ';
+  let s = 'char_';
+  for (let i = 0; i < 10; i += 1) s += ALPHA[Math.floor(Math.random() * ALPHA.length)];
+  return s;
 }
 
 function makeStubPng(): Buffer {

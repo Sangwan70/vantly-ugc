@@ -17,8 +17,16 @@ export async function GET(
     return NextResponse.json({ error: { code: 'unauthenticated' } }, { status: 401 });
   }
   try {
+    // Polled every few seconds by the run-detail page -- Next.js's fetch
+    // Data Cache defaults GET requests to cacheable, and this route was
+    // silently serving the FIRST-ever response forever (confirmed live:
+    // a run that finished in 26 minutes still showed its 20-second-old
+    // "characters/submitted" snapshot 27+ minutes later). See
+    // dashboard/job/[id]/route.ts for the same fix already applied to the
+    // legacy jobs-polling route -- this one just missed it.
     const upstream = await fetch(`${API_V2_URL}/v1/skills/runs/${encodeURIComponent(id)}`, {
       headers: { Authorization: `Bearer ${session.access_token}` },
+      cache: 'no-store',
     });
     const text = await upstream.text();
     let data: unknown;

@@ -28,6 +28,7 @@ export async function GET(
     const upstream = await fetch(`${API_V2_URL}/v1/skills/runs/${encodeURIComponent(id)}/input`, {
       method: 'GET',
       headers: { Authorization: `Bearer ${session.access_token}` },
+      cache: 'no-store',
     });
     const text = await upstream.text();
     let data: unknown;

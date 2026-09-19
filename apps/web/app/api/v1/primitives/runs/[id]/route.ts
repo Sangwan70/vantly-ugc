@@ -17,8 +17,11 @@ export async function GET(
     return NextResponse.json({ error: { code: 'unauthenticated' } }, { status: 401 });
   }
   try {
+    // Same fix as v1/skills/runs/[id]/route.ts -- this poll endpoint was
+    // subject to the identical Next.js fetch-cache staleness bug.
     const upstream = await fetch(`${API_V2_URL}/v1/primitives/runs/${encodeURIComponent(id)}`, {
       headers: { Authorization: `Bearer ${session.access_token}` },
+      cache: 'no-store',
     });
     const text = await upstream.text();
     let data: unknown;

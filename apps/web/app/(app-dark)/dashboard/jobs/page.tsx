@@ -23,6 +23,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2, ExternalLink, ArrowRight, Trash2, Eraser } from 'lucide-react';
+import { RetryButton } from '../skills/_retry';
 
 interface JobItem {
   id: string;
@@ -42,6 +43,12 @@ interface JobItem {
   duration_seconds: number | null;
   prompt: string | null;
   credits_deducted: number;
+  // Only ever set on a 'vnext_skill' row -- see lib/skill-run-status.ts's
+  // computeRunHealth on the backend. Surfaced so a run that's technically
+  // still "running" but hasn't actually moved in unusually long doesn't
+  // just sit there looking identical to one that's progressing normally.
+  stalled?: boolean;
+  stalled_for_seconds?: number | null;
 }
 
 const PRETTY: Record<string, string> = {
@@ -288,6 +295,15 @@ export default function JobsPage() {
                         <span className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold" style={{ backgroundColor: sc.bg, color: sc.fg, border: `1px solid ${sc.border}` }}>
                           {j.status}
                         </span>
+                        {j.stalled && !TERMINAL_STATUSES.has(j.status) && (
+                          <span
+                            className="ml-1.5 inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+                            style={{ backgroundColor: 'rgba(251,191,36,0.12)', color: '#FCD34D', border: '1px solid rgba(251,191,36,0.4)' }}
+                            title={j.stalled_for_seconds ? `No progress for ~${Math.round(j.stalled_for_seconds / 60)} min` : 'No progress for a while'}
+                          >
+                            Stalled
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3" style={{ color: 'rgba(255,255,255,0.6)' }}>{fmtDate(j.created_at)}</td>
                       <td className="px-4 py-3 text-right" style={{ color: 'rgba(255,255,255,0.6)' }}>{j.credits_deducted || '—'}</td>
@@ -301,9 +317,14 @@ export default function JobsPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <Link href={`/dashboard/skills/runs/${encodeURIComponent(j.run_id)}${j.source === 'vnext_skill' ? '?composed=1' : ''}`} className="inline-flex items-center gap-1 text-xs transition-colors hover:text-white" style={{ color: 'rgba(255,255,255,0.55)' }}>
-                          Details <ArrowRight className="h-3.5 w-3.5" />
-                        </Link>
+                        <div className="flex items-center justify-end gap-2">
+                          {j.source === 'vnext_skill' && (isFailed(j.status) || j.stalled) && (
+                            <RetryButton runId={j.run_id} skillLabel={prettyName(j.primitive)} variant="outline" />
+                          )}
+                          <Link href={`/dashboard/skills/runs/${encodeURIComponent(j.run_id)}${j.source === 'vnext_skill' ? '?composed=1' : ''}`} className="inline-flex items-center gap-1 text-xs transition-colors hover:text-white" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                            Details <ArrowRight className="h-3.5 w-3.5" />
+                          </Link>
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button

@@ -17,6 +17,7 @@ import { useSearchParams } from 'next/navigation';
 import { ArrowLeft, ExternalLink, Loader2 } from 'lucide-react';
 import { estimateSkillEta } from '../../_run-panel';
 import { prettyPrimitiveLabel, prettyStepLabel, storybookMilestoneIndex, STORYBOOK_MILESTONES } from '../../_step-labels';
+import { RetryButton } from '../../_retry';
 
 interface Artifact { url: string; kind?: string; mime?: string | null; bytes?: number }
 interface StepEntry { primitive_run_id?: string; primitive: string; status: string; started_at?: string | null; finished_at?: string | null; error?: { code: string; message: string | null } | null; artifacts?: Artifact[] }
@@ -38,6 +39,10 @@ interface RunBody {
   finished_at?: string | null;
   created_at?: string | null;
   error?: { code: string; message: string | null } | null;
+  // Composed-skill runs only -- see lib/skill-run-status.ts's
+  // computeRunHealth on the backend.
+  stalled?: boolean;
+  stalled_for_seconds?: number | null;
 }
 
 const TERMINAL = new Set(['succeeded', 'completed', 'success', 'failed', 'canceled', 'cancelled']);
@@ -369,6 +374,18 @@ function RunBodyView({ body, composed, id }: { body: RunBody; composed: boolean;
   const startedAt = body.started_at ?? body.created_at ?? null;
   const finishedAt = body.finished_at ?? null;
   const elapsedSec = startedAt && finishedAt ? Math.round((new Date(finishedAt).getTime() - new Date(startedAt).getTime()) / 1000) : null;
+  const [cancelState, setCancelState] = useState<'idle' | 'working' | 'done' | 'error'>('idle');
+
+  async function cancelRun() {
+    if (cancelState === 'working') return;
+    setCancelState('working');
+    try {
+      const r = await fetch(`/api/v1/skills/runs/${encodeURIComponent(id)}/cancel`, { method: 'POST', credentials: 'include' });
+      setCancelState(r.ok ? 'done' : 'error');
+    } catch {
+      setCancelState('error');
+    }
+  }
 
   return (
     <>
@@ -385,17 +402,91 @@ function RunBodyView({ body, composed, id }: { body: RunBody; composed: boolean;
         </div>
       </div>
 
+      {composed && body.stalled && !terminal && (
+        <div className="mt-4 flex flex-col gap-2 rounded-xl px-4 py-3 sm:flex-row sm:items-center sm:justify-between" style={{ border: '1px solid rgba(251,191,36,0.35)', backgroundColor: 'rgba(251,191,36,0.08)' }}>
+          <div>
+            <div className="text-[13px] font-semibold" style={{ color: '#FCD34D' }}>This looks stuck</div>
+            <p className="mt-0.5 text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
+              No progress reported {body.stalled_for_seconds ? `for about ${Math.round(body.stalled_for_seconds / 60)} min` : 'for a while'} — this is taking noticeably longer than normal for this step. It may still recover on its own, or you can cancel it now (credits are refunded) and retry.
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void cancelRun()}
+              disabled={cancelState === 'working' || cancelState === 'done'}
+              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium disabled:opacity-50"
+              style={{ border: '1px solid rgba(255,255,255,0.14)', color: '#E9E9F0' }}
+            >
+              {cancelState === 'working' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              {cancelState === 'done' ? 'Canceled' : cancelState === 'working' ? 'Canceling…' : 'Cancel run'}
+            </button>
+            <RetryButton runId={id} skillLabel={body.skill ?? undefined} />
+          </div>
+        </div>
+      )}
+      {cancelState === 'error' && (
+        <p className="mt-1 text-[12px]" style={{ color: '#F87171' }}>Couldn&apos;t cancel — try again in a moment.</p>
+      )}
+
       <RunProgress body={body} />
 
       {body.error && (
-        <div className="mt-4 rounded-xl px-4 py-3 text-sm" style={{ border: '1px solid rgba(255,79,79,0.3)', backgroundColor: 'rgba(255,79,79,0.08)', color: '#FCA5A5' }}>
-          <div className="font-medium">{friendlyErrorMessage(body.error.code, body.error.message)}</div>
-          {(body.error.code || body.error.message) && (
-            <div className="mt-1 text-[11px]" style={{ color: 'rgba(252,165,165,0.65)' }}>
-              {body.error.code}{body.error.message ? `: ${body.error.message}` : ''}
+        <div className="mt-4 flex flex-col gap-2 rounded-xl px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between" style={{ border: '1px solid rgba(255,79,79,0.3)', backgroundColor: 'rgba(255,79,79,0.08)', color: '#FCA5A5' }}>
+          <div>
+            <div className="font-medium">{friendlyErrorMessage(body.error.code, body.error.message)}</div>
+            {(body.error.code || body.error.message) && (
+              <div className="mt-1 text-[11px]" style={{ color: 'rgba(252,165,165,0.65)' }}>
+                {body.error.code}{body.error.message ? `: ${body.error.message}` : ''}
+              </div>
+            )}
+          </div>
+          {composed && body.status === 'failed' && (
+            <div className="shrink-0">
+              <RetryButton runId={id} skillLabel={body.skill ?? undefined} />
             </div>
           )}
         </div>
+      )}
+
+      {composed && body.steps && body.steps.some((s) => (s.artifacts ?? []).length > 0) && (
+        <section className="mt-6">
+          <h2 className="text-sm font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.55)' }}>Generated so far</h2>
+          <p className="mt-1 text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
+            Each piece appears here as soon as it&apos;s ready — you don&apos;t have to wait for the whole run to see them.
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+            {body.steps.flatMap((s, si) =>
+              (s.artifacts ?? []).map((a, ai) => {
+                const artIsVideo = /\.(mp4|webm|mov)(\?|$)/i.test(a.url) || (a.mime ?? '').startsWith('video/');
+                return (
+                  <a
+                    key={`${si}-${ai}`}
+                    href={a.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="group relative flex flex-col overflow-hidden rounded-xl"
+                    style={{ border: '1px solid rgba(255,255,255,0.08)', backgroundColor: '#0F1015' }}
+                  >
+                    <div className="relative aspect-square w-full overflow-hidden" style={{ backgroundColor: '#15161D' }}>
+                      {artIsVideo ? (
+                        // eslint-disable-next-line jsx-a11y/media-has-caption
+                        <video src={a.url} className="h-full w-full object-cover" muted playsInline preload="metadata" />
+                      ) : (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={a.url} alt={prettyPrimitiveLabel(s.primitive)} className="h-full w-full object-cover" />
+                      )}
+                      <span className="absolute right-1.5 top-1.5 rounded-md p-1 opacity-0 transition-opacity group-hover:opacity-100" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
+                        <ExternalLink className="h-3 w-3" style={{ color: '#fff' }} />
+                      </span>
+                    </div>
+                    <span className="truncate px-2 py-1.5 text-[10px]" style={{ color: 'rgba(255,255,255,0.55)' }}>{prettyPrimitiveLabel(s.primitive)}</span>
+                  </a>
+                );
+              }),
+            )}
+          </div>
+        </section>
       )}
 
       {composed && body.steps && body.steps.length > 0 && (
@@ -416,11 +507,6 @@ function RunBodyView({ body, composed, id }: { body: RunBody; composed: boolean;
                       )}
                     </div>
                   </div>
-                  {(s.artifacts ?? []).map((a, ai) => (
-                    <a key={ai} href={a.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs underline" style={{ color: '#A78BFA' }}>
-                      open <ExternalLink className="h-3 w-3" />
-                    </a>
-                  ))}
                 </li>
               );
             })}

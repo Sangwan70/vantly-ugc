@@ -676,8 +676,15 @@ function ToggleField({ field, value, onChange, allValues, onChangeAny }: {
 
 // A pill that just reveals its one wrapped field on click — no boolean of
 // its own is submitted (see the `expandable` Field doc comment in
-// _forms.ts). Stays open once opened; there's no "off" state to reset to,
-// so closing it only hides the field, it doesn't clear what's in it.
+// _forms.ts). Closing it only hides the field, it doesn't clear what's in
+// it. Auto-opens the moment its child field goes from empty to non-empty
+// (see the effect below) -- needed once character-list/scene-list started
+// wrapping in here (make_storybook's Characters/Scenes), since those get
+// filled by the "Story" AI-draft panel above them: without this, a
+// generated cast/scene list would land in a still-collapsed pill and the
+// user would have no idea anything happened. A manual collapse afterward
+// (the user reviewed it and wants it out of the way) sticks -- the effect
+// only fires on the false -> true transition, not on every render.
 function ExpandableField({ field, allValues, onChangeAny }: {
   field: Extract<Field, { kind: 'expandable' }>;
   allValues?: Record<string, unknown>;
@@ -685,13 +692,16 @@ function ExpandableField({ field, allValues, onChangeAny }: {
 }) {
   const [open, setOpen] = useState(false);
   const c = field.child;
-  const filled = (() => {
-    const v = allValues?.[c.name];
-    return typeof v === 'string' ? v.trim() !== '' : Boolean(v);
-  })();
+  const v = allValues?.[c.name];
+  const filled = Array.isArray(v) ? v.length > 0 : typeof v === 'string' ? v.trim() !== '' : Boolean(v);
+
+  useEffect(() => {
+    if (filled) setOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filled]);
 
   const panel = (
-    <FieldRow field={c} value={allValues?.[c.name]} allValues={allValues} onChange={(v) => onChangeAny?.(c.name, v)} onChangeAny={onChangeAny} />
+    <FieldRow field={c} value={v} allValues={allValues} onChange={(nv) => onChangeAny?.(c.name, nv)} onChangeAny={onChangeAny} />
   );
 
   return <PillField label={field.label} active={open || filled} open={open} onClick={() => setOpen((o) => !o)} panel={panel} />;

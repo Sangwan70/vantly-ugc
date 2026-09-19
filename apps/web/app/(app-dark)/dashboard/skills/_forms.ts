@@ -365,15 +365,30 @@ export const FORMS: Record<string, SkillForm> = {
       // story, not just one character; the cast/scene lists stay fully
       // editable afterward, never auto-submitted.
       { kind: 'ai-draft-panel', name: '_ai_draft_storybook', label: 'Story', mode: 'storybook', help: 'Optional — describe the premise and generate a cast + scenes, or build them below by hand.' },
+      // Collapsed by default -- these three are the tall, manual-entry
+      // parts of the form, and "Story" above now does this work for the
+      // bare-minimum path. Wrapped as `expandable` pills rather than
+      // always-open so the form starts short (this is what was clipping
+      // the header above the fold for Storybook specifically -- see
+      // page.tsx's empty-state fix). Each auto-expands the instant it's
+      // filled (typing a value, or "Story" generating one), so nothing
+      // generated ever lands hidden behind a collapsed pill.
+      //
       // 1-4 characters (STORYBOOK_MAX_CHARACTERS in @vantly-ugc/schema); each
       // row needs a name plus at least one identity source — a description
       // alone is the common case, matching MakeStorybookSkillInputSchema.
-      { kind: 'character-list', name: 'characters', label: 'Characters (cast)', max: 4, help: 'Up to 4 characters. Each needs a name, plus a description, an uploaded photo, or a saved character — a description alone works great (e.g. "a curious fox cub in a blue scarf"). Or use "Story" above to auto-generate the whole cast from a one-line premise.' },
+      { kind: 'expandable', name: '_characters_exp', label: 'Characters (cast) (optional)',
+        child: { kind: 'character-list', name: 'characters', label: 'Characters (cast)', max: 4, help: 'Up to 4 characters. Each needs a name, plus a description, an uploaded photo, or a saved character — a description alone works great (e.g. "a curious fox cub in a blue scarf"). Or use "Story" above to auto-generate the whole cast from a one-line premise.' },
+      },
       { kind: 'select', name: 'art_style', label: 'Art style', options: ['flat_vector_cartoon', 'storybook_watercolor', 'crayon_sketch', 'felt_stopmotion', 'classic_storybook_ink'], defaultValue: 'flat_vector_cartoon' },
-      { kind: 'text', name: 'style_notes', label: 'Style notes (optional)', placeholder: 'warm pastel palette, cozy autumn mood' },
+      { kind: 'expandable', name: '_style_notes_exp', label: 'Style notes (optional)',
+        child: { kind: 'text', name: 'style_notes', label: 'Style notes', placeholder: 'warm pastel palette, cozy autumn mood' },
+      },
       // Ordered scenes (1-12, STORYBOOK_MAX_SCENES); each speaker must match
       // a character name above.
-      { kind: 'scene-list', name: 'scenes', label: 'Scenes (story, in order)', max: 12, charactersField: 'characters', help: 'Each scene needs a speaking character, their line (5+ words), and a visual description of the shot. 5–8 scenes is a good length for a short story.' },
+      { kind: 'expandable', name: '_scenes_exp', label: 'Scenes (story, in order) (optional)',
+        child: { kind: 'scene-list', name: 'scenes', label: 'Scenes (story, in order)', max: 12, charactersField: 'characters', help: 'Each scene needs a speaking character, their line (5+ words), and a visual description of the shot. 5–8 scenes is a good length for a short story.' },
+      },
       { kind: 'select', name: 'aspect_ratio', label: 'Aspect ratio', options: ['9:16', '1:1', '16:9'], defaultValue: '9:16' },
       { kind: 'boolean', name: 'subtitles', label: 'Burn subtitles', defaultValue: false },
       { kind: 'select', name: 'subtitles_style', label: 'Subtitles style', options: ['hormozi', 'tiktok', 'minimal'], defaultValue: 'hormozi' },

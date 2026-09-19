@@ -22,7 +22,9 @@ import {
 } from '../../skills/make-ugc-router.js';
 import { isAdminEmail } from '../../lib/admin-allowlist.js';
 import { recordSkillRunStatusEvent } from '../../lib/skill-run-status-events.js';
-import { deriveEffectiveSkillRunStatus } from '../../lib/skill-run-status.js';
+import { deriveEffectiveSkillRunStatus, computeRunHealth } from '../../lib/skill-run-status.js';
+import { TimeoutError } from '../../orchestrator/temporal/timeout.js';
+import * as Sentry from '@sentry/node';
 
 /**
  * Credits already COMMITTED to the user's in-flight (submitted/running) jobs.
@@ -100,6 +102,29 @@ export function isBillingEnabled(): boolean {
  * failure is a visible, immediate 'failed' row instead of a phantom one.
  */
 async function markSkillRunDispatchFailed(skillRunId: string, userId: string, err: unknown): Promise<void> {
+  // `withTimeout` wraps `client.workflow.start(...)` in a bare Promise.race
+  // -- it does NOT cancel the underlying Temporal RPC when the timeout side
+  // wins. So a TimeoutError here does not mean dispatch failed; it means
+  // THIS REQUEST gave up waiting while the real call may still land
+  // successfully moments later, silently starting a workflow that writes
+  // real progress to a row we're about to declare dead. Marking the row
+  // 'failed' on a raced timeout is a pure false-positive risk (the row can
+  // only ever be WRONGLY failed this way, never wrongly saved) -- so for a
+  // TimeoutError specifically, leave the row alone (still 'submitted') and
+  // just alert: either the late-arriving start() succeeds and the row
+  // naturally reports real progress, or it genuinely never lands and
+  // primitive-reconciler.ts / skill-reconciler.ts's slower, safer sweep
+  // (thresholds sized above every workflowExecutionTimeout) claims it and
+  // refunds credits, same as any other stuck dispatch.
+  if (err instanceof TimeoutError) {
+    // eslint-disable-next-line no-console
+    console.warn(`[dispatch] ${skillRunId}: workflow.start raced client timeout (${err.message}) -- leaving row as-is, not marking failed`);
+    Sentry.captureMessage('skill_run dispatch: workflow.start raced client timeout', {
+      level: 'warning',
+      extra: { skillRunId, userId, timeoutMs: err.timeoutMs, label: err.label },
+    });
+    return;
+  }
   // Captured for the audit event only -- see recordSkillRunStatusEvent's docstring.
   const { data: prior } = await supabase.from('skill_runs').select('status').eq('id', skillRunId).maybeSingle();
 
@@ -1536,9 +1561,18 @@ export async function getSkillRunRoute(req: Request, res: Response): Promise<voi
   // compute a time-based ETA (see apps/web .../skills/runs/[id]/page.tsx) --
   // never the raw `input` blob, which can carry base64 reference images,
   // scripts, or other user content that has no business in this response.
+  // (The full input IS retrievable, deliberately through a SEPARATE,
+  // narrower endpoint -- see getSkillRunInputRoute below -- for the one
+  // legitimate reason a client needs it: prefilling a "Retry" attempt.)
   const rawInput = run.input as Record<string, unknown> | null;
   const rawDuration = rawInput && typeof rawInput === 'object' ? rawInput.duration : undefined;
   const videoDurationSeconds = typeof rawDuration === 'number' && Number.isFinite(rawDuration) ? rawDuration : null;
+  const health = computeRunHealth(
+    { status: effectiveStatus, started_at: run.started_at },
+    run.skill_slug,
+    run.current_step,
+    stepRows,
+  );
   res.status(200).json({
     skill_run_id: run.id,
     video_duration_seconds: videoDurationSeconds,
@@ -1550,6 +1584,8 @@ export async function getSkillRunRoute(req: Request, res: Response): Promise<voi
     finished_at: run.finished_at,
     created_at: run.created_at,
     error: effectiveError,
+    stalled: health.stalled,
+    stalled_for_seconds: health.stalled_for_seconds,
     // Strip our internal provider USD cost — users only ever see credit cost.
     final_output: stripUsdFields(run.final_output),
     steps: stepRows.map((s) => ({
@@ -1562,6 +1598,44 @@ export async function getSkillRunRoute(req: Request, res: Response): Promise<voi
       artifacts: s.primitive_artifacts ?? [],
     })),
   });
+}
+
+/**
+ * The original request body a composed skill run was dispatched with --
+ * everything RunPanel needs to reopen the same form pre-filled for a
+ * "Retry" attempt (apps/web dashboard/jobs and dashboard/skills/runs/[id]
+ * both link a Retry button through here). Deliberately its own endpoint
+ * rather than a field on getSkillRunRoute's response: that response is
+ * polled every few seconds for the run's whole lifetime and has no
+ * business carrying base64 reference images or other raw user content on
+ * every tick (see the comment on `rawInput` above) -- this one is fetched
+ * once, on demand, when the user actually clicks Retry.
+ */
+export async function getSkillRunInputRoute(req: Request, res: Response): Promise<void> {
+  const userId = (req as any).userId as string | undefined;
+  if (!userId) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+  const skillRunId = String(req.params.skill_run_id ?? '');
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(skillRunId)) {
+    res.status(400).json({ error: 'invalid_skill_run_id' });
+    return;
+  }
+  const { data: run, error: runErr } = await supabase
+    .from('skill_runs')
+    .select('id, user_id, skill_slug, input')
+    .eq('id', skillRunId)
+    .maybeSingle();
+  if (runErr) {
+    res.status(500).json({ error: 'lookup_failed', detail: runErr.message });
+    return;
+  }
+  if (!run || run.user_id !== userId) {
+    res.status(404).json({ error: 'not_found' });
+    return;
+  }
+  res.status(200).json({ skill: run.skill_slug, input: run.input ?? null });
 }
 
 /**

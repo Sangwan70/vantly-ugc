@@ -11,6 +11,7 @@
 
 import type { Request, Response } from 'express';
 import { supabase } from '../../server.js';
+import { deriveEffectiveSkillRunStatus, computeRunHealth } from '../../lib/skill-run-status.js';
 
 interface GalleryItem {
   id: string;
@@ -38,6 +39,12 @@ interface GalleryItem {
   // `primitive` the same way this route's own promptText derivation does.
   title: string | null;
   credits_deducted: number;
+  // Only ever set (true) for a 'vnext_skill' item whose parent run looks
+  // stuck -- see lib/skill-run-status.ts's computeRunHealth. Same signal
+  // GET /v1/skills/runs/:id exposes, computed the same way, so the jobs
+  // list and the run-detail page can never silently disagree about it.
+  stalled: boolean;
+  stalled_for_seconds: number | null;
 }
 
 export async function getMyGalleryRoute(req: Request, res: Response): Promise<void> {
@@ -90,7 +97,7 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
   const { data: skillRuns, error: skillErr } = await supabase
     .from('skill_runs')
     .select(
-      'id, skill_slug, skill_version, status, current_step, started_at, finished_at, created_at, final_output, input, credits_deducted_total:primitive_runs(credits_deducted)',
+      'id, skill_slug, skill_version, status, current_step, started_at, finished_at, created_at, final_output, input, error_code, error_message, credits_deducted_total:primitive_runs(credits_deducted)',
     )
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
@@ -128,17 +135,33 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
   const skillRunIds = (skillRuns ?? []).map((r) => r.id as string);
   const childrenBySkillRun = new Map<
     string,
-    Array<{ status: string; primitive_id: string | null; primitive_artifacts: Array<{ url: string; kind: string }> }>
+    Array<{
+      status: string;
+      primitive_id: string | null;
+      started_at: string | null;
+      finished_at: string | null;
+      error_code: string | null;
+      error_message: string | null;
+      primitive_artifacts: Array<{ url: string; kind: string }>;
+    }>
   >();
   if (skillRunIds.length > 0) {
     const { data: children } = await supabase
       .from('primitive_runs')
-      .select('skill_run_id, status, primitive_id, primitive_artifacts(url, kind, mime, bytes)')
+      .select('skill_run_id, status, primitive_id, started_at, finished_at, error_code, error_message, primitive_artifacts(url, kind, mime, bytes)')
       .in('skill_run_id', skillRunIds);
     for (const c of children ?? []) {
       const key = c.skill_run_id as string;
       const list = childrenBySkillRun.get(key) ?? [];
-      list.push(c as unknown as { status: string; primitive_id: string | null; primitive_artifacts: Array<{ url: string; kind: string }> });
+      list.push(c as unknown as {
+        status: string;
+        primitive_id: string | null;
+        started_at: string | null;
+        finished_at: string | null;
+        error_code: string | null;
+        error_message: string | null;
+        primitive_artifacts: Array<{ url: string; kind: string }>;
+      });
       childrenBySkillRun.set(key, list);
     }
     // Tolerate a lookup failure silently — worst case we fall back to the
@@ -174,6 +197,8 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
       prompt: (row.prompt as string | null) ?? null,
       title: null,
       credits_deducted: Number(row.credit_cost ?? 0),
+      stalled: false,
+      stalled_for_seconds: null,
     });
   }
 
@@ -200,7 +225,23 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
       (s: number, c: any) => s + Number(c?.credits_deducted ?? 0),
       0,
     );
-    const status = (row.status as string) ?? 'unknown';
+    const children = childrenBySkillRun.get(row.id as string) ?? [];
+    // Same derivation getSkillRunRoute applies (lib/skill-run-status.ts) --
+    // this is the actual fix for the jobs-list-vs-run-detail-page status
+    // disagreement: both now compute status from the SAME function over
+    // the SAME child rows instead of one endpoint deriving and the other
+    // reading skill_runs.status raw.
+    const { status: derivedStatus } = deriveEffectiveSkillRunStatus(
+      { status: (row.status as string) ?? 'unknown', error_code: (row.error_code as string | null) ?? null, error_message: (row.error_message as string | null) ?? null },
+      children.map((c) => ({ status: c.status, primitive_id: c.primitive_id ?? '', error_code: c.error_code, error_message: c.error_message })),
+    );
+    const health = computeRunHealth(
+      { status: derivedStatus, started_at: row.started_at as string | null },
+      row.skill_slug as string | null,
+      row.current_step as string | null,
+      children.map((c) => ({ status: c.status, started_at: c.started_at, finished_at: c.finished_at })),
+    );
+    const status = derivedStatus;
     const createdAt = row.created_at as string;
     const finishedAt = (row.finished_at as string | null) ?? null;
     const durationSeconds = (out.duration_seconds as number | null) ?? null;
@@ -244,6 +285,8 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
         prompt: null,
         title: null,
         credits_deducted: 0,
+        stalled: health.stalled,
+        stalled_for_seconds: health.stalled_for_seconds,
       });
       emitted = true;
     }
@@ -262,6 +305,8 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
         prompt: null,
         title: null,
         credits_deducted: 0,
+        stalled: health.stalled,
+        stalled_for_seconds: health.stalled_for_seconds,
       });
       emitted = true;
     }
@@ -280,6 +325,8 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
         prompt: promptText,
         title: titleText,
         credits_deducted: totalCredits,
+        stalled: health.stalled,
+        stalled_for_seconds: health.stalled_for_seconds,
       });
       emitted = true;
     }
@@ -301,6 +348,8 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
         prompt: null,
         title: null,
         credits_deducted: totalCredits,
+        stalled: health.stalled,
+        stalled_for_seconds: health.stalled_for_seconds,
       });
     }
   }
@@ -325,6 +374,8 @@ export async function getMyGalleryRoute(req: Request, res: Response): Promise<vo
         null,
       title: null,
       credits_deducted: Number(row.credits_deducted ?? 0),
+      stalled: false,
+      stalled_for_seconds: null,
     });
   }
 

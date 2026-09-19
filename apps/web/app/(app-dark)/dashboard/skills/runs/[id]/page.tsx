@@ -16,6 +16,7 @@ import { use, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ArrowLeft, ExternalLink, Loader2 } from 'lucide-react';
 import { estimateSkillEta } from '../../_run-panel';
+import { prettyPrimitiveLabel, prettyStepLabel, storybookMilestoneIndex, STORYBOOK_MILESTONES } from '../../_step-labels';
 
 interface Artifact { url: string; kind?: string; mime?: string | null; bytes?: number }
 interface StepEntry { primitive_run_id?: string; primitive: string; status: string; started_at?: string | null; finished_at?: string | null; error?: { code: string; message: string | null } | null; artifacts?: Artifact[] }
@@ -204,15 +205,39 @@ function RunProgress({ body }: { body: RunBody }) {
   const elapsedSec = startedAtMs != null ? Math.max(0, (endMs - startedAtMs) / 1000) : null;
 
   const isMakeUgc = body.skill === 'make_ugc_video' || body.skill === 'make_ugc';
+  const isStorybook = body.skill === 'make_storybook';
   const progress = isMakeUgc ? computeMakeUgcProgress(body, nowMs) : null;
   const etaText = isMakeUgc && body.skill ? estimateSkillEta(body.skill, { duration: body.video_duration_seconds ?? undefined }) : 'a few minutes \u2014 sometimes longer for video';
+  // make_storybook has no fixed total (scene/character counts vary per
+  // run and aren't in this response), so -- same reasoning as the "no
+  // fabricated percentage" comment above -- this shows real milestones
+  // (which of characters/scenes/compose/subtitles is actually running
+  // right now, from the same current_step the backend already reports)
+  // instead of inventing a completion percentage.
+  const milestoneIdx = isStorybook ? storybookMilestoneIndex(body.current_step) : -1;
+  const stepLabel = progress ? progress.label : prettyStepLabel(body.current_step);
 
   return (
     <div className="mt-4 rounded-xl px-4 py-3" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#15161D' }}>
       <div className="flex items-center justify-between gap-3 text-[12px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
-        <span>{progress ? progress.label : body.current_step ?? 'In progress'}</span>
+        <span>{stepLabel}</span>
         <span>{progress ? `${Math.round(progress.fraction * 100)}%` : null}</span>
       </div>
+      {isStorybook && (
+        <div className="mt-2.5 flex items-center gap-1.5">
+          {STORYBOOK_MILESTONES.map((m, i) => (
+            <div key={m} className="flex flex-1 flex-col items-center gap-1">
+              <div
+                className={i === milestoneIdx ? 'h-1.5 w-full animate-pulse rounded-full' : 'h-1.5 w-full rounded-full'}
+                style={{ backgroundColor: i < milestoneIdx ? '#34D399' : i === milestoneIdx ? '#A78BFA' : 'rgba(255,255,255,0.1)' }}
+              />
+              <span className="text-center text-[10px] capitalize" style={{ color: i === milestoneIdx ? '#E9E9F0' : 'rgba(255,255,255,0.35)' }}>
+                {m}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="mt-2">
         <ProgressBar fraction={progress?.fraction ?? 0} indeterminate={!progress} />
       </div>
@@ -384,7 +409,7 @@ function RunBodyView({ body, composed, id }: { body: RunBody; composed: boolean;
                   <div className="flex items-center gap-3">
                     <span className="inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: s.status === 'succeeded' ? '#34D399' : s.status === 'failed' ? '#F87171' : '#A78BFA' }} />
                     <div className="flex flex-col">
-                      <span className="text-sm font-medium" style={{ color: '#E9E9F0' }}>{s.primitive}</span>
+                      <span className="text-sm font-medium" style={{ color: '#E9E9F0' }}>{prettyPrimitiveLabel(s.primitive)}</span>
                       <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{s.status}{dur != null ? ` · ${dur}s` : ''}</span>
                       {s.status === 'failed' && s.error && (
                         <span className="mt-0.5 text-[11px]" style={{ color: '#F87171' }}>{friendlyErrorMessage(s.error.code, s.error.message)}</span>

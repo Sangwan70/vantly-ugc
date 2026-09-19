@@ -19,6 +19,7 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
+import { prettyStepLabel } from '../skills/_step-labels';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, Send, Square, Sparkles, Wrench, Check, AlertCircle, ArrowDown, Plus, Trash2, X, RotateCcw, PanelRight, ListChecks, Users, Images, CornerDownLeft, Pencil, MessageSquarePlus, History, Pin, PinOff, Archive, Search, MoreHorizontal, Folder, FolderPlus, ChevronRight, ChevronDown, UploadCloud, Wand2, BookOpen } from 'lucide-react';
 import { invokeFn } from '@/lib/supabase/fn-proxy';
@@ -2320,11 +2321,19 @@ function AgentPageInner() {
                       // priority over the generic step label or the static "usually
                       // 1-2 min" guess, so a long-running job keeps visibly counting up
                       // instead of showing one message that goes stale.
+                      // Milestone (what's actually running right now, from the same
+                      // current_step the run-detail page shows) takes priority over the
+                      // generic elapsed-time note, with the note's minute count folded in
+                      // alongside it -- so a long composed run reads "Filming scene 2 · 6
+                      // min" instead of either "scene 2 take 1…" (raw slug) or a bare
+                      // "still running for 6 min" that never says what's happening.
+                      const elapsedSuffix = run?.note?.match(/running for (\d+ min)/)?.[1];
+                      const milestone = run?.composed && run?.currentStep && run.currentStep !== 'done' ? prettyStepLabel(run.currentStep) : undefined;
                       const statusText = run?.status === 'succeeded' ? 'done'
                         : run?.status === 'failed' ? `failed${run.note ? ` — ${run.note}` : ''}`
                         : b.name === 'list_my_characters' ? 'loading…'
+                        : milestone ? `${milestone}${elapsedSuffix ? ` · ${elapsedSuffix}` : '…'}`
                         : run?.note ? run.note
-                        : run?.currentStep && run.currentStep !== 'done' ? `${run.currentStep.replace(/_/g, ' ')}…`
                         : `generating… · ${estimateSkillEta(b.name, (b.input as Record<string, unknown>) ?? {})}`;
                       return (
                         <div key={j} className="inline-flex max-w-full flex-col gap-2">

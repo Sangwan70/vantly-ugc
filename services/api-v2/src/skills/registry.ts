@@ -315,16 +315,32 @@ const PodcastTurnSchema = z.object({
 
 export const MakePodcastSkillInputSchema = z
   .object({
+    // Either a saved character_id / https image URL (character_a) OR an
+    // uploaded photo (character_a_base64) -- the web app's "Upload Your
+    // Own" identity option has no URL to send yet, so the API re-hosts the
+    // photo itself (mirrors character-list's ref/ref_base64 pair below).
     character_a: z
       .string()
       .min(3)
       .max(400)
-      .describe('First speaker: a saved character_id (char_… from list_characters), OR an https image URL (portrait / character sheet).'),
+      .optional()
+      .describe('First speaker: a saved character_id (char_… from list_characters), OR an https image URL (portrait / character sheet). Provide this OR character_a_base64.'),
+    character_a_base64: z
+      .string()
+      .min(64)
+      .optional()
+      .describe('First speaker as an uploaded photo (data URL or raw base64) instead of character_a — the API re-hosts it to R2.'),
     character_b: z
       .string()
       .min(3)
       .max(400)
-      .describe('Second speaker: a DIFFERENT saved character_id (char_…) OR an https image URL.'),
+      .optional()
+      .describe('Second speaker: a DIFFERENT saved character_id (char_…) OR an https image URL. Provide this OR character_b_base64.'),
+    character_b_base64: z
+      .string()
+      .min(64)
+      .optional()
+      .describe('Second speaker as an uploaded photo (data URL or raw base64) instead of character_b — the API re-hosts it to R2.'),
     script: z
       .array(PodcastTurnSchema)
       .min(1)
@@ -343,7 +359,15 @@ export const MakePodcastSkillInputSchema = z
       .describe('Burn TikTok/Hormozi captions. OPT-IN — ask the user whether they want captions before generating; leave off unless they say yes.'),
     subtitles_style: z.enum(['hormozi', 'tiktok', 'minimal']).default('hormozi'),
   })
-  .refine((d) => d.character_a.trim() !== d.character_b.trim(), {
+  .refine((d) => Boolean(d.character_a?.trim()) || Boolean(d.character_a_base64?.trim()), {
+    message: 'provide character_a (a saved character_id or https image URL) or character_a_base64 (an uploaded photo)',
+    path: ['character_a'],
+  })
+  .refine((d) => Boolean(d.character_b?.trim()) || Boolean(d.character_b_base64?.trim()), {
+    message: 'provide character_b (a saved character_id or https image URL) or character_b_base64 (an uploaded photo)',
+    path: ['character_b'],
+  })
+  .refine((d) => !d.character_a || !d.character_b || d.character_a.trim() !== d.character_b.trim(), {
     message: 'character_a and character_b must be two different characters',
     path: ['character_b'],
   });

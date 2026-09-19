@@ -1179,16 +1179,24 @@ interface ResolvedPodcastCharacter {
 }
 
 /**
- * Resolve a make_podcast character reference (a saved char_… id OR an https image
- * URL) into an R2-hosted reference image + optional pinned seed. Saved characters
- * prefer the clean portrait, else the sheet; the ref is ALWAYS re-hosted onto R2
- * so the worker's SSRF guard accepts it (mirrors the make_broll re-host).
+ * Resolve a make_podcast character identity -- EITHER a saved char_… id / an
+ * https image URL (`ref`), OR an uploaded photo (`ref_base64`, takes
+ * precedence when both somehow arrive) -- into an R2-hosted reference image
+ * + optional pinned seed. Saved characters prefer the clean portrait, else
+ * the sheet; every source is ALWAYS re-hosted onto R2 so the worker's SSRF
+ * guard accepts it (mirrors the make_broll re-host, and resolveStorybookCharacter
+ * below for the ref/ref_base64 pairing).
  */
 async function resolvePodcastCharacter(
   userId: string,
-  ref: string,
+  identity: { ref?: string; ref_base64?: string },
 ): Promise<ResolvedPodcastCharacter | null> {
-  const c = ref.trim();
+  const rawBase64 = identity.ref_base64?.trim() ?? '';
+  if (rawBase64) {
+    const up = await uploadUserImageBase64(userId, rawBase64);
+    return { ref_url: up.url };
+  }
+  const c = identity.ref?.trim() ?? '';
   if (!c) return null;
   let sourceUrl: string | null = null;
   let seed: number | undefined;
@@ -1228,19 +1236,19 @@ async function dispatchMakePodcast(
   let a: ResolvedPodcastCharacter | null;
   let b: ResolvedPodcastCharacter | null;
   try {
-    a = await resolvePodcastCharacter(userId, String(body.character_a ?? ''));
-    b = await resolvePodcastCharacter(userId, String(body.character_b ?? ''));
+    a = await resolvePodcastCharacter(userId, { ref: String(body.character_a ?? ''), ref_base64: String(body.character_a_base64 ?? '') });
+    b = await resolvePodcastCharacter(userId, { ref: String(body.character_b ?? ''), ref_base64: String(body.character_b_base64 ?? '') });
   } catch (err) {
     if (respondIfModerationBlocked(res, err, 'make_podcast')) return;
     res.status(400).json({ error: 'podcast_identity_failed', skill: 'make_podcast', detail: errorMessage(err) });
     return;
   }
   if (!a) {
-    res.status(400).json({ error: 'podcast_character_not_found', skill: 'make_podcast', detail: 'Could not resolve character_a — pass a saved char_… id from list_characters, or an https image URL.' });
+    res.status(400).json({ error: 'podcast_character_not_found', skill: 'make_podcast', detail: 'Could not resolve character_a — pass a saved char_… id from list_characters, an https image URL, or an uploaded photo.' });
     return;
   }
   if (!b) {
-    res.status(400).json({ error: 'podcast_character_not_found', skill: 'make_podcast', detail: 'Could not resolve character_b — pass a saved char_… id from list_characters, or an https image URL.' });
+    res.status(400).json({ error: 'podcast_character_not_found', skill: 'make_podcast', detail: 'Could not resolve character_b — pass a saved char_… id from list_characters, an https image URL, or an uploaded photo.' });
     return;
   }
 

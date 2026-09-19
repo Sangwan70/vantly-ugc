@@ -25,6 +25,7 @@ import type { Field, SkillForm } from './_forms';
 
 interface CharacterItem { name: string; description: string; ref: string; ref_base64: string }
 interface SceneItem { speaker: string; line: string; visual_description: string }
+interface TurnItem { speaker: 'A' | 'B'; line: string }
 
 // make_storybook can attach up to 4 of these in ONE run request (one per
 // cast member) with nothing upstream to shrink them until the request
@@ -136,11 +137,51 @@ function describeRunError(data: unknown, status: number): string {
   return `HTTP ${status}`;
 }
 
+/**
+ * Drafts a quick 1:1 portrait from a plain text description via the
+ * standalone make_portrait skill, waits for it to finish, and returns the
+ * resulting R2-hosted image URL — the "Generate Required Character
+ * Images" step for a character-source field whose real skill (make_podcast)
+ * only ever accepts a saved character or an image URL, never bare text.
+ * Polls /v1/primitives/runs/:id every 4s, same cadence and endpoint the
+ * run-timeline page (../skills/runs/[id]/page.tsx) already uses.
+ */
+async function generatePortraitFromDescription(description: string): Promise<string> {
+  const startResp = await fetch('/api/v1/skills/make_portrait/run', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ description, aspect_ratio: '1:1' }),
+  });
+  const startData = (await startResp.json()) as Record<string, unknown>;
+  if (!startResp.ok) throw new Error(describeRunError(startData, startResp.status));
+  const runId = (startData.run_id ?? startData.skill_run_id) as string | undefined;
+  if (!runId) throw new Error('character image generation did not return a run id');
+
+  const deadline = Date.now() + 150_000; // portraits typically finish in well under a minute
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 4000));
+    const pollResp = await fetch(`/api/v1/primitives/runs/${encodeURIComponent(runId)}`, { credentials: 'include' });
+    if (!pollResp.ok) continue; // transient — keep polling until the deadline
+    const pollData = (await pollResp.json()) as { status?: string; artifacts?: Array<{ url: string }>; error?: { message: string | null } | null };
+    const status = pollData.status ?? '';
+    if (status === 'succeeded' || status === 'completed' || status === 'success') {
+      const url = pollData.artifacts?.[0]?.url;
+      if (!url) throw new Error('character image finished but returned no image');
+      return url;
+    }
+    if (status === 'failed' || status === 'canceled' || status === 'cancelled' || status === 'error') {
+      throw new Error(pollData.error?.message || 'character image generation failed');
+    }
+  }
+  throw new Error('character image generation is taking longer than expected \u2014 try again in a moment, or switch to Upload Your Own / Select Existing Characters instead');
+}
+
 function defaultForField(f: Field): unknown {
   if (f.kind === 'select') return f.defaultValue ?? f.options[0];
   if (f.kind === 'number-select') return f.defaultValue ?? f.options[0];
   if (f.kind === 'boolean' || f.kind === 'toggle') return f.defaultValue ?? false;
-  if (f.kind === 'character-list' || f.kind === 'scene-list') return [];
+  if (f.kind === 'character-list' || f.kind === 'scene-list' || f.kind === 'turn-list') return [];
   return '';
 }
 
@@ -204,6 +245,22 @@ export function RunPanel({
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState<string | null>(null);
   const [launchEta, setLaunchEta] = useState<string | null>(null);
+  // Only non-null while a character-source field's "Generate Required
+  // Character Images" pre-step (see generatePortraitFromDescription) is
+  // running, so the button can say something truer than a bare spinner —
+  // this can take 30-60s BEFORE the main skill even starts.
+  const [generatingLabel, setGeneratingLabel] = useState<string | null>(null);
+
+  // "Cancel" (next to the submit button) resets every field back to this
+  // screen's starting point in one click. Comparing live `values` against
+  // `initial` (stable for the lifetime of this form — see its own useMemo
+  // above) is what decides whether there's anything TO cancel: the button
+  // stays disabled until the user has actually typed or picked something.
+  const isDirty = JSON.stringify(values) !== JSON.stringify(initial);
+  const onCancel = () => {
+    setValues(initial);
+    setSubmitErr(null);
+  };
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -215,35 +272,68 @@ export function RunPanel({
     const preflightMsg = form.validate?.(values);
     if (preflightMsg) { setSubmitErr(preflightMsg); return; }
     setSubmitting(true);
-    const body: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(values)) {
-      // UI-only helper fields (e.g. a toggle's synthetic "_enabled" flag
-      // that has no matching backend prop) never leave the browser.
-      if (k.startsWith('_')) continue;
-      if (typeof v === 'string' && v.trim() === '') continue;
-      if (k === 'characters' && Array.isArray(v)) {
-        const cleaned = (v as CharacterItem[])
-          .filter((c) => c.name?.trim())
-          .map((c) => {
-            const out: Record<string, unknown> = { name: c.name.trim() };
-            if (c.description?.trim()) out.description = c.description.trim();
-            if (c.ref_base64?.trim()) out.ref_base64 = c.ref_base64.trim();
-            else if (c.ref?.trim()) out.ref = c.ref.trim();
-            return out;
-          });
-        if (cleaned.length) body[k] = cleaned;
-        continue;
-      }
-      if (k === 'scenes' && Array.isArray(v)) {
-        const cleaned = (v as SceneItem[])
-          .filter((s) => s.speaker?.trim() && s.line?.trim() && s.visual_description?.trim())
-          .map((s) => ({ speaker: s.speaker.trim(), line: s.line.trim(), visual_description: s.visual_description.trim() }));
-        if (cleaned.length) body[k] = cleaned;
-        continue;
-      }
-      body[k] = v;
-    }
     try {
+      // Resolve any character-source field whose "Generate Required
+      // Character Images" mode was picked but whose real backend field
+      // (make_podcast's character_a/character_b) never accepts a bare
+      // description — draft a quick portrait from the typed description
+      // FIRST, then use its resulting image as if the user had picked an
+      // existing character. Fields that accept a description directly
+      // (make_ugc's `person`) have no generateViaPortrait and pass straight
+      // through untouched.
+      const resolved: Record<string, unknown> = { ...values };
+      for (const f of form.fields) {
+        if (f.kind !== 'character-source' || !f.generateViaPortrait) continue;
+        const description = String(resolved[f.generateField] ?? '').trim();
+        const alreadyHasIdentity =
+          String(resolved[f.existingField] ?? '').trim() || String(resolved[f.uploadField] ?? '').trim();
+        if (!description || alreadyHasIdentity) continue;
+        setGeneratingLabel(`Generating ${f.label}…`);
+        const url = await generatePortraitFromDescription(description);
+        resolved[f.existingField] = url;
+      }
+      setGeneratingLabel(null);
+
+      const body: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(resolved)) {
+        // UI-only helper fields (e.g. a toggle's synthetic "_enabled" flag,
+        // or a character-source's "generate from this description" text
+        // once it's been resolved to an image above) never leave the browser.
+        if (k.startsWith('_')) continue;
+        if (typeof v === 'string' && v.trim() === '') continue;
+        if (k === 'characters' && Array.isArray(v)) {
+          const cleaned = (v as CharacterItem[])
+            .filter((c) => c.name?.trim())
+            .map((c) => {
+              const out: Record<string, unknown> = { name: c.name.trim() };
+              if (c.description?.trim()) out.description = c.description.trim();
+              if (c.ref_base64?.trim()) out.ref_base64 = c.ref_base64.trim();
+              else if (c.ref?.trim()) out.ref = c.ref.trim();
+              return out;
+            });
+          if (cleaned.length) body[k] = cleaned;
+          continue;
+        }
+        if (k === 'scenes' && Array.isArray(v)) {
+          const cleaned = (v as SceneItem[])
+            .filter((s) => s.speaker?.trim() && s.line?.trim() && s.visual_description?.trim())
+            .map((s) => ({ speaker: s.speaker.trim(), line: s.line.trim(), visual_description: s.visual_description.trim() }));
+          if (cleaned.length) body[k] = cleaned;
+          continue;
+        }
+        // make_podcast's `script` is an array of A/B turns -- make_ugc's own
+        // `script` is always a plain string, so the Array.isArray check is
+        // what tells the two apart (there's no other skill with a `script`
+        // array today).
+        if (k === 'script' && Array.isArray(v)) {
+          const cleaned = (v as TurnItem[])
+            .filter((t) => (t.speaker === 'A' || t.speaker === 'B') && t.line?.trim())
+            .map((t) => ({ speaker: t.speaker, line: t.line.trim() }));
+          if (cleaned.length) body[k] = cleaned;
+          continue;
+        }
+        body[k] = v;
+      }
       const resp = await fetch(`/api/v1/skills/${encodeURIComponent(skill.slug)}/run`, {
         method: 'POST',
         credentials: 'include',
@@ -262,6 +352,7 @@ export function RunPanel({
     } catch (err) {
       setSubmitErr((err as Error).message);
     } finally {
+      setGeneratingLabel(null);
       setSubmitting(false);
     }
   };
@@ -334,7 +425,23 @@ export function RunPanel({
               {submitErr}
             </div>
           )}
-          <div className="flex items-center justify-end">
+          <div className="flex items-center justify-end gap-2">
+            {generatingLabel && (
+              <span className="text-[12px]" style={{ color: 'rgba(255,255,255,0.55)' }}>{generatingLabel}</span>
+            )}
+            {/* Only clickable once the user has actually typed or picked
+                something — see isDirty's own doc comment above — so it
+                reads as "start over" rather than a confusing no-op. */}
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={submitting || !isDirty}
+              className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors disabled:opacity-40"
+              style={{ backgroundColor: 'transparent', color: 'rgba(255,255,255,0.65)', border: '1px solid rgba(255,255,255,0.18)' }}
+            >
+              <X className="h-3.5 w-3.5" />
+              Cancel
+            </button>
             <button type="submit" disabled={submitting || Boolean(liveValidationMsg)} title={liveValidationMsg ?? undefined} className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50" style={{ backgroundColor: submitting || liveValidationMsg ? 'rgba(167,139,250,0.4)' : '#A78BFA', color: '#0F1015' }}>
               {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
               {submitLabel}
@@ -444,6 +551,12 @@ function FieldRow({ field, value, onChange, allValues, onChangeAny, onUseSavedPr
       ? Array.from(new Set((chars as CharacterItem[]).map((c) => c.name?.trim()).filter((n): n is string => Boolean(n))))
       : [];
     return <SceneListField field={field} value={value} onChange={onChange} characterNames={characterNames} />;
+  }
+  if (field.kind === 'turn-list') {
+    return <TurnListField field={field} value={value} onChange={onChange} />;
+  }
+  if (field.kind === 'character-source') {
+    return <CharacterSourceField field={field} allValues={allValues} onChangeAny={onChangeAny} />;
   }
   if (field.kind === 'image') {
     const dataUrl = typeof value === 'string' ? value : '';
@@ -630,7 +743,7 @@ function CharacterPickerField({ field, value, onChange }: { field: Extract<Field
 
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>{field.label}</label>
+      {field.label && <label className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>{field.label}</label>}
 
       {current && (
         <div className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ backgroundColor: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.25)' }}>
@@ -726,6 +839,117 @@ function CharacterPickerField({ field, value, onChange }: { field: Extract<Field
   );
 }
 
+/**
+ * ONE required character identity, presented as three explicit radio
+ * choices rather than several always-visible fields fighting for
+ * attention (see the `character-source` Field kind doc in ./_forms.ts for
+ * the full rationale). Local `mode` state decides which single panel
+ * shows; picking a mode clears the other two underlying fields so only
+ * one identity source is ever in `values` at a time -- the same rule
+ * `exclusiveGroups` enforces for make_ugc's person/image/character today,
+ * just made visible as a choice instead of an implicit "last one wins".
+ */
+function CharacterSourceField({ field, allValues, onChangeAny }: {
+  field: Extract<Field, { kind: 'character-source' }>;
+  allValues?: Record<string, unknown>;
+  onChangeAny?: (name: string, v: unknown) => void;
+}) {
+  type Mode = 'generate' | 'upload' | 'existing';
+  const inputStyle: React.CSSProperties = { backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 10px', fontSize: 13, width: '100%' };
+  const generateVal = String(allValues?.[field.generateField] ?? '');
+  const uploadVal = String(allValues?.[field.uploadField] ?? '');
+  const existingVal = String(allValues?.[field.existingField] ?? '');
+  // Derived once from whatever the caller seeded in (a prefill, a saved
+  // prompt) so re-opening a form with an existing pick doesn't silently
+  // reset to "Generate" -- after that it's plain UI state the radios drive.
+  const [mode, setMode] = useState<Mode>(() => (existingVal ? 'existing' : uploadVal ? 'upload' : 'generate'));
+  const [compressing, setCompressing] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+
+  const selectMode = (next: Mode) => {
+    setMode(next);
+    if (next !== 'generate') onChangeAny?.(field.generateField, '');
+    if (next !== 'upload') onChangeAny?.(field.uploadField, '');
+    if (next !== 'existing') onChangeAny?.(field.existingField, '');
+  };
+
+  const onFile = (file: File | null) => {
+    if (!file) { onChangeAny?.(field.uploadField, ''); return; }
+    setPhotoError(null);
+    setCompressing(true);
+    compressImageFile(file)
+      .then((dataUrl) => onChangeAny?.(field.uploadField, dataUrl))
+      .catch(() => setPhotoError('Could not read that image \u2014 try a different file.'))
+      .finally(() => setCompressing(false));
+  };
+
+  const radioLabelStyle: React.CSSProperties = { color: '#E9E9F0' };
+
+  return (
+    <div className="flex flex-col gap-2 rounded-xl p-3" style={{ border: '1px solid rgba(255,255,255,0.08)', backgroundColor: '#0F1015' }}>
+      <label className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>{field.label}</label>
+
+      <label className="flex cursor-pointer items-center gap-2 text-[12.5px]" style={radioLabelStyle}>
+        <input type="radio" name={`${field.name}-mode`} checked={mode === 'generate'} onChange={() => selectMode('generate')} />
+        Generate Required Character Images
+      </label>
+      {mode === 'generate' && (
+        <textarea
+          rows={2}
+          value={generateVal}
+          onChange={(e) => onChangeAny?.(field.generateField, e.target.value)}
+          placeholder={field.generatePlaceholder ?? 'Describe the character in words \u2014 a friendly young woman, soft daylight'}
+          style={{ ...inputStyle, marginLeft: 24, width: 'auto' }}
+        />
+      )}
+
+      <label className="flex cursor-pointer items-center gap-2 text-[12.5px]" style={radioLabelStyle}>
+        <input type="radio" name={`${field.name}-mode`} checked={mode === 'upload'} onChange={() => selectMode('upload')} />
+        Upload Your Own
+      </label>
+      {mode === 'upload' && (
+        <div className="flex flex-col gap-1" style={{ marginLeft: 24 }}>
+          <label
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => { e.preventDefault(); onFile(e.dataTransfer.files?.[0] ?? null); }}
+            className="flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg px-3 py-4 text-center"
+            style={{ backgroundColor: '#14151F', border: '1px dashed rgba(255,255,255,0.18)', fontSize: 12, color: 'rgba(255,255,255,0.55)' }}
+          >
+            <input type="file" accept="image/png,image/jpeg" className="hidden" onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
+            {compressing ? (
+              <span>compressing photo\u2026</span>
+            ) : uploadVal ? (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={uploadVal} alt="character preview" style={{ maxHeight: 96, borderRadius: 6 }} />
+                <span style={{ color: '#34D399' }}>photo attached \u2014 click to replace</span>
+              </>
+            ) : (
+              <span>drop a photo here, or click to choose (PNG/JPEG)</span>
+            )}
+          </label>
+          {photoError && <span className="text-[11px]" style={{ color: '#FCA5A5' }}>{photoError}</span>}
+        </div>
+      )}
+
+      <label className="flex cursor-pointer items-center gap-2 text-[12.5px]" style={radioLabelStyle}>
+        <input type="radio" name={`${field.name}-mode`} checked={mode === 'existing'} onChange={() => selectMode('existing')} />
+        Select Existing Characters
+      </label>
+      {mode === 'existing' && (
+        <div style={{ marginLeft: 24 }}>
+          <CharacterPickerField
+            field={{ kind: 'character-picker', name: field.existingField, label: '', placeholder: 'char_\u2026 or a character_sheet_url' }}
+            value={existingVal}
+            onChange={(v) => onChangeAny?.(field.existingField, v)}
+          />
+        </div>
+      )}
+
+      {field.help && <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{field.help}</span>}
+    </div>
+  );
+}
 
 /**
  * The main script textarea. Two corner buttons live INSIDE the box itself
@@ -1046,10 +1270,25 @@ function CharacterRow({
   onRemove: () => void;
 }) {
   const inputStyle: React.CSSProperties = { backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 10px', fontSize: 13, width: '100%' };
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerTab, setPickerTab] = useState<'mine' | 'stock'>('mine');
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [compressing, setCompressing] = useState(false);
+  // Which of the three identity sources this character uses -- an explicit
+  // choice instead of showing description + upload + picker all at once
+  // (see the character-source Field kind's doc comment in ./_forms.ts for
+  // the same pattern used by make_ugc / make_podcast). Derived once from
+  // whatever's already on the item (a prefill, an edit reopened) so it
+  // doesn't reset a real pick back to "Generate" on every render.
+  const [mode, setMode] = useState<'generate' | 'upload' | 'existing'>(() =>
+    item.ref ? 'existing' : item.ref_base64 ? 'upload' : 'generate',
+  );
+
+  const selectMode = (next: 'generate' | 'upload' | 'existing') => {
+    setMode(next);
+    if (next !== 'generate') onChange({ description: '' });
+    if (next !== 'upload') onChange({ ref_base64: '' });
+    if (next !== 'existing') onChange({ ref: '' });
+  };
 
   const onFile = (file: File | null) => {
     if (!file) { setPhotoError(null); onChange({ ref_base64: '' }); return; }
@@ -1072,9 +1311,20 @@ function CharacterRow({
 
       <input type="text" value={item.name} onChange={(e) => onChange({ name: e.target.value })} placeholder="Name — must match a scene speaker (e.g. Pip)" style={inputStyle} />
 
-      <textarea rows={2} value={item.description} onChange={(e) => onChange({ description: e.target.value })} placeholder="Description — a curious fox cub in a blue scarf" style={inputStyle} />
+      <label className="flex cursor-pointer items-center gap-2 text-[12.5px]" style={{ color: '#E9E9F0' }}>
+        <input type="radio" name={`char-${index}-mode`} checked={mode === 'generate'} onChange={() => selectMode('generate')} />
+        Generate Required Character Images
+      </label>
+      {mode === 'generate' && (
+        <textarea rows={2} value={item.description} onChange={(e) => onChange({ description: e.target.value })} placeholder="Description — a curious fox cub in a blue scarf" style={{ ...inputStyle, marginLeft: 24, width: 'auto' }} />
+      )}
 
-      <div className="flex flex-col gap-1">
+      <label className="flex cursor-pointer items-center gap-2 text-[12.5px]" style={{ color: '#E9E9F0' }}>
+        <input type="radio" name={`char-${index}-mode`} checked={mode === 'upload'} onChange={() => selectMode('upload')} />
+        Upload Your Own
+      </label>
+      {mode === 'upload' && (
+      <div className="flex flex-col gap-1" style={{ marginLeft: 24 }}>
         <label
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => { e.preventDefault(); onFile(e.dataTransfer.files?.[0] ?? null); }}
@@ -1091,17 +1341,20 @@ function CharacterRow({
               <span style={{ color: '#34D399' }}>photo attached — click to replace</span>
             </>
           ) : (
-            <span>…or upload a photo</span>
+            <span>drop a photo here, or click to choose (PNG/JPEG)</span>
           )}
         </label>
         {photoError && <span className="text-[11px]" style={{ color: '#FCA5A5' }}>{photoError}</span>}
-        {item.ref_base64 && (
-          <button type="button" onClick={() => onChange({ ref_base64: '' })} className="self-start text-[11px] underline" style={{ color: 'rgba(255,255,255,0.45)' }}>remove photo</button>
-        )}
       </div>
+      )}
 
-      <div className="flex flex-col gap-1">
-        {item.ref && !item.ref_base64 && (
+      <label className="flex cursor-pointer items-center gap-2 text-[12.5px]" style={{ color: '#E9E9F0' }}>
+        <input type="radio" name={`char-${index}-mode`} checked={mode === 'existing'} onChange={() => { selectMode('existing'); onOpenPicker(); }} />
+        Select Existing Characters
+      </label>
+      {mode === 'existing' && (
+      <div className="flex flex-col gap-1" style={{ marginLeft: 24 }}>
+        {item.ref && (
           <div className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ backgroundColor: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.25)' }}>
             {pickedThumb && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -1111,17 +1364,8 @@ function CharacterRow({
             <button type="button" onClick={() => onChange({ ref: '' })} className="text-[11px] underline" style={{ color: 'rgba(255,255,255,0.5)' }}>clear</button>
           </div>
         )}
-        <button
-          type="button"
-          onClick={() => { setPickerOpen((o) => !o); if (!pickerOpen) onOpenPicker(); }}
-          className="self-start text-[12px] underline"
-          style={{ color: '#A78BFA' }}
-        >
-          {pickerOpen ? 'hide picker' : item.ref && !item.ref_base64 ? 'change saved character' : '…or reuse a saved character'}
-        </button>
 
-        {pickerOpen && (
-          <div className="flex flex-col gap-2 rounded-xl p-3" style={{ border: '1px solid rgba(255,255,255,0.08)', backgroundColor: '#14151F' }}>
+        <div className="flex flex-col gap-2 rounded-xl p-3" style={{ border: '1px solid rgba(255,255,255,0.08)', backgroundColor: '#14151F' }}>
             <div className="flex gap-1">
               <button type="button" onClick={() => setPickerTab('mine')} className="rounded-full px-3 py-1 text-[11px]" style={{ backgroundColor: pickerTab === 'mine' ? '#A78BFA' : 'rgba(255,255,255,0.06)', color: pickerTab === 'mine' ? '#0F1015' : 'rgba(255,255,255,0.6)' }}>My characters</button>
               <button type="button" onClick={() => setPickerTab('stock')} className="rounded-full px-3 py-1 text-[11px]" style={{ backgroundColor: pickerTab === 'stock' ? '#A78BFA' : 'rgba(255,255,255,0.06)', color: pickerTab === 'stock' ? '#0F1015' : 'rgba(255,255,255,0.6)' }}>Stock actors</button>
@@ -1137,7 +1381,7 @@ function CharacterRow({
                     <button
                       type="button"
                       key={c.id}
-                      onClick={() => { onChange({ ref: c.character_sheet_url ?? '', ref_base64: '' }); setPickerOpen(false); }}
+                      onClick={() => onChange({ ref: c.character_sheet_url ?? '', ref_base64: '' })}
                       className="flex flex-col items-center gap-1 rounded-lg p-1.5 transition-colors hover:opacity-80"
                       style={{ border: item.ref === c.character_sheet_url ? '1px solid #A78BFA' : '1px solid rgba(255,255,255,0.06)' }}
                       title={c.name ?? undefined}
@@ -1161,7 +1405,7 @@ function CharacterRow({
                     <button
                       type="button"
                       key={a.id}
-                      onClick={() => { onChange({ ref: a.portrait_url ?? '', ref_base64: '' }); setPickerOpen(false); }}
+                      onClick={() => onChange({ ref: a.portrait_url ?? '', ref_base64: '' })}
                       className="flex flex-col items-center gap-1 rounded-lg p-1.5 transition-colors hover:opacity-80"
                       style={{ border: item.ref === a.portrait_url ? '1px solid #A78BFA' : '1px solid rgba(255,255,255,0.06)' }}
                       title={a.name}
@@ -1175,8 +1419,8 @@ function CharacterRow({
               )
             )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1237,6 +1481,56 @@ function SceneListField({
       {items.length < field.max && (
         <button type="button" onClick={addItem} className="self-start rounded-full px-3 py-1.5 text-[12px]" style={{ backgroundColor: 'rgba(167,139,250,0.12)', color: '#A78BFA', border: '1px solid rgba(167,139,250,0.3)' }}>
           + add scene
+        </button>
+      )}
+      {field.help && <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{field.help}</span>}
+    </div>
+  );
+}
+
+function TurnListField({ field, value, onChange }: {
+  field: Extract<Field, { kind: 'turn-list' }>;
+  value: unknown;
+  onChange: (v: unknown) => void;
+}) {
+  const inputStyle: React.CSSProperties = { backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 10px', fontSize: 13, width: '100%' };
+  const items = Array.isArray(value) ? (value as TurnItem[]) : [];
+
+  const updateItem = (i: number, patch: Partial<TurnItem>) => {
+    const next = items.slice();
+    next[i] = { ...next[i], ...patch };
+    onChange(next);
+  };
+  const addItem = () => {
+    if (items.length >= field.max) return;
+    const lastSpeaker = items[items.length - 1]?.speaker;
+    onChange([...items, { speaker: lastSpeaker === 'A' ? 'B' : 'A', line: '' }]);
+  };
+  const removeItem = (i: number) => onChange(items.filter((_, idx) => idx !== i));
+
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>{field.label}</label>
+      {items.length === 0 && (
+        <div className="rounded-lg px-3 py-3 text-center text-[12px]" style={{ border: '1px dashed rgba(255,255,255,0.18)', color: 'rgba(255,255,255,0.4)' }}>
+          No lines yet — add at least one turn.
+        </div>
+      )}
+      <div className="flex flex-col gap-2">
+        {items.map((item, i) => (
+          <div key={i} className="flex items-start gap-2 rounded-xl p-3" style={{ border: '1px solid rgba(255,255,255,0.08)', backgroundColor: '#0F1015' }}>
+            <select value={item.speaker} onChange={(e) => updateItem(i, { speaker: e.target.value as 'A' | 'B' })} style={{ ...inputStyle, width: 72, flexShrink: 0 }}>
+              <option value="A">A</option>
+              <option value="B">B</option>
+            </select>
+            <textarea rows={2} value={item.line} onChange={(e) => updateItem(i, { line: e.target.value })} placeholder="What they say (5+ words)" style={{ ...inputStyle, flex: 1 }} />
+            <button type="button" onClick={() => removeItem(i)} className="shrink-0 text-[11px] underline" style={{ color: 'rgba(255,255,255,0.45)' }}>remove</button>
+          </div>
+        ))}
+      </div>
+      {items.length < field.max && (
+        <button type="button" onClick={addItem} className="self-start rounded-full px-3 py-1.5 text-[12px]" style={{ backgroundColor: 'rgba(167,139,250,0.12)', color: '#A78BFA', border: '1px solid rgba(167,139,250,0.3)' }}>
+          + add turn
         </button>
       )}
       {field.help && <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{field.help}</span>}

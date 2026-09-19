@@ -30,7 +30,7 @@ import {
 } from '@/lib/sample-prompts';
 import { RunPanel, estimateSkillEta, type SkillEntry as SkillCatalogEntry, type RunResult as SkillLaunchResult } from '../skills/_run-panel';
 import { FORMS as SKILL_FORMS } from '../skills/_forms';
-import { CreateComposer, MAKE_UGC_ENTRY } from './_create-composer';
+import { CreateComposer } from './_create-composer';
 
 type Block =
   | { type: 'text'; text: string }
@@ -82,7 +82,7 @@ const SKILL_LABEL: Record<string, string> = {
   make_portrait: 'Portrait', make_character_sheet: 'Character sheet', make_wireframe: 'Storyboard',
   make_simple_selfie: 'Talking-head clip', make_lip_sync: 'Lip-sync clip', make_subtitles: 'Captions',
   make_ugc_video: 'UGC video', make_broll_talking_head: 'B-roll talking-head', make_product_in_hands: 'Product video',
-  make_podcast: 'Podcast', list_my_characters: 'Your characters',
+  make_podcast: 'Podcast', make_storybook: 'Storybook', list_my_characters: 'Your characters',
 };
 function stepLabels(steps: StepInfo[]): string[] {
   const clipKinds = new Set(['simple_selfie', 'lip_sync']);
@@ -2193,7 +2193,7 @@ function AgentPageInner() {
         <div className="mx-auto flex h-full min-w-0 flex-1 flex-col items-center justify-center px-6">
         <div className="w-full max-w-3xl">
           <CreateComposer
-            onGenerate={(r) => void launchSkillFromPicker(MAKE_UGC_ENTRY, r)}
+            onGenerate={(skill, r) => void launchSkillFromPicker(skill, r)}
             onUseSavedPrompt={openPromptPicker}
             onBrowseExamples={openExamplesPicker}
             onRunDifferentSkill={openSkillPicker}

@@ -31,6 +31,37 @@ export type Field =
   // list), their spoken line, and a visual description of the shot. Value
   // is an array of { speaker, line, visual_description } objects.
   | { kind: 'scene-list'; name: string; label: string; max: number; charactersField: string; help?: string }
+  // Repeatable ordered A/B dialogue list for make_podcast. Each row is one
+  // turn: which of the two actors (A or B) speaks, and their line (5+
+  // words -- a take needs to fill at least a 5s clip). Value is an array
+  // of { speaker: 'A' | 'B', line } objects.
+  | { kind: 'turn-list'; name: string; label: string; max: number; help?: string }
+  // ONE required character identity, presented as three radio choices
+  // instead of several always-visible fields -- the "how do you want to
+  // supply this character" decision made explicit:
+  //   - Generate Required Character Images (default): a plain text
+  //     description, written to `generateField`.
+  //   - Upload Your Own: a photo upload, written to `uploadField` as a
+  //     base64 data URL.
+  //   - Select Existing Characters: a saved character / stock actor
+  //     picker, written to `existingField`.
+  // Switching modes clears the other two fields so only one identity
+  // source is ever submitted, same rule as `exclusiveGroups` below.
+  // `generateViaPortrait` marks a skill (make_podcast) whose real field
+  // only ever accepts a saved character or an image URL -- never a bare
+  // description -- so RunPanel resolves "Generate" mode by drafting a
+  // quick make_portrait image from the text FIRST, then submitting its
+  // result as if the user had picked an existing character. Omit it (as
+  // make_ugc does) when the skill's own field already accepts a plain
+  // text description directly.
+  | {
+      kind: 'character-source'; name: string; label: string;
+      generateField: string; generatePlaceholder?: string;
+      uploadField: string;
+      existingField: string;
+      generateViaPortrait?: boolean;
+      help?: string;
+    }
   // Script textarea with a hover-reveal "Generate with AI" sparkle at its
   // right edge. Treats the CURRENT text as a one-line pitch, drafts a full
   // script via POST /v1/assist/draft-script, and replaces the box's
@@ -133,6 +164,31 @@ function validateMakeUgc(v: Record<string, unknown>): string | null {
   }
   if (sceneAction && !script && !character) {
     return 'A silent clip needs a saved character to perform it — pick one under "Use Saved Characters".';
+  }
+  return null;
+}
+
+/**
+ * Mirrors what dispatchMakePodcast (services/api-v2/src/routes/v1/skills.ts)
+ * actually requires: each of the two characters needs SOME identity source
+ * (a generated description, an uploaded photo, or a saved/existing
+ * character — matching the three character-source radio modes), and the
+ * conversation needs at least one real line.
+ */
+function validateMakePodcast(v: Record<string, unknown>): string | null {
+  const hasA =
+    Boolean(String(v.character_a ?? '').trim()) ||
+    Boolean(String(v.character_a_base64 ?? '').trim()) ||
+    Boolean(String(v._character_a_desc ?? '').trim());
+  const hasB =
+    Boolean(String(v.character_b ?? '').trim()) ||
+    Boolean(String(v.character_b_base64 ?? '').trim()) ||
+    Boolean(String(v._character_b_desc ?? '').trim());
+  if (!hasA) return 'Character A needs an identity — generate one from a description, upload a photo, or pick an existing character.';
+  if (!hasB) return 'Character B needs an identity — generate one from a description, upload a photo, or pick an existing character.';
+  const script = Array.isArray(v.script) ? (v.script as Array<{ speaker?: string; line?: string }>) : [];
+  if (script.filter((t) => t.speaker && t.line?.trim()).length === 0) {
+    return 'Add at least one line of dialogue before generating.';
   }
   return null;
 }
@@ -268,6 +324,19 @@ export const FORMS: Record<string, SkillForm> = {
       { kind: 'select', name: 'realism_target', label: 'Realism', options: ['natural', 'commercial', 'raw_iphone'], defaultValue: 'natural' },
       { kind: 'select', name: 'aspect_ratio', label: 'Aspect ratio', options: ['9:16', '1:1'], defaultValue: '9:16' },
       { kind: 'boolean', name: 'subtitles', label: 'Burn subtitles', defaultValue: true },
+      { kind: 'select', name: 'subtitles_style', label: 'Subtitles style', options: ['hormozi', 'tiktok', 'minimal'], defaultValue: 'hormozi' },
+    ],
+  },
+  make_podcast: {
+    composed: true,
+    validate: validateMakePodcast,
+    fields: [
+      { kind: 'character-source', name: 'character_a', label: 'Character A', generateField: '_character_a_desc', generatePlaceholder: 'e.g. a warm, curious podcast host in their 30s, glasses, casual sweater', uploadField: 'character_a_base64', existingField: 'character_a', generateViaPortrait: true, help: 'Who speaks the \'A\' lines below.' },
+      { kind: 'character-source', name: 'character_b', label: 'Character B', generateField: '_character_b_desc', generatePlaceholder: 'e.g. a friendly guest in their 40s, relaxed, warm smile', uploadField: 'character_b_base64', existingField: 'character_b', generateViaPortrait: true, help: 'Who speaks the \'B\' lines below.' },
+      // 24 mirrors PODCAST_MAX_TURNS in services/api-v2/src/skills/registry.ts.
+      { kind: 'turn-list', name: 'script', label: 'Conversation (in order)', max: 24, help: 'Each turn needs 5+ words to fill a clip — the camera cuts to whoever speaks. Long lines auto-split into ≤ 15s takes.' },
+      { kind: 'text', name: 'room', label: 'Studio / room look (optional)', placeholder: 'a warm modern podcast studio, two mics, wood desk', help: 'Defaults to a warm modern podcast studio.' },
+      { kind: 'boolean', name: 'subtitles', label: 'Burn subtitles', defaultValue: false },
       { kind: 'select', name: 'subtitles_style', label: 'Subtitles style', options: ['hormozi', 'tiktok', 'minimal'], defaultValue: 'hormozi' },
     ],
   },

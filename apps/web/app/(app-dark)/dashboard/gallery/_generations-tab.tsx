@@ -11,9 +11,13 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Sparkles, PlayCircle, Trash2 } from 'lucide-react';
+import { Loader2, Sparkles, PlayCircle, Trash2, MoreVertical, Share2, ImagePlus } from 'lucide-react';
 import { VideoPlayerModal, type VideoModalSubject } from '@/components/video-player-modal';
 import { PublishToSocial } from '@/components/publish-to-social';
+import { createClient } from '@/lib/supabase/client';
+import { isAdminEmailIn } from '@/lib/admin-allowlist';
+import { useVariables } from '@/components/variable-context';
+import { ShareModal, type ShareableItem } from './_share-modal';
 
 interface GenerationJob {
   id: string;
@@ -24,6 +28,14 @@ interface GenerationJob {
   output_thumbnail_url: string | null;
   duration_seconds: number | null;
   created_at: string;
+  // Added for admin-only sharing/showcase actions (2026-09-19 feature) --
+  // see _share-modal.tsx and app/api/admin/gallery/{share,search-users},
+  // app/api/admin/showcase.
+  source: string;
+  run_id: string;
+  title: string | null;
+  shared: boolean;
+  shared_by: string | null;
 }
 
 const PAGE_SIZE = 24;
@@ -51,6 +63,21 @@ export function GenerationsTab() {
   const [playing, setPlaying] = useState<VideoModalSubject | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // Admin-only affordances (share into another user's gallery, push to the
+  // homepage showcase) -- same client-side detection idiom as
+  // dashboard/admin/content/page.tsx. Server-side routes re-check the
+  // allowlist themselves, so this is UI-gating only, not the trust boundary.
+  const { adminEmails } = useVariables();
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await createClient().auth.getUser();
+      setIsAdmin(isAdminEmailIn(user?.email, adminEmails));
+    })();
+  }, [adminEmails]);
+  const [sharingJob, setSharingJob] = useState<GenerationJob | null>(null);
+  const [addingToShowcaseId, setAddingToShowcaseId] = useState<string | null>(null);
+
   const fetchPage = useCallback(
     async (offset: number): Promise<{ videos: GenerationJob[]; rawCount: number; hasMore: boolean } | null> => {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset), filter: 'all' });
@@ -64,6 +91,7 @@ export function GenerationsTab() {
           items?: Array<{
             id: string;
             source: string;
+            run_id: string;
             primitive: string | null;
             status: string;
             created_at: string;
@@ -71,6 +99,9 @@ export function GenerationsTab() {
             thumbnail_url: string | null;
             duration_seconds: number | null;
             prompt: string | null;
+            title: string | null;
+            shared: boolean;
+            shared_by: string | null;
           }>;
           has_more?: boolean;
         };
@@ -92,6 +123,11 @@ export function GenerationsTab() {
             output_thumbnail_url: j.thumbnail_url,
             duration_seconds: j.duration_seconds,
             created_at: j.created_at,
+            source: j.source,
+            run_id: j.run_id,
+            title: j.title,
+            shared: j.shared,
+            shared_by: j.shared_by,
           })) as GenerationJob[];
         return { videos, rawCount: raw.length, hasMore: Boolean(json.has_more) };
       } catch (err) {
@@ -208,6 +244,34 @@ export function GenerationsTab() {
     }
   }, [deletingId]);
 
+  const handleAddToShowcase = useCallback(async (job: GenerationJob) => {
+    if (addingToShowcaseId || !job.output_media_url) return;
+    setAddingToShowcaseId(job.id);
+    try {
+      const resp = await fetch('/api/admin/showcase', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          media_url: job.output_media_url,
+          label: job.title ?? job.operation ?? null,
+          source_run_id: job.run_id,
+        }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        const msg = (data as any)?.detail ?? (data as any)?.error ?? `HTTP ${resp.status}`;
+        window.alert(typeof msg === 'string' ? msg : 'Failed to add to showcase.');
+        return;
+      }
+      window.alert('Added to the homepage showcase.');
+    } catch (e) {
+      window.alert((e as Error).message);
+    } finally {
+      setAddingToShowcaseId(null);
+    }
+  }, [addingToShowcaseId]);
+
   const loading = jobs === null;
 
   return (
@@ -253,7 +317,17 @@ export function GenerationsTab() {
             {jobs.length > 0 && (
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
                 {jobs.map((job) => (
-                  <GenerationCard key={job.id} job={job} onOpen={setPlaying} onDelete={handleDelete} deleting={deletingId === job.id} />
+                  <GenerationCard
+                    key={job.id}
+                    job={job}
+                    onOpen={setPlaying}
+                    onDelete={handleDelete}
+                    deleting={deletingId === job.id}
+                    isAdmin={isAdmin}
+                    onShare={setSharingJob}
+                    onAddToShowcase={handleAddToShowcase}
+                    addingToShowcase={addingToShowcaseId === job.id}
+                  />
                 ))}
               </div>
             )}
@@ -284,6 +358,21 @@ export function GenerationsTab() {
       </section>
 
       <VideoPlayerModal subject={playing} onClose={() => setPlaying(null)} />
+      {sharingJob && sharingJob.output_media_url ? (
+        <ShareModal
+          item={{
+            source: sharingJob.source,
+            run_id: sharingJob.run_id,
+            primitive: sharingJob.model_slug,
+            media_url: sharingJob.output_media_url,
+            thumbnail_url: sharingJob.output_thumbnail_url,
+            duration_seconds: sharingJob.duration_seconds,
+            title: sharingJob.title,
+            prompt: sharingJob.prompt,
+          } satisfies ShareableItem}
+          onClose={() => setSharingJob(null)}
+        />
+      ) : null}
     </>
   );
 }
@@ -335,17 +424,26 @@ function GenerationCard({
   onOpen,
   onDelete,
   deleting,
+  isAdmin,
+  onShare,
+  onAddToShowcase,
+  addingToShowcase,
 }: {
   job: GenerationJob;
   onOpen: (s: VideoModalSubject) => void;
   onDelete: (id: string) => void;
   deleting: boolean;
+  isAdmin: boolean;
+  onShare: (job: GenerationJob) => void;
+  onAddToShowcase: (job: GenerationJob) => void;
+  addingToShowcase: boolean;
 }) {
   const isVideo = !!job.output_media_url && /\.(mp4|webm|mov)(\?|$)/i.test(job.output_media_url);
   const looksLikeImage = !!job.output_media_url && /\.(png|jpe?g|webp|gif)(\?|$)/i.test(job.output_media_url);
   const thumbImg = isVideo ? null : (job.output_thumbnail_url ?? (looksLikeImage ? job.output_media_url : null));
   const date = new Date(job.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   function handleEnter() {
     const v = videoRef.current;
@@ -357,6 +455,7 @@ function GenerationCard({
     if (!v) return;
     v.pause();
     try { v.currentTime = 0; } catch {}
+    setMenuOpen(false);
   }
   const openable = isVideo || looksLikeImage;
   function handleClick() {
@@ -389,13 +488,53 @@ function GenerationCard({
       >
         {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
       </button>
+      {isAdmin && job.output_media_url ? (
+        <div className="absolute right-2 top-2 z-20">
+          <button
+            type="button"
+            aria-label="Admin actions"
+            onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
+            className={`flex h-7 w-7 items-center justify-center rounded-full backdrop-blur-md transition-opacity ${menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+            style={{ backgroundColor: 'rgba(15,16,21,0.7)', color: '#E9E9F0' }}
+          >
+            <MoreVertical className="h-3.5 w-3.5" />
+          </button>
+          {menuOpen ? (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="absolute right-0 top-9 w-44 overflow-hidden rounded-xl text-left"
+              style={{ backgroundColor: '#20212B', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}
+            >
+              <button
+                type="button"
+                onClick={() => { setMenuOpen(false); onShare(job); }}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-xs transition-colors hover:bg-white/5"
+                style={{ color: '#E9E9F0' }}
+              >
+                <Share2 className="h-3.5 w-3.5" style={{ color: '#A78BFA' }} />
+                Share with users
+              </button>
+              <button
+                type="button"
+                disabled={addingToShowcase}
+                onClick={() => { setMenuOpen(false); onAddToShowcase(job); }}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-xs transition-colors hover:bg-white/5 disabled:opacity-50"
+                style={{ color: '#E9E9F0' }}
+              >
+                {addingToShowcase ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" style={{ color: '#A78BFA' }} />}
+                Add to showcase
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <LazyMedia videoSrc={isVideo ? job.output_media_url : null} imgSrc={!isVideo ? thumbImg : null} videoRef={videoRef} />
       <div
         className="absolute inset-x-0 bottom-0 h-24 pointer-events-none"
         style={{ background: 'linear-gradient(180deg, rgba(15,16,21,0) 0%, rgba(15,16,21,0.85) 70%, rgba(15,16,21,0.95) 100%)' }}
         aria-hidden
       />
-      {isVideo ? (
+      {isVideo && !menuOpen ? (
         <span
           className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full backdrop-blur-md transition-opacity group-hover:opacity-0"
           style={{ backgroundColor: 'rgba(15,16,21,0.6)' }}
@@ -404,8 +543,17 @@ function GenerationCard({
           <PlayCircle className="h-4 w-4" style={{ color: '#A78BFA' }} />
         </span>
       ) : null}
-      <div className="relative mt-auto px-3 py-3">
+      <div className="relative mt-auto flex items-center justify-between gap-2 px-3 py-3">
         <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.65)' }}>{date}</span>
+        {job.shared ? (
+          <span
+            className="truncate rounded-full px-2 py-0.5 text-[10px] font-medium"
+            style={{ backgroundColor: 'rgba(167,139,250,0.15)', color: '#C4B5FD' }}
+            title={job.shared_by ? `Shared by ${job.shared_by}` : 'Shared'}
+          >
+            Shared{job.shared_by ? ` by ${job.shared_by}` : ''}
+          </span>
+        ) : null}
       </div>
     </div>
   );

@@ -18,6 +18,7 @@ import { ArrowLeft, ExternalLink, Loader2 } from 'lucide-react';
 import { estimateSkillEta } from '../../_run-panel';
 import { prettyPrimitiveLabel, prettyStepLabel, storybookMilestoneIndex, STORYBOOK_MILESTONES } from '../../_step-labels';
 import { RetryButton } from '../../_retry';
+import { RunInputView } from '../../_run-input-view';
 
 interface Artifact { url: string; kind?: string; mime?: string | null; bytes?: number }
 interface StepEntry { primitive_run_id?: string; primitive: string; status: string; started_at?: string | null; finished_at?: string | null; error?: { code: string; message: string | null } | null; artifacts?: Artifact[] }
@@ -430,6 +431,8 @@ function RunBodyView({ body, composed, id }: { body: RunBody; composed: boolean;
       )}
 
       <RunProgress body={body} />
+
+      <RunInputView skillOrPrimitive={composed ? body.skill : body.primitive} composed={composed} runId={id} />
 
       {body.error && (
         <div className="mt-4 flex flex-col gap-2 rounded-xl px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between" style={{ border: '1px solid rgba(255,79,79,0.3)', backgroundColor: 'rgba(255,79,79,0.08)', color: '#FCA5A5' }}>

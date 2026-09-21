@@ -66,6 +66,7 @@ import {
   portraitGpt2PrimitiveRoute,
   characterSheetGpt2PrimitiveRoute,
   getPrimitiveRunRoute,
+  getPrimitiveRunInputRoute,
 } from './routes/v1/primitives.js';
 import { listSkillsRoute, runSkillRoute, getSkillRunRoute, getSkillRunInputRoute, cancelSkillRunRoute, quoteSkillRoute } from './routes/v1/skills.js';
 import { asyncHandler } from './lib/async-handler.js';
@@ -942,6 +943,12 @@ if (isPrimitivesRouteEnabled()) {
     readLimiter,
     authMiddleware,
     getPrimitiveRunRoute,
+  );
+  app.get(
+    '/v1/primitives/runs/:run_id/input',
+    readLimiter,
+    authMiddleware,
+    getPrimitiveRunInputRoute,
   );
   // Micro-skill surface (one slug per primitive for V1).
   app.get('/v1/skills', readLimiter, authMiddleware, listSkillsRoute);

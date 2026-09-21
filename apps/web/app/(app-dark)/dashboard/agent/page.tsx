@@ -22,7 +22,7 @@ import Link from 'next/link';
 import { prettyStepLabel, prettyPrimitiveLabel } from '../skills/_step-labels';
 import { popRetryDraft } from '../skills/_retry';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Loader2, Send, Square, Sparkles, Wrench, Check, AlertCircle, ArrowDown, Plus, Trash2, X, RotateCcw, PanelRight, ListChecks, Users, Images, CornerDownLeft, Pencil, MessageSquarePlus, History, Pin, PinOff, Archive, Search, MoreHorizontal, Folder, FolderPlus, ChevronRight, ChevronDown, UploadCloud, Wand2, BookOpen } from 'lucide-react';
+import { Loader2, Send, Square, Sparkles, Wrench, Check, AlertCircle, ArrowDown, Plus, Trash2, X, RotateCcw, PanelRight, ListChecks, Users, Images, CornerDownLeft, Pencil, MessageSquarePlus, History, Pin, PinOff, Archive, Search, MoreHorizontal, Folder, FolderPlus, ChevronRight, ChevronDown, UploadCloud, Wand2, BookOpen, ExternalLink } from 'lucide-react';
 import { invokeFn } from '@/lib/supabase/fn-proxy';
 import { createClient } from '@/lib/supabase/client';
 
@@ -2454,6 +2454,22 @@ function AgentPageInner() {
                             <Wrench className="h-3.5 w-3.5 shrink-0" style={{ color: 'rgba(255,255,255,0.35)' }} />
                             <span style={{ color: '#E9E9F0' }}>{label}</span>
                             <span className="truncate" style={{ color: isStalled ? '#FCD34D' : 'rgba(255,255,255,0.4)' }}>· {statusText}</span>
+                            {run?.runId && (
+                              // Full detail — the timeline, every generated artifact,
+                              // the exact prompt/inputs this run was dispatched with,
+                              // and Retry if it failed. Same destination dashboard/jobs
+                              // already links to (dashboard/skills/runs/[id]) so a run
+                              // reads the same whether you found it from Jobs or from
+                              // here in the chat that kicked it off.
+                              <Link
+                                href={`/dashboard/skills/runs/${run.runId}${run.composed ? '?composed=1' : ''}`}
+                                title="View full details"
+                                className="ml-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] transition-opacity hover:opacity-90"
+                                style={{ border: '1px solid rgba(255,255,255,0.14)', color: 'rgba(255,255,255,0.6)' }}
+                              >
+                                <ExternalLink className="h-3 w-3" /> Details
+                              </Link>
+                            )}
                             {run?.status === 'failed' && b.name !== 'list_my_characters' && (
                               /(credit|insufficient)/i.test(run.note ?? '')
                                 // Out of credits: retrying just fails again — offer the fix.

@@ -247,6 +247,84 @@ well past any reasonable threshold).
 
 ---
 
+## `app.vantly-ugc.com` nginx reverse-proxy override (added 2026-09-20)
+
+**Server-only file, not in this repo:**
+`/etc/nginx/conf.d/users/vantlyugc/app.vantly-ugc.com/zz-web-proxy.conf` on the
+production cPanel/WHM box. If that server is ever rebuilt or migrated, this
+file is gone and both bugs below come back with no obvious cause — so if you
+are setting up a fresh box, recreate it from the contents here before anything
+else.
+
+Production is a single shared cPanel/WHM VPS. Public HTTPS for every hosted
+domain (vantly-ugc's and dozens of unrelated client domains) is terminated by
+a system-level nginx that, by default, forwards each domain to Apache, which
+in turn reverse-proxies to the right container via that domain's
+`.htaccess` (`app.vantly-ugc.com`'s points `[P,L]` at `127.0.0.1:3005`, the
+`web` container). `api.vantly-ugc.com`, `auth.vantly-ugc.com` and the apex
+`vantly-ugc.com` already had a per-domain nginx override file
+(`conf.d/users/<user>/<domain>/zz-*.conf`, the `zz-` prefix so cPanel loads it
+last / wins) that skips Apache and proxies straight to the container.
+`app.vantly-ugc.com` had no such file and relied on the Apache hop — until
+two bugs, both traced and fixed this way:
+
+**Bug 1 — PATCH (and presumably other non-GET/POST) requests 404'd through
+the public domain but worked fine hitting the container directly.** Root
+cause: nothing in cPanel's default nginx→Apache path forces
+`proxy_method $request_method`, so the method got lost/mismatched somewhere
+in the hop, landing on Next.js as an unmatched route (a real 404 page, not a
+network error) — surfaced live as renaming a character on
+`/dashboard/actors` failing with `Unexpected token '<', "<!DOCTYPE "... is
+not valid JSON`.
+
+**Bug 2 (introduced by the first fix) — `Bad Gateway` on
+`/auth/callback?code=...` after adding the override, intermittently.** Root
+cause: nginx's small default response-header read buffer (`proxy_buffer_size`,
+4–8k) couldn't hold the response headers from `/auth/callback`, which sets
+large `Set-Cookie` headers for the new Supabase session (access + refresh
+tokens) right after `exchangeCodeForSession` succeeds — confirmed
+server-side in GoTrue's own logs as a successful login during the exact
+window the browser saw Bad Gateway. Apache's proxy never enforced a buffer
+this small, so the same response always went through fine over the old path.
+Confirmed by direct A/B: removing the override file made the login redirect
+work again but brought back the PATCH 404; adding `proxy_buffer_size` /
+`proxy_buffers` fixed both at once.
+
+Working file (mirrors the proven pattern already used for
+`api.vantly-ugc.com`'s override, just pointed at the `web` container's port
+and with larger response-header buffers for bug 2):
+
+```nginx
+location ~ ^/(?!cpanelwebcall|Microsoft-Server-ActiveSync) {
+    proxy_pass http://localhost:3005;
+    proxy_http_version 1.1;
+    proxy_method $request_method;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port $server_port;
+    proxy_connect_timeout 60s;
+    proxy_send_timeout 300s;
+    proxy_read_timeout 300s;
+    proxy_buffering off;
+    proxy_buffer_size 32k;
+    proxy_buffers 4 32k;
+    proxy_busy_buffers_size 64k;
+    chunked_transfer_encoding on;
+    proxy_cache off;
+    proxy_no_cache 1;
+    proxy_cache_bypass 1;
+}
+```
+
+Apply with `nginx -t` (must say "syntax is ok" / "test is successful") before
+`systemctl reload nginx` — this box serves many unrelated client domains, so
+always validate before reloading. Verified live 2026-09-20: repeated
+login/logout cycles via Google OAuth and repeated character renames both
+clean with this file in place.
+
 ## Still open
 
 - **Sentry projects.** `api-v2`, `primitive-worker-vnext` and the dashboard all

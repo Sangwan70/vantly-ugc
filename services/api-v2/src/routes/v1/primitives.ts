@@ -266,6 +266,43 @@ export async function getPrimitiveRunRoute(
   });
 }
 
+/**
+ * The original request body a standalone primitive run was dispatched
+ * with — the run-detail page's "Prompt & inputs" section (dashboard/
+ * skills/runs/[id]/page.tsx via _run-input-view.tsx) fetches this once on
+ * load to show exactly what was submitted. Mirrors getSkillRunInputRoute
+ * (routes/v1/skills.ts) for the composed-run equivalent: deliberately its
+ * own endpoint, not folded into getPrimitiveRunRoute above, so raw user
+ * content (which can include reference-image URLs) isn't carried on every
+ * few-second status poll.
+ */
+export async function getPrimitiveRunInputRoute(req: Request, res: Response): Promise<void> {
+  const userId = (req as any).userId as string | undefined;
+  if (!userId) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+  const runId = String(req.params.run_id ?? '');
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(runId)) {
+    res.status(400).json({ error: 'invalid_run_id' });
+    return;
+  }
+  const { data, error } = await supabase
+    .from('primitive_runs')
+    .select('id, user_id, primitive_id, input')
+    .eq('id', runId)
+    .maybeSingle();
+  if (error) {
+    res.status(500).json({ error: 'lookup_failed', detail: error.message });
+    return;
+  }
+  if (!data || data.user_id !== userId) {
+    res.status(404).json({ error: 'not_found' });
+    return;
+  }
+  res.status(200).json({ primitive: data.primitive_id, input: data.input ?? null });
+}
+
 function readIdempotencyKey(req: Request): string | null {
   const raw = req.header('idempotency-key') ?? req.header('Idempotency-Key');
   if (!raw) return null;

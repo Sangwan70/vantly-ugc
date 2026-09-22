@@ -13,6 +13,15 @@
  * rather than the old wrapping grid — per the 2026-09-19 feature request
  * ("Let the list be scrollable as I keep adding to it. In a rolling
  * Window style (10 Videos)").
+ *
+ * A second, independent strip below it — "Featured Characters" — shows
+ * published characters (GET /api/showcase?kind=character, backed by the
+ * same showcase_items table's new `kind` column; see
+ * app/(app-dark)/dashboard/actors/page.tsx's admin-only "Publish to
+ * showcase" action and the 2026-09-22 character_shares_and_showcase
+ * migration). Same ShowcaseStrip/ShowcaseTile components, own rolling
+ * window of 10, own fetch — one section publishing has no effect on the
+ * other's window.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -139,7 +148,7 @@ function ShowcaseStrip({ items }: { items: ShowcaseItem[] }) {
   );
 }
 
-export default function ShowcasePage() {
+function useShowcaseItems(kind: 'video' | 'character') {
   const [items, setItems] = useState<ShowcaseItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -147,20 +156,27 @@ export default function ShowcasePage() {
     let cancelled = false;
     (async () => {
       try {
-        const resp = await fetch('/api/showcase', { cache: 'no-store' });
+        const resp = await fetch(`/api/showcase?kind=${kind}`, { cache: 'no-store' });
         const json = await resp.json().catch(() => ({}));
         if (cancelled) return;
         if (!resp.ok) {
-          setError('Could not load the showcase right now.');
+          setError('Could not load this right now.');
           return;
         }
         setItems((json.items ?? []) as ShowcaseItem[]);
       } catch {
-        if (!cancelled) setError('Could not load the showcase right now.');
+        if (!cancelled) setError('Could not load this right now.');
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [kind]);
+
+  return { items, error };
+}
+
+export default function ShowcasePage() {
+  const { items, error } = useShowcaseItems('video');
+  const { items: characterItems, error: characterError } = useShowcaseItems('character');
 
   return (
     <MarketingShell>
@@ -170,7 +186,7 @@ export default function ShowcasePage() {
         lede="Real renders from the pipeline — talking-head UGC, character video, and captioned exports."
       />
 
-      <section className="mx-auto w-full max-w-5xl px-6 pb-24">
+      <section className="mx-auto w-full max-w-5xl px-6 pb-12">
         {error ? (
           <p className="text-sm" style={{ color: 'var(--cryptix-text-muted)' }}>{error}</p>
         ) : items === null ? (
@@ -185,6 +201,16 @@ export default function ShowcasePage() {
           <ShowcaseStrip items={items} />
         )}
       </section>
+
+      {/* No heading/section at all while loading or empty — a publish-only
+          feature shouldn't show a bare "Featured Characters" heading with
+          nothing under it on a store with no published characters yet. */}
+      {!characterError && characterItems && characterItems.length > 0 ? (
+        <section className="mx-auto w-full max-w-5xl px-6 pb-24">
+          <h2 className="mb-4 text-lg font-semibold" style={{ color: 'var(--cryptix-text)' }}>Featured Characters</h2>
+          <ShowcaseStrip items={characterItems} />
+        </section>
+      ) : null}
 
       <PromptExamplesPreview />
 

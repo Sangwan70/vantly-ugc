@@ -1,6 +1,6 @@
 // Copyright 2026 Vantly UGC contributors. Apache-2.0 license.
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
@@ -19,15 +19,22 @@ export const dynamic = 'force-dynamic';
  * that mistake on a route that's *supposed* to reflect new admin curation
  * within seconds.
  */
-export async function GET(): Promise<NextResponse> {
+export async function GET(req: NextRequest): Promise<NextResponse> {
   const admin = createAdminClient(
     (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
+  // ?kind=character switches to the published-characters section on
+  // /showcase (see app/showcase/page.tsx); default 'video' is the
+  // original, unchanged strip. Each kind has its own rolling window of
+  // 10 -- see the admin route's own comment.
+  const kind = req.nextUrl.searchParams.get('kind') === 'character' ? 'character' : 'video';
+
   const { data, error } = await admin
     .from('showcase_items')
     .select('id, media_url, label')
+    .eq('kind', kind)
     .order('created_at', { ascending: false })
     .limit(10);
 

@@ -7,8 +7,16 @@ import { isAdminEmail } from '@/lib/admin-allowlist';
 
 // The public marketing page keeps at most this many items -- "rolling
 // window" per the 2026-09-19 feature request: adding an 11th item should
-// drop the oldest, not grow the page forever.
+// drop the oldest, not grow the page forever. Each `kind` (see
+// KindOf below) keeps its own independent window of this size --
+// added 2026-09-22 alongside `kind` so publishing characters can't
+// crowd out published videos or vice versa.
 const SHOWCASE_WINDOW = 10;
+
+type ShowcaseKind = 'video' | 'character';
+function parseKind(raw: unknown): ShowcaseKind {
+  return raw === 'character' ? 'character' : 'video';
+}
 
 function adminClient() {
   return createAdminClient(
@@ -26,15 +34,17 @@ async function requireAdmin(): Promise<{ id: string; email: string } | null> {
   return { id: user.id, email: user.email };
 }
 
-/** GET /api/admin/showcase — current curated list, newest first, for the admin gallery UI to show what's already featured. */
-export async function GET(): Promise<NextResponse> {
+/** GET /api/admin/showcase?kind=video|character — current curated list for that kind, newest first, for the admin UI to show what's already featured. `kind` defaults to 'video' for back-compat with the existing gallery admin UI. */
+export async function GET(req: NextRequest): Promise<NextResponse> {
   const admin = await requireAdmin();
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
 
+  const kind = parseKind(req.nextUrl.searchParams.get('kind'));
   const db = adminClient();
   const { data, error } = await db
     .from('showcase_items')
     .select('id, media_url, label, source_run_id, created_at')
+    .eq('kind', kind)
     .order('created_at', { ascending: false })
     .limit(SHOWCASE_WINDOW);
   if (error) {
@@ -48,7 +58,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const admin = await requireAdmin();
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
 
-  let body: { media_url?: string; label?: string | null; source_run_id?: string | null };
+  let body: { media_url?: string; label?: string | null; source_run_id?: string | null; kind?: string };
   try {
     body = await req.json();
   } catch {
@@ -57,6 +67,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!body.media_url) {
     return NextResponse.json({ error: 'invalid_item' }, { status: 400 });
   }
+  const kind = parseKind(body.kind);
 
   const db = adminClient();
   const { error: insertErr } = await db.from('showcase_items').insert({
@@ -64,16 +75,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     label: body.label ?? null,
     source_run_id: body.source_run_id ?? null,
     added_by_user_id: admin.id,
+    kind,
   });
   if (insertErr) {
     return NextResponse.json({ error: 'add_failed', detail: insertErr.message }, { status: 500 });
   }
 
-  // Rolling window: keep only the SHOWCASE_WINDOW most recent rows. Simpler
-  // to express here than as a DB trigger, and this route is the only writer.
+  // Rolling window: keep only the SHOWCASE_WINDOW most recent rows PER KIND.
+  // Simpler to express here than as a DB trigger, and this route is the
+  // only writer.
   const { data: all, error: listErr } = await db
     .from('showcase_items')
     .select('id, created_at')
+    .eq('kind', kind)
     .order('created_at', { ascending: false });
   if (!listErr && all && all.length > SHOWCASE_WINDOW) {
     const staleIds = all.slice(SHOWCASE_WINDOW).map((r) => r.id as string);

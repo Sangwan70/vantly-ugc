@@ -15,7 +15,11 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Play, Search, Users, X, UploadCloud, Pencil, Check } from 'lucide-react';
+import { Loader2, Play, Search, Users, X, UploadCloud, Pencil, Check, Share2, ImagePlus, Download } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+import { isAdminEmailIn } from '@/lib/admin-allowlist';
+import { useVariables } from '@/components/variable-context';
+import { CharacterShareModal, type ShareableCharacter } from './_character-share-modal';
 
 interface SavedCharacter {
   id: string;
@@ -28,6 +32,12 @@ interface SavedCharacter {
   signature_look?: string | null;
   created_at?: string;
   video_count?: number;
+  /** True for a character an admin pushed into this user's library (see
+   *  character_shares / GET /api/dashboard/characters) — not editable,
+   *  not shareable/publishable again from here, but usable everywhere a
+   *  saved character is. */
+  shared?: boolean;
+  shared_by?: string | null;
 }
 
 interface StockActor {
@@ -53,6 +63,51 @@ export default function ActorsPage() {
   const [actors, setActors] = useState<StockActor[] | null>(null);
   const [selectedCharacter, setSelectedCharacter] = useState<SavedCharacter | null>(null);
   const [selectedActor, setSelectedActor] = useState<StockActor | null>(null);
+
+  // Admin-only affordances (share a character into another user's
+  // library, push a character to the marketing /showcase page) — same
+  // client-side detection idiom as dashboard/gallery/_generations-tab.tsx.
+  // Server-side routes re-check the allowlist themselves; this is
+  // UI-gating only, not the trust boundary.
+  const { adminEmails } = useVariables();
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await createClient().auth.getUser();
+      setIsAdmin(isAdminEmailIn(user?.email, adminEmails));
+    })();
+  }, [adminEmails]);
+  const [sharingCharacter, setSharingCharacter] = useState<SavedCharacter | null>(null);
+  const [addingToShowcaseId, setAddingToShowcaseId] = useState<string | null>(null);
+
+  const handleAddToShowcase = useCallback(async (c: SavedCharacter) => {
+    if (addingToShowcaseId || !c.character_sheet_url) return;
+    setAddingToShowcaseId(c.id);
+    try {
+      const resp = await fetch('/api/admin/showcase', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          media_url: c.character_sheet_url,
+          label: c.name ?? null,
+          source_run_id: null,
+          kind: 'character',
+        }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        const msg = (data as any)?.detail ?? (data as any)?.error ?? `HTTP ${resp.status}`;
+        window.alert(typeof msg === 'string' ? msg : 'Failed to add to showcase.');
+        return;
+      }
+      window.alert('Added to the marketing showcase.');
+    } catch (e) {
+      window.alert((e as Error).message);
+    } finally {
+      setAddingToShowcaseId(null);
+    }
+  }, [addingToShowcaseId]);
 
   const loadCharacters = useCallback(async () => {
     try {
@@ -165,7 +220,15 @@ export default function ActorsPage() {
                   </div>
                   <div className="px-1 pb-1">
                     <p className="truncate text-[12px] font-medium" style={{ color: '#E9E9F0' }}>{c.name ?? 'Unnamed'}</p>
-                    {typeof c.video_count === 'number' && (
+                    {c.shared ? (
+                      <span
+                        className="mt-0.5 inline-block truncate rounded-full px-1.5 py-0.5 text-[9px] font-medium"
+                        style={{ backgroundColor: 'rgba(167,139,250,0.15)', color: '#C4B5FD' }}
+                        title={c.shared_by ? `Shared by ${c.shared_by}` : 'Shared'}
+                      >
+                        Shared{c.shared_by ? ` by ${c.shared_by}` : ''}
+                      </span>
+                    ) : typeof c.video_count === 'number' && (
                       <p className="truncate text-[10px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{c.video_count} video{c.video_count === 1 ? '' : 's'}</p>
                     )}
                   </div>
@@ -213,7 +276,7 @@ export default function ActorsPage() {
           subtitle={selectedCharacter.description ?? undefined}
           copyValue={selectedCharacter.character_sheet_url ?? undefined}
           copyLabel="character_sheet_url"
-          editable
+          editable={!selectedCharacter.shared}
           characterId={selectedCharacter.id}
           editDescription={selectedCharacter.description}
           editVoiceBrief={selectedCharacter.voice_brief}
@@ -222,8 +285,28 @@ export default function ActorsPage() {
             setCharacters((prev) => (prev ? prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)) : prev));
             setSelectedCharacter((prev) => (prev ? { ...prev, ...updated } : prev));
           }}
+          downloadable
+          isAdmin={isAdmin}
+          shared={selectedCharacter.shared}
+          sharedBy={selectedCharacter.shared_by}
+          onShare={!selectedCharacter.shared ? () => setSharingCharacter(selectedCharacter) : undefined}
+          onAddToShowcase={!selectedCharacter.shared ? () => void handleAddToShowcase(selectedCharacter) : undefined}
+          addingToShowcase={addingToShowcaseId === selectedCharacter.id}
         />
       )}
+      {sharingCharacter && sharingCharacter.character_sheet_url ? (
+        <CharacterShareModal
+          item={{
+            character_id: sharingCharacter.id,
+            name: sharingCharacter.name,
+            character_sheet_url: sharingCharacter.character_sheet_url,
+            portrait_url: null,
+            thumbnail_url: sharingCharacter.thumbnail_url,
+            description: sharingCharacter.description ?? null,
+          } satisfies ShareableCharacter}
+          onClose={() => setSharingCharacter(null)}
+        />
+      ) : null}
       {selectedActor && (
         <DetailLightbox
           onClose={() => setSelectedActor(null)}
@@ -268,6 +351,13 @@ function DetailLightbox({
   editVoiceBrief,
   editSignatureLook,
   onSaved,
+  downloadable,
+  isAdmin,
+  shared,
+  sharedBy,
+  onShare,
+  onAddToShowcase,
+  addingToShowcase,
 }: {
   onClose: () => void;
   imageUrl?: string | null;
@@ -282,6 +372,19 @@ function DetailLightbox({
   editVoiceBrief?: string | null;
   editSignatureLook?: string | null;
   onSaved?: (updated: SavedCharacter) => void;
+  /** Shows a "Download" button that proxies characterId's image through
+   *  /api/dashboard/characters/:id/download so it saves as a real file
+   *  instead of just opening in a new tab (see that route's own comment). */
+  downloadable?: boolean;
+  isAdmin?: boolean;
+  /** True when this character was pushed here by an admin (character_shares) rather than made by this user. */
+  shared?: boolean;
+  sharedBy?: string | null;
+  /** Admin-only "Share with users" action — omitted entirely for shared/stock entries. */
+  onShare?: () => void;
+  /** Admin-only "Publish to marketing showcase" action — omitted entirely for shared/stock entries. */
+  onAddToShowcase?: () => void;
+  addingToShowcase?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -449,7 +552,47 @@ function DetailLightbox({
                 {subtitle && <p className="mt-0.5 text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>{subtitle}</p>}
                 {editVoiceBrief && <p className="mt-1 text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>Voice: {editVoiceBrief}</p>}
                 {editSignatureLook && <p className="mt-0.5 text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>Look: {editSignatureLook}</p>}
+                {shared && (
+                  <p className="mt-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium" style={{ backgroundColor: 'rgba(167,139,250,0.15)', color: '#C4B5FD' }}>
+                    Shared{sharedBy ? ` by ${sharedBy}` : ''}
+                  </p>
+                )}
               </div>
+              {(downloadable && characterId) || (isAdmin && (onShare || onAddToShowcase)) ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  {downloadable && characterId && (
+                    <a
+                      href={`/api/dashboard/characters/${encodeURIComponent(characterId)}/download`}
+                      className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium"
+                      style={{ border: '1px solid rgba(255,255,255,0.14)', color: '#E9E9F0' }}
+                    >
+                      <Download className="h-3.5 w-3.5" /> Download
+                    </a>
+                  )}
+                  {isAdmin && onShare && (
+                    <button
+                      type="button"
+                      onClick={onShare}
+                      className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium"
+                      style={{ border: '1px solid rgba(255,255,255,0.14)', color: '#E9E9F0' }}
+                    >
+                      <Share2 className="h-3.5 w-3.5" style={{ color: '#A78BFA' }} /> Share with users
+                    </button>
+                  )}
+                  {isAdmin && onAddToShowcase && (
+                    <button
+                      type="button"
+                      disabled={addingToShowcase}
+                      onClick={onAddToShowcase}
+                      className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium disabled:opacity-50"
+                      style={{ border: '1px solid rgba(255,255,255,0.14)', color: '#E9E9F0' }}
+                    >
+                      {addingToShowcase ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" style={{ color: '#A78BFA' }} />}
+                      Publish to showcase
+                    </button>
+                  )}
+                </div>
+              ) : null}
               {copyValue && (
                 <div className="flex flex-col gap-1">
                   <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.4)' }}>{copyLabel}</span>

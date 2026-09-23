@@ -61,21 +61,37 @@ const COMPOSE_FALLBACK_TIMEOUT_MS = 40_000;
 // meaningfully more headroom, plus the same inline-reasoning buffer
 // attemptDraft's own comment describes for models that think before the
 // tag.
-const PODCAST_DRAFT_MAX_TOKENS = 1600;
-const STORYBOOK_DRAFT_MAX_TOKENS = 2400;
+const PODCAST_DRAFT_MAX_TOKENS = 2000;
+const STORYBOOK_DRAFT_MAX_TOKENS = 3000;
 
 // Text-generation-only model switch (titles/story/dialogue): when
 // MODEL_PROVIDER=openrouter, draft-podcast/draft-storybook route through
 // OpenRouter's OpenAI-compatible /api/v1/chat/completions endpoint (see
 // lib/openrouter-chat.ts's header comment for why -- in short, the
 // Anthropic-Messages-compatible endpoint callAnthropicMessages/attemptDraft
-// use is only guaranteed reliable for Claude models, not these free ones)
-// using two genuinely different free models rather than reusing whatever
-// single model OPENROUTER_MODEL happens to be pinned to elsewhere in the
-// app. Both overridable per-deployment; defaults are free-tier OpenRouter
-// slugs confirmed live as of Sept 2026.
-const FREE_MODEL = process.env.ASSIST_COMPOSE_FREE_MODEL || 'deepseek/deepseek-v4-flash-0731:free';
-const FREE_FALLBACK_MODEL = process.env.ASSIST_COMPOSE_FREE_FALLBACK_MODEL || 'nvidia/nemotron-3-super-120b-a12b:free';
+// use is only guaranteed reliable for Claude models, not these free ones).
+// Both overridable per-deployment.
+//
+// Re-picked 2026-09-22 after users started hitting a 100%-reproducible
+// "returned empty content" error on every draft: the OLD primary,
+// deepseek/deepseek-v4-flash-0731:free, no longer has a free-tier listing
+// on OpenRouter at all (checked live via GET /api/v1/models -- only the
+// paid deepseek/deepseek-v4-flash-0731 remains), so it failed instantly on
+// every single call and silently fell through to the OLD fallback,
+// nvidia/nemotron-3-super-120b-a12b:free -- which OpenRouter's own uptime
+// page shows sitting around 5% uptime, i.e. also down almost every time.
+// Every draft request was therefore one guaranteed failure followed by one
+// near-certain failure. New picks, both re-verified live: qwen/qwen3.8-27b
+// :free (96-100% availability, non-mandatory reasoning, explicitly supports
+// the low effort tier) as primary, and nvidia/nemotron-3-ultra-550b-a55b
+// :free (~89-100% availability) as fallback -- the SAME model OPENROUTER_MODEL
+// is pinned to above for every other OpenRouter call in the app, just
+// reached here through the more reliable OpenAI-compatible endpoint rather
+// than the Anthropic-Messages one, so this inherits that model's
+// already-proven production track record instead of a second, unrelated
+// model nobody else in the app relies on.
+const FREE_MODEL = process.env.ASSIST_COMPOSE_FREE_MODEL || 'qwen/qwen3.8-27b:free';
+const FREE_FALLBACK_MODEL = process.env.ASSIST_COMPOSE_FREE_FALLBACK_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b:free';
 
 // ── Shared: gather optional context, run primary+fallback model ──────────
 

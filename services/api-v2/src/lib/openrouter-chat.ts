@@ -70,18 +70,28 @@ export async function callOpenRouterChatCompletion(
         { role: 'system', content: params.system },
         { role: 'user', content: params.userMessage },
       ],
-      // Free reasoning-capable models (deepseek/nemotron, etc.) spend from
-      // the SAME max_tokens budget as the visible answer -- OpenRouter's own
+      // Free reasoning-capable models (nemotron/qwen/etc.) spend from the
+      // SAME max_tokens budget as the visible answer -- OpenRouter's own
       // docs: "the request's max_tokens limit applies to reasoning and
       // visible output combined." A model that reasons at its default
       // effort can burn the entire budget before ever writing the
-      // <characters>/<scenes> tags, coming back with finish_reason:"length"
-      // and EMPTY content -- exactly the "AI writer returned an empty
-      // response" users started seeing after the free-model switch. `effort:
-      // low` caps how much of the budget reasoning is allowed to eat;
-      // `exclude: true` keeps any reasoning that does happen out of
-      // `message.content` on providers that would otherwise inline it there.
-      reasoning: { effort: 'low', exclude: true },
+      // <characters>/<scenes> tags, coming back with an empty/unknown-
+      // finish-reason response -- exactly the "AI writer returned an empty
+      // response" users kept seeing. We used to cap this with `effort:
+      // 'low'`, but that string isn't valid for every model (OpenRouter
+      // rejects or silently reinterprets an effort level outside a given
+      // model's own supported_efforts list -- e.g. nemotron-3-ultra only
+      // accepts 'high'/'medium', not 'low'), so a model swap could silently
+      // break the cap again. `reasoning.max_tokens` is the model-agnostic
+      // form instead: OpenRouter's docs confirm it works directly for
+      // token-budget models and is converted to the nearest effort tier for
+      // effort-only models, so it holds up across whichever free model is
+      // configured. Reserve at most a third of the call's budget for
+      // reasoning (floor 200, so tiny budgets still get SOME thinking room)
+      // and leave the rest for the actual answer. `exclude: true` keeps any
+      // reasoning that does happen out of `message.content` on providers
+      // that would otherwise inline it there.
+      reasoning: { max_tokens: Math.max(200, Math.round(params.maxTokens / 3)), exclude: true },
     }),
     signal: opts.signal,
   });

@@ -81,17 +81,20 @@ const STORYBOOK_DRAFT_MAX_TOKENS = 3000;
 // nvidia/nemotron-3-super-120b-a12b:free -- which OpenRouter's own uptime
 // page shows sitting around 5% uptime, i.e. also down almost every time.
 // Every draft request was therefore one guaranteed failure followed by one
-// near-certain failure. New picks, both re-verified live: qwen/qwen3.8-27b
-// :free (96-100% availability, non-mandatory reasoning, explicitly supports
-// the low effort tier) as primary, and nvidia/nemotron-3-ultra-550b-a55b
-// :free (~89-100% availability) as fallback -- the SAME model OPENROUTER_MODEL
-// is pinned to above for every other OpenRouter call in the app, just
-// reached here through the more reliable OpenAI-compatible endpoint rather
-// than the Anthropic-Messages one, so this inherits that model's
-// already-proven production track record instead of a second, unrelated
-// model nobody else in the app relies on.
+// near-certain failure. New primary, re-verified live: qwen/qwen3.8-27b:free
+// (96-100% availability, non-mandatory reasoning, explicitly supports the
+// low effort tier). Fallback is now OpenRouter's own dynamic free-model
+// router, openrouter/free -- it always resolves to WHICHEVER free model is
+// currently healthy on OpenRouter's end rather than a single named model
+// that can itself go down or get deprecated (exactly what broke both
+// hardcoded models above), so it can't go stale the way a specific free
+// slug did here twice already. Per OpenRouter's docs, dynamic router models
+// like this one omit per-model reasoning metadata since it depends on
+// whichever model it lands on -- callOpenRouterChatCompletion's
+// reasoning.max_tokens cap is still sent and is harmless either way (a
+// no-op if the selected model doesn't support it, honored if it does).
 const FREE_MODEL = process.env.ASSIST_COMPOSE_FREE_MODEL || 'qwen/qwen3.8-27b:free';
-const FREE_FALLBACK_MODEL = process.env.ASSIST_COMPOSE_FREE_FALLBACK_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b:free';
+const FREE_FALLBACK_MODEL = process.env.ASSIST_COMPOSE_FREE_FALLBACK_MODEL || 'openrouter/free';
 
 // ── Shared: gather optional context, run primary+fallback model ──────────
 

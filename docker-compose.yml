@@ -57,6 +57,7 @@ x-internal-secrets: &internal-secrets
 services:
   # ── Data plane ──────────────────────────────────────────────────────────
   postgres:
+    restart: unless-stopped
     image: supabase/postgres:15.8.1.020
     environment:
       # Deliberately NOT setting POSTGRES_USER. This image bootstraps itself as
@@ -112,6 +113,7 @@ services:
   # Supabase Auth. The app verifies user JWTs and runs the MCP OAuth flow
   # against this.
   auth:
+    restart: unless-stopped
     image: supabase/gotrue:v2.196.0
     depends_on:
       db-init: { condition: service_completed_successfully }
@@ -259,6 +261,7 @@ services:
 
   # PostgREST — the REST surface the supabase-js client talks to.
   rest:
+    restart: unless-stopped
     image: postgrest/postgrest:v12.2.3
     depends_on:
       db-init: { condition: service_completed_successfully }
@@ -281,6 +284,7 @@ services:
   # localhost:8000 from the browser) works for all three. See
   # supabase/self-host-gateway/nginx.conf for the actual routes/rationale.
   gateway:
+    restart: unless-stopped
     image: nginx:1.27-alpine
     depends_on:
       auth: { condition: service_started }
@@ -296,6 +300,7 @@ services:
   # does not exist'. storage-api migrates that schema on boot. Its own object
   # bytes live in MinIO, same as everything else here.
   storage:
+    restart: unless-stopped
     image: supabase/storage-api:v1.11.13
     depends_on:
       db-init: { condition: service_completed_successfully }
@@ -325,6 +330,7 @@ services:
 
   # ── Object storage (stands in for Cloudflare R2) ────────────────────────
   minio:
+    restart: unless-stopped
     image: minio/minio
     command: server /data --console-address ":9001"
     environment:
@@ -350,6 +356,7 @@ services:
 
   # ── Durable orchestration (vNext composed workflows) ────────────────────
   temporal:
+    restart: unless-stopped
     image: temporalio/auto-setup:1.25.2
     depends_on:
       postgres: { condition: service_healthy }
@@ -374,6 +381,7 @@ services:
   # the virtual-host style R2 uses.
 
   api-v2:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/api-v2/Dockerfile
@@ -431,6 +439,7 @@ services:
   # `/` redirects to /dashboard, and robots.txt disallows everything, because a
   # self-hosted instance has no business being indexed.
   web:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: apps/web/Dockerfile
@@ -491,6 +500,7 @@ services:
   # vision refinement is optional - it just falls back to non-AI defaults
   # when ANTHROPIC_API_KEY is blank (see src/ai-vision.js).
   brand-extractor:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/brand-extractor/Dockerfile
@@ -526,6 +536,7 @@ services:
     ports: ["${BRAND_EXTRACTOR_PORT:-3012}:3000"]
 
   primitive-worker-vnext:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/primitive-worker-vnext/Dockerfile
@@ -547,6 +558,7 @@ services:
       R2_PUBLIC_URL: ${R2_PUBLIC_URL:-https://pub-16e2ed8f6be84691845e91436920ce0a.r2.dev}
 
   media-worker-v2:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/media-worker-v2/Dockerfile
@@ -568,6 +580,7 @@ services:
     ports: ["${MEDIA_WORKER_PORT:-3010}:3000"]
 
   subtitle-worker:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/subtitle-worker/Dockerfile

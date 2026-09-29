@@ -1067,13 +1067,23 @@ export async function runSkillRoute(req: Request, res: Response): Promise<void> 
   });
 }
 
-async function dispatchMakeUgcVideo(
-  _req: Request,
+export type MakeUgcVideoIdentity =
+  | { mode: 'portrait_url'; portrait_url: string }
+  | { mode: 'description'; description: string; realism_target: 'natural' | 'commercial' | 'raw_iphone' };
+
+/**
+ * Resolve make_ugc_video's identity (an uploaded photo, else a text
+ * description) — shared by dispatchMakeUgcVideo (fresh submit) and
+ * resumeSkillRunRoute (resume — same reasoning as make_podcast's
+ * resolvePodcastWorkflowParts: re-derive from the STORED input so a resumed
+ * run's deterministic child ids still line up with whatever already
+ * succeeded). Writes an error response itself and returns `null` on failure.
+ */
+async function resolveMakeUgcVideoIdentity(
   res: Response,
   userId: string,
   body: Record<string, unknown>,
-  _idempotencyKey: string | null,
-): Promise<void> {
+): Promise<MakeUgcVideoIdentity | null> {
   const description = (body.description as string | undefined) ?? undefined;
   let portraitUrl = (body.portrait_url as string | undefined) ?? undefined;
   const b64 = (body.portrait_image_base64 as string | undefined) ?? undefined;
@@ -1082,20 +1092,57 @@ async function dispatchMakeUgcVideo(
       const uploaded = await uploadUserImageBase64(userId, b64);
       portraitUrl = uploaded.url;
     } catch (err) {
-      if (respondIfModerationBlocked(res, err, 'make_ugc_video')) return;
+      if (respondIfModerationBlocked(res, err, 'make_ugc_video')) return null;
       res.status(400).json({ error: 'image_upload_failed', detail: errorMessage(err) });
-      return;
+      return null;
     }
   }
-
-  const identity = portraitUrl
-    ? { mode: 'portrait_url' as const, portrait_url: portraitUrl }
+  return portraitUrl
+    ? { mode: 'portrait_url', portrait_url: portraitUrl }
     : {
-        mode: 'description' as const,
+        mode: 'description',
         description: description as string,
-        realism_target:
-          (body.realism_target as 'natural' | 'commercial' | 'raw_iphone') ?? 'natural',
+        realism_target: (body.realism_target as 'natural' | 'commercial' | 'raw_iphone') ?? 'natural',
       };
+}
+
+export function buildMakeUgcVideoWorkflowInput(
+  userId: string,
+  skillRunId: string,
+  body: Record<string, unknown>,
+  identity: MakeUgcVideoIdentity,
+): Record<string, unknown> {
+  return {
+    skill_run_id: skillRunId,
+    user_id: userId,
+    identity,
+    character_description: body.character_description,
+    script: body.script,
+    duration: body.duration ?? 10,
+    location: body.location,
+    pose: body.pose,
+    aspect_ratio: body.aspect_ratio ?? '9:16',
+    subtitles: body.subtitles ?? true,
+    subtitles_style: body.subtitles_style ?? 'hormozi',
+    voice_ref_audio_url: body.voice_ref_audio_url,
+    watermark_text: body.watermark_text,
+    language: body.language,
+    background_music: body.background_music,
+  };
+}
+
+async function dispatchMakeUgcVideo(
+  _req: Request,
+  res: Response,
+  userId: string,
+  body: Record<string, unknown>,
+  _idempotencyKey: string | null,
+): Promise<void> {
+  // Resolve BEFORE creating any skill_runs row — unchanged from before the
+  // refactor: a bad photo upload should fail with a plain 4xx, no row left
+  // behind.
+  const identity = await resolveMakeUgcVideoIdentity(res, userId, body);
+  if (!identity) return;
 
   const { data: skillRunRow, error: insertErr } = await supabase
     .from('skill_runs')
@@ -1114,24 +1161,7 @@ async function dispatchMakeUgcVideo(
     return;
   }
   const skillRunId = skillRunRow.id as string;
-
-  const workflowInput = {
-    skill_run_id: skillRunId,
-    user_id: userId,
-    identity,
-    character_description: body.character_description,
-    script: body.script,
-    duration: body.duration ?? 10,
-    location: body.location,
-    pose: body.pose,
-    aspect_ratio: body.aspect_ratio ?? '9:16',
-    subtitles: body.subtitles ?? true,
-    subtitles_style: body.subtitles_style ?? 'hormozi',
-    voice_ref_audio_url: body.voice_ref_audio_url,
-    watermark_text: body.watermark_text,
-    language: body.language,
-    background_music: body.background_music,
-  };
+  const workflowInput = buildMakeUgcVideoWorkflowInput(userId, skillRunId, body, identity);
 
   let cfg: ReturnType<typeof getTemporalConfig>;
   try {
@@ -1167,6 +1197,60 @@ async function dispatchMakeUgcVideo(
   });
 }
 
+/**
+ * Higher-fidelity faces: pass a clean portrait alongside the sheet as a second
+ * identity reference. Use the caller's portrait_url, else auto-resolve it from
+ * the saved character whose sheet matches actor_image_url. Best-effort (never
+ * fails the dispatch) — shared by dispatchBrollTalkingHead and
+ * resumeSkillRunRoute so a resume re-derives the same lookup from the STORED
+ * input instead of trusting a value that might read stale.
+ */
+async function resolveBrollPortraitUrl(userId: string, body: Record<string, unknown>): Promise<string | undefined> {
+  let portraitUrl = typeof body.portrait_url === 'string' ? (body.portrait_url as string) : undefined;
+  if (!portraitUrl && typeof body.actor_image_url === 'string') {
+    const { data: char } = await supabase
+      .from('user_characters')
+      .select('portrait_url')
+      .eq('user_id', userId)
+      .eq('character_sheet_url', body.actor_image_url)
+      .is('archived_at', null)
+      .maybeSingle();
+    if (char?.portrait_url) portraitUrl = char.portrait_url as string;
+  }
+  return portraitUrl;
+}
+
+export function buildBrollTalkingHeadWorkflowInput(
+  userId: string,
+  skillRunId: string,
+  body: Record<string, unknown>,
+  portraitUrl: string | undefined,
+): Record<string, unknown> {
+  return {
+    skill_run_id: skillRunId,
+    user_id: userId,
+    actor_image_url: body.actor_image_url,
+    portrait_url: portraitUrl,
+    broll_video_url: body.broll_video_url,
+    script: body.script,
+    audio_url: body.audio_url,
+    duration: body.duration ?? 20,
+    aspect_ratio: body.aspect_ratio ?? '9:16',
+    subtitles: body.subtitles ?? false,
+    // Overlay geometry is fixed (bottom-center, sized by broll_width_rate); the
+    // workflow/compose still accept these internal fields, so pass constants.
+    overlay_size: 'large',
+    overlay_position: 'bottom',
+    broll_width_rate: body.broll_width_rate,
+    broll_start_time: body.broll_start_time,
+    broll_fade_out: body.broll_fade_out,
+    voice_ref_audio_url: body.voice_ref_audio_url,
+    watermark_text: body.watermark_text,
+    language: body.language,
+    background_music: body.background_music,
+  };
+}
+
 async function dispatchBrollTalkingHead(
   res: Response,
   userId: string,
@@ -1190,44 +1274,8 @@ async function dispatchBrollTalkingHead(
   }
   const skillRunId = skillRunRow.id as string;
 
-  // Higher-fidelity faces: pass a clean portrait alongside the sheet as a second
-  // identity reference. Use the caller's portrait_url, else auto-resolve it from
-  // the saved character whose sheet matches actor_image_url. Best-effort.
-  let portraitUrl = typeof body.portrait_url === 'string' ? (body.portrait_url as string) : undefined;
-  if (!portraitUrl && typeof body.actor_image_url === 'string') {
-    const { data: char } = await supabase
-      .from('user_characters')
-      .select('portrait_url')
-      .eq('user_id', userId)
-      .eq('character_sheet_url', body.actor_image_url)
-      .is('archived_at', null)
-      .maybeSingle();
-    if (char?.portrait_url) portraitUrl = char.portrait_url as string;
-  }
-
-  const workflowInput = {
-    skill_run_id: skillRunId,
-    user_id: userId,
-    actor_image_url: body.actor_image_url,
-    portrait_url: portraitUrl,
-    broll_video_url: body.broll_video_url,
-    script: body.script,
-    audio_url: body.audio_url,
-    duration: body.duration ?? 20,
-    aspect_ratio: body.aspect_ratio ?? '9:16',
-    subtitles: body.subtitles ?? false,
-    // Overlay geometry is fixed (bottom-center, sized by broll_width_rate); the
-    // workflow/compose still accept these internal fields, so pass constants.
-    overlay_size: 'large',
-    overlay_position: 'bottom',
-    broll_width_rate: body.broll_width_rate,
-    broll_start_time: body.broll_start_time,
-    broll_fade_out: body.broll_fade_out,
-    voice_ref_audio_url: body.voice_ref_audio_url,
-    watermark_text: body.watermark_text,
-    language: body.language,
-    background_music: body.background_music,
-  };
+  const portraitUrl = await resolveBrollPortraitUrl(userId, body);
+  const workflowInput = buildBrollTalkingHeadWorkflowInput(userId, skillRunId, body, portraitUrl);
 
   let cfg: ReturnType<typeof getTemporalConfig>;
   try {
@@ -1440,7 +1488,7 @@ async function dispatchMakePodcast(
   });
 }
 
-interface ResolvedStorybookCharacter {
+export interface ResolvedStorybookCharacter {
   name: string;
   /** R2-hosted reference image — omitted when the character is description-only
    *  (the common case: most storybook characters have no photo at all). */
@@ -1498,20 +1546,29 @@ async function resolveStorybookCharacter(
   return { name, ref_url: up.url, description };
 }
 
-async function dispatchMakeStorybook(
+type StorybookScene = { speaker?: unknown; line?: unknown; visual_description?: unknown };
+
+/**
+ * Resolve every storybook character + validate scenes reference a known
+ * character name. Shared by dispatchMakeStorybook (fresh submit) and
+ * resumeSkillRunRoute (resume — re-derives from the STORED input, same
+ * reasoning as make_podcast's resolvePodcastWorkflowParts). Writes an error
+ * response itself and returns `null` on failure.
+ */
+async function resolveMakeStorybookWorkflowParts(
   res: Response,
   userId: string,
   body: Record<string, unknown>,
-): Promise<void> {
+): Promise<{ resolvedChars: ResolvedStorybookCharacter[]; scenes: StorybookScene[] } | null> {
   const chars = body.characters as Array<{ name?: unknown; ref?: unknown; ref_base64?: unknown; description?: unknown }> | undefined;
-  const scenes = body.scenes as Array<{ speaker?: unknown; line?: unknown; visual_description?: unknown }> | undefined;
+  const scenes = body.scenes as StorybookScene[] | undefined;
   if (!Array.isArray(chars) || chars.length === 0) {
     res.status(400).json({ error: 'invalid_input', skill: 'make_storybook', detail: 'characters must be a non-empty array' });
-    return;
+    return null;
   }
   if (!Array.isArray(scenes) || scenes.length === 0) {
     res.status(400).json({ error: 'invalid_input', skill: 'make_storybook', detail: 'scenes must be a non-empty array' });
-    return;
+    return null;
   }
 
   const resolvedChars: ResolvedStorybookCharacter[] = [];
@@ -1524,14 +1581,14 @@ async function dispatchMakeStorybook(
           skill: 'make_storybook',
           detail: `Could not resolve character "${typeof c.name === 'string' ? c.name : ''}" — give it a name plus either a saved char_… id, an https image URL, or a description.`,
         });
-        return;
+        return null;
       }
       resolvedChars.push(r);
     }
   } catch (err) {
-    if (respondIfModerationBlocked(res, err, 'make_storybook')) return;
+    if (respondIfModerationBlocked(res, err, 'make_storybook')) return null;
     res.status(400).json({ error: 'storybook_identity_failed', skill: 'make_storybook', detail: errorMessage(err) });
-    return;
+    return null;
   }
 
   const names = new Set(resolvedChars.map((c) => c.name));
@@ -1543,9 +1600,43 @@ async function dispatchMakeStorybook(
         skill: 'make_storybook',
         detail: `scene speaker "${speaker}" does not match any character name`,
       });
-      return;
+      return null;
     }
   }
+  return { resolvedChars, scenes };
+}
+
+export function buildMakeStorybookWorkflowInput(
+  userId: string,
+  skillRunId: string,
+  body: Record<string, unknown>,
+  parts: { resolvedChars: ResolvedStorybookCharacter[]; scenes: StorybookScene[] },
+): Record<string, unknown> {
+  return {
+    skill_run_id: skillRunId,
+    user_id: userId,
+    title: body.title,
+    characters: parts.resolvedChars.map((c) => ({ name: c.name, ref_url: c.ref_url, description: c.description })),
+    art_style: body.art_style ?? 'flat_vector_cartoon',
+    style_notes: body.style_notes,
+    scenes: parts.scenes.map((s) => ({
+      speaker: String(s.speaker ?? '').trim(),
+      line: String(s.line ?? ''),
+      visual_description: String(s.visual_description ?? ''),
+    })),
+    aspect_ratio: body.aspect_ratio ?? '9:16',
+    subtitles: body.subtitles ?? false,
+    subtitles_style: body.subtitles_style ?? 'hormozi',
+  };
+}
+
+async function dispatchMakeStorybook(
+  res: Response,
+  userId: string,
+  body: Record<string, unknown>,
+): Promise<void> {
+  const parts = await resolveMakeStorybookWorkflowParts(res, userId, body);
+  if (!parts) return;
 
   const { data: skillRunRow, error: insertErr } = await supabase
     .from('skill_runs')
@@ -1564,23 +1655,7 @@ async function dispatchMakeStorybook(
     return;
   }
   const skillRunId = skillRunRow.id as string;
-
-  const workflowInput = {
-    skill_run_id: skillRunId,
-    user_id: userId,
-    title: body.title,
-    characters: resolvedChars.map((c) => ({ name: c.name, ref_url: c.ref_url, description: c.description })),
-    art_style: body.art_style ?? 'flat_vector_cartoon',
-    style_notes: body.style_notes,
-    scenes: scenes.map((s) => ({
-      speaker: String(s.speaker ?? '').trim(),
-      line: String(s.line ?? ''),
-      visual_description: String(s.visual_description ?? ''),
-    })),
-    aspect_ratio: body.aspect_ratio ?? '9:16',
-    subtitles: body.subtitles ?? false,
-    subtitles_style: body.subtitles_style ?? 'hormozi',
-  };
+  const workflowInput = buildMakeStorybookWorkflowInput(userId, skillRunId, body, parts);
 
   let cfg: ReturnType<typeof getTemporalConfig>;
   try {
@@ -1863,7 +1938,15 @@ export async function cancelSkillRunRoute(req: Request, res: Response): Promise<
  * here only after confirming its workflow's activities have that same guard —
  * otherwise "resume" degrades to a plain (harmless, just not faster) retry.
  */
-const RESUMABLE_SKILLS = new Set(['make_podcast']);
+const RESUMABLE_SKILLS = new Set(['make_podcast', 'make_storybook', 'make_ugc_video', 'make_broll_talking_head']);
+
+/** skill_slug -> the Temporal workflow type name that runs it. */
+const WORKFLOW_TYPE_BY_SKILL: Record<string, string> = {
+  make_podcast: 'makePodcastWorkflow',
+  make_storybook: 'makeStorybookWorkflow',
+  make_ugc_video: 'makeUgcVideoWorkflow',
+  make_broll_talking_head: 'brollTalkingHeadWorkflow',
+};
 
 /**
  * POST /v1/skills/runs/:skill_run_id/resume — continue a FAILED composed run
@@ -1942,12 +2025,43 @@ export async function resumeSkillRunRoute(req: Request, res: Response): Promise<
     return;
   }
 
-  // Only make_podcast is in RESUMABLE_SKILLS today; this re-resolves the two
-  // saved identities + re-validates the script exactly like a fresh dispatch
-  // would (writes its own error response on failure).
-  const parts = await resolvePodcastWorkflowParts(res, userId, body);
-  if (!parts) return;
-  const workflowInput = buildMakePodcastWorkflowInput(userId, skillRunId, body, parts);
+  // Re-derive the workflow input from the STORED body, exactly like a fresh
+  // dispatch would (each resolver writes its own error response on failure) —
+  // per-skill because each skill resolves identity differently, but the
+  // pattern is the same one make_podcast established: never trust a value
+  // that might read stale, always re-run the same resolution dispatch uses.
+  let workflowInput: Record<string, unknown>;
+  switch (run.skill_slug) {
+    case 'make_podcast': {
+      const parts = await resolvePodcastWorkflowParts(res, userId, body);
+      if (!parts) return;
+      workflowInput = buildMakePodcastWorkflowInput(userId, skillRunId, body, parts);
+      break;
+    }
+    case 'make_storybook': {
+      const parts = await resolveMakeStorybookWorkflowParts(res, userId, body);
+      if (!parts) return;
+      workflowInput = buildMakeStorybookWorkflowInput(userId, skillRunId, body, parts);
+      break;
+    }
+    case 'make_ugc_video': {
+      const identity = await resolveMakeUgcVideoIdentity(res, userId, body);
+      if (!identity) return;
+      workflowInput = buildMakeUgcVideoWorkflowInput(userId, skillRunId, body, identity);
+      break;
+    }
+    case 'make_broll_talking_head': {
+      const portraitUrl = await resolveBrollPortraitUrl(userId, body);
+      workflowInput = buildBrollTalkingHeadWorkflowInput(userId, skillRunId, body, portraitUrl);
+      break;
+    }
+    default:
+      // Unreachable given the RESUMABLE_SKILLS guard above — kept so adding a
+      // skill to that set without a case here is a type error, not a silent
+      // 500 from an undefined workflowInput.
+      res.status(400).json({ error: 'resume_not_supported', detail: `Resume isn't available for ${run.skill_slug} yet — use Retry instead.` });
+      return;
+  }
 
   let cfg: ReturnType<typeof getTemporalConfig>;
   try {
@@ -1990,10 +2104,11 @@ export async function resumeSkillRunRoute(req: Request, res: Response): Promise<
   });
 
   const workflowId = `${run.skill_slug}-${skillRunId}`;
+  const workflowType = WORKFLOW_TYPE_BY_SKILL[run.skill_slug];
   try {
     const client = await getTemporalClient();
     await withTimeout(
-      client.workflow.start('makePodcastWorkflow', {
+      client.workflow.start(workflowType, {
         workflowId,
         taskQueue: getPrimitiveTaskQueue(),
         workflowExecutionTimeout: 45 * 60_000,
@@ -2001,7 +2116,7 @@ export async function resumeSkillRunRoute(req: Request, res: Response): Promise<
         args: [workflowInput],
       }),
       cfg.startTimeoutMs,
-      'temporal.workflow.start.make_podcast.resume',
+      `temporal.workflow.start.${run.skill_slug}.resume`,
     );
   } catch (err) {
     await markSkillRunDispatchFailed(skillRunId, userId, err);

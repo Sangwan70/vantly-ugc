@@ -65,7 +65,7 @@ export function popRetryDraft(): RetryDraft | null {
  * button renders at all instead of the user clicking it and getting a
  * "not supported yet" error).
  */
-const RESUMABLE_SKILLS = new Set(['make_podcast']);
+const RESUMABLE_SKILLS = new Set(['make_podcast', 'make_storybook', 'make_ugc_video', 'make_broll_talking_head']);
 
 export function isResumableSkill(skillSlug: string | null | undefined): boolean {
   return Boolean(skillSlug && RESUMABLE_SKILLS.has(skillSlug));

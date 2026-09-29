@@ -89,6 +89,85 @@ export function makeStorybookCharacterActivity(cfg: WorkerConfig) {
       );
     }
 
+    // Reuse verbatim when ref_url IS one of this user's own already-saved
+    // characters (a previous storybook chapter's design, a character-sheet
+    // photo, etc.) -- added after users kept seeing "next chapter, same
+    // characters" mint brand-new duplicate /dashboard/actors cards
+    // ("Winny", "Luna", "Ketty" showing up twice with 0 videos each) even
+    // though the agent correctly passed the SAME saved character_sheet_url
+    // back in as ref for each one. The bug: this activity always called
+    // gpt-image-2 again to "redesign" from ref_url, which always produces a
+    // brand-new R2 URL -- so autoSaveCharacter's dedup-by-(user_id,
+    // character_sheet_url) below could never match, no matter how faithful
+    // the redesign looked. Passing a saved character's own URL back as ref
+    // unambiguously means "this exact character" (not "something inspired
+    // by them"), so when it matches, skip generation and reuse the image
+    // as-is -- same free step, but no new artifact, no new duplicate card,
+    // and no wasted provider call. A ref_url that ISN'T already one of the
+    // user's saved characters (a fresh upload, someone else's shared photo,
+    // a raw reference the user pasted) still goes through the normal
+    // stylize-from-reference path below, unchanged.
+    if (activityInput.ref_url) {
+      const { data: savedChar, error: savedCharErr } = await db
+        .from('user_characters')
+        .select('id')
+        .eq('user_id', activityInput.user_id)
+        .eq('character_sheet_url', activityInput.ref_url)
+        .maybeSingle();
+      if (savedCharErr) throw new Error(`user_characters lookup failed: ${savedCharErr.message}`);
+      if (savedChar) {
+        const { error: reuseUpsertErr } = await db.from('primitive_runs').upsert(
+          {
+            id: activityInput.primitive_run_id,
+            user_id: activityInput.user_id,
+            skill_run_id: activityInput.skill_run_id ?? null,
+            primitive_id: 'storybook_character',
+            status: 'succeeded',
+            input: {
+              name: activityInput.name,
+              ref_url: activityInput.ref_url,
+              description: activityInput.description ?? null,
+              art_style: activityInput.art_style,
+              reused_saved_character: true,
+            },
+            estimated_credits_usd: 0,
+            actual_credits_usd: 0,
+            started_at: new Date().toISOString(),
+            finished_at: new Date().toISOString(),
+          },
+          { onConflict: 'id' },
+        );
+        if (reuseUpsertErr) throw new Error(`primitive_runs upsert failed: ${reuseUpsertErr.message}`);
+        const { data: reuseArtifact, error: reuseArtErr } = await db
+          .from('primitive_artifacts')
+          .insert({
+            primitive_run_id: activityInput.primitive_run_id,
+            kind: 'storybook_character',
+            url: activityInput.ref_url,
+            bytes: 0,
+            mime: 'image/png',
+            metadata: {
+              provider: 'gpt-image-2',
+              reused_saved_character: true,
+              name: activityInput.name,
+              art_style: activityInput.art_style,
+              ref_url: activityInput.ref_url,
+            },
+          })
+          .select('id')
+          .single();
+        if (reuseArtErr || !reuseArtifact) {
+          throw new Error(`primitive_artifacts insert failed: ${reuseArtErr?.message ?? 'no row'}`);
+        }
+        return {
+          primitive_run_id: activityInput.primitive_run_id,
+          character_url: activityInput.ref_url,
+          provider: 'gpt-image-2',
+          artifact_id: reuseArtifact.id as string,
+        };
+      }
+    }
+
     // Record the run BEFORE the provider call so a poll finds it (free step).
     const { error: upsertErr } = await db.from('primitive_runs').upsert(
       {

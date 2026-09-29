@@ -54,6 +54,10 @@ export function prettyStepLabel(step: string | null | undefined): string {
   if (take) return `Filming scene ${take[1]} (take ${take[2]})`;
   const voice = step.match(/^voice_ref_(.+)$/);
   if (voice) return `Locking in ${titleCase(voice[1])}'s voice`;
+  const reuseChar = step.match(/^char_reuse_(.+)$/);
+  if (reuseChar) return `Using your saved ${titleCase(reuseChar[1])}`;
+  const newChar = step.match(/^char_new_(.+)$/);
+  if (newChar) return `Designing ${titleCase(newChar[1])}`;
   return titleCase(step);
 }
 
@@ -91,7 +95,7 @@ export const STORYBOOK_MILESTONES = ['characters', 'scenes', 'compose', 'subtitl
  *  yet (current_step is 'pending', unset, or already 'done'). */
 export function storybookMilestoneIndex(step: string | null | undefined): number {
   if (!step) return -1;
-  if (step === 'characters') return 0;
+  if (step === 'characters' || /^char_(reuse|new)_/.test(step)) return 0;
   if (step === 'scenes' || /^scene_\d+_take_\d+$/.test(step) || /^voice_ref_/.test(step)) return 1;
   if (step === 'compose') return 2;
   if (step === 'subtitles') return 3;

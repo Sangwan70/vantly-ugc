@@ -26,6 +26,48 @@ import { withHeartbeat } from '../lib/heartbeat.js';
 import { STORYBOOK_ART_STYLES } from '../lib/storybook-styles.js';
 import { fetchImageRef } from './podcast-scene.js';
 
+/** Lowercase, alnum-only slug for a step-name suffix -- duplicated from
+ *  make-storybook.ts's own slugify (that copy lives in workflow code, which
+ *  runs in Temporal's deterministic isolate and can't share modules with
+ *  activity code that does real I/O, so this activity keeps its own). */
+function slugify(s: string): string {
+  return s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 20) || 'x';
+}
+
+/**
+ * Best-effort live-progress ping for the agent chat's inline run-status chip
+ * and the run-detail timeline (see apps/web's _step-labels.ts prettyStepLabel):
+ * lets a multi-character storybook narrate "Using your saved Winny" / stay on
+ * "Designing Luna" for the duration of an actual generation call, instead of
+ * one generic "Designing your characters" step covering the whole parallel
+ * batch. Deliberately NOT routed through the composedSkillState activity
+ * (that would be an activity calling another activity through Temporal,
+ * which isn't how this codebase is structured) -- it's the same guarded
+ * update inlined directly, and it only ever touches current_step, never
+ * status, so it can't resurrect an already-terminal run. Characters design in
+ * parallel (Promise.all in make-storybook.ts), so with more than one
+ * character these calls race and the chip shows whichever finished writing
+ * last -- an acceptable ticker-style approximation, not a per-character
+ * status list (skill_runs.current_step is a single string).
+ */
+async function reportCharacterStep(
+  db: ReturnType<typeof getDb>,
+  skillRunId: string | undefined,
+  step: string,
+): Promise<void> {
+  if (!skillRunId) return;
+  try {
+    await db
+      .from('skill_runs')
+      .update({ current_step: step })
+      .eq('id', skillRunId)
+      .not('status', 'in', '(succeeded,failed,canceled)');
+  } catch {
+    // best-effort only -- a missed progress ping is never a reason to fail
+    // (or even slow down) the actual character design.
+  }
+}
+
 export interface StorybookCharacterActivityInput {
   primitive_run_id: string;
   user_id: string;
@@ -116,6 +158,7 @@ export function makeStorybookCharacterActivity(cfg: WorkerConfig) {
         .maybeSingle();
       if (savedCharErr) throw new Error(`user_characters lookup failed: ${savedCharErr.message}`);
       if (savedChar) {
+        await reportCharacterStep(db, activityInput.skill_run_id, `char_reuse_${slugify(activityInput.name)}`);
         const { error: reuseUpsertErr } = await db.from('primitive_runs').upsert(
           {
             id: activityInput.primitive_run_id,
@@ -188,6 +231,8 @@ export function makeStorybookCharacterActivity(cfg: WorkerConfig) {
       { onConflict: 'id' },
     );
     if (upsertErr) throw new Error(`primitive_runs upsert failed: ${upsertErr.message}`);
+
+    await reportCharacterStep(db, activityInput.skill_run_id, `char_new_${slugify(activityInput.name)}`);
 
     const styleLanguage = STORYBOOK_ART_STYLES[activityInput.art_style];
     const styleNotes = activityInput.style_notes?.trim();

@@ -100,12 +100,15 @@ export async function internalGptImageRoute(req: Request, res: Response): Promis
   } catch (err) {
     const c = classifyOpenAIError(err);
     // Surface the classification so the worker can map retryable vs non-retryable
-    // exactly as it did when it called OpenAI directly.
+    // exactly as it did when it called OpenAI directly, including whether this
+    // was a genuine content-policy rejection (so the worker's friendly-message
+    // logic doesn't have to guess from the HTTP status alone).
     res.status(c.retryable ? 502 : 422).json({
       error: c.message,
       code: c.code,
       openai_status: c.status,
       retryable: c.retryable,
+      is_content_policy_violation: c.isContentPolicyViolation,
     });
   }
 }

@@ -256,10 +256,13 @@ export function makePortraitGpt2Activity(cfg: WorkerConfig) {
         if (classified.retryable) {
           throw err instanceof Error ? err : new Error(String(err));
         }
-        // Content/safety rejections (4xx) → a friendly, actionable message the
-        // user actually sees, instead of the raw "openai 400: rejected by the
-        // safety system". The code is kept for classification/grouping.
-        const friendly = /^OPENAI_(400|403|422|451)$/.test(classified.code)
+        // Content/safety rejections → a friendly, actionable message the user
+        // actually sees, instead of the raw "openai 400: rejected by the safety
+        // system". Keyed off the REAL content-policy signal (err.code/err.type,
+        // not just "this happened to be a 4xx") so an unrelated 400 — a bad
+        // size, a bad parameter, a too-large payload — surfaces its actual
+        // reason instead of being mislabeled as a safety-filter rejection.
+        const friendly = classified.isContentPolicyViolation
           ? 'Your description was flagged by the image safety filter — please rephrase it (avoid sexual, violent, or real-person/celebrity wording) and try again.'
           : classified.message;
         throw ApplicationFailure.nonRetryable(friendly, classified.code);

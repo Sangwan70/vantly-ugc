@@ -54,6 +54,20 @@ export interface OpenAIImageError {
   message: string;
   /** 4xx caller faults are not retryable; everything else is. */
   retryable: boolean;
+  /** True only for a genuine content-policy/safety-system rejection (derived
+   *  from the real err.code/err.type, not the HTTP status alone) — mirrors
+   *  services/primitive-worker-vnext/src/client/openai.ts's classifier so both
+   *  the direct and proxied gpt-image paths agree on what counts as one. */
+  isContentPolicyViolation: boolean;
+}
+
+function isOpenAIContentPolicyError(err: InstanceType<typeof OpenAI.APIError>): boolean {
+  const code = typeof err.code === 'string' ? err.code.toLowerCase() : '';
+  const type = typeof err.type === 'string' ? err.type.toLowerCase() : '';
+  if (code.includes('content_policy') || code.includes('moderation')) return true;
+  if (type.includes('content_policy') || type.includes('moderation')) return true;
+  const message = err.message.toLowerCase();
+  return /safety system|content policy|moderation blocked/.test(message);
 }
 
 export function classifyOpenAIError(err: unknown): OpenAIImageError {
@@ -65,10 +79,11 @@ export function classifyOpenAIError(err: unknown): OpenAIImageError {
       code: `OPENAI_${status || 'TRANSIENT'}`,
       message: `openai ${status}: ${err.message}`,
       retryable,
+      isContentPolicyViolation: !retryable ? isOpenAIContentPolicyError(err) : false,
     };
   }
   const message = err instanceof Error ? err.message : String(err);
-  return { status: 0, code: 'OPENAI_UNKNOWN', message, retryable: true };
+  return { status: 0, code: 'OPENAI_UNKNOWN', message, retryable: true, isContentPolicyViolation: false };
 }
 
 function decodeImageResponse(resp: OpenAI.Images.ImagesResponse): GenerateImageResult {

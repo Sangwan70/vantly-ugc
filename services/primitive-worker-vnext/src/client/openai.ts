@@ -138,6 +138,12 @@ export interface OpenAIErrorClassification {
   retryable: boolean;
   code: string;
   message: string;
+  /** True only when the underlying OpenAI error is a genuine content-policy/
+   *  safety-system rejection (real err.code/err.type, or an unambiguous
+   *  "safety system"/"content policy" phrase in the message) — NOT derived
+   *  from HTTP status alone. Any other 4xx (bad size, bad param, auth,
+   *  payload too large) leaves this false so its real message can surface. */
+  isContentPolicyViolation: boolean;
 }
 
 /**
@@ -148,11 +154,13 @@ export interface OpenAIErrorClassification {
 export class ProxyImageError extends Error {
   readonly retryable: boolean;
   readonly code: string;
-  constructor(message: string, code: string, retryable: boolean) {
+  readonly isContentPolicyViolation: boolean;
+  constructor(message: string, code: string, retryable: boolean, isContentPolicyViolation = false) {
     super(message);
     this.name = 'ProxyImageError';
     this.code = code;
     this.retryable = retryable;
+    this.isContentPolicyViolation = isContentPolicyViolation;
   }
 }
 
@@ -213,7 +221,12 @@ export async function generateImageViaApiV2(
   }
 
   // Error response — read the classification the proxy attached.
-  let body: { error?: string; code?: string; retryable?: boolean } = {};
+  let body: {
+    error?: string;
+    code?: string;
+    retryable?: boolean;
+    is_content_policy_violation?: boolean;
+  } = {};
   try {
     body = (await resp.json()) as typeof body;
   } catch {
@@ -229,6 +242,7 @@ export async function generateImageViaApiV2(
     body.error ?? `image proxy ${resp.status}`,
     body.code ?? `PROXY_${resp.status}`,
     retryable,
+    body.is_content_policy_violation === true,
   );
 }
 
@@ -285,9 +299,30 @@ export async function generateImageWithFallback(
  * (bad prompt, content policy, auth, payload too large) must not retry —
  * each retry burns more credit. 5xx and network errors are transient.
  */
+/**
+ * True only for a genuine OpenAI content-policy/safety-system rejection —
+ * checked against the REAL parsed error body (err.code/err.type), not just
+ * the HTTP status, plus a narrow message-text fallback for cases where
+ * OpenAI's SDK didn't populate those fields. A 400 for a bad size, a bad
+ * parameter, or a too-large payload must NOT match this.
+ */
+function isOpenAIContentPolicyError(err: InstanceType<typeof OpenAI.APIError>): boolean {
+  const code = typeof err.code === 'string' ? err.code.toLowerCase() : '';
+  const type = typeof err.type === 'string' ? err.type.toLowerCase() : '';
+  if (code.includes('content_policy') || code.includes('moderation')) return true;
+  if (type.includes('content_policy') || type.includes('moderation')) return true;
+  const message = err.message.toLowerCase();
+  return /safety system|content policy|moderation blocked/.test(message);
+}
+
 export function classifyOpenAIError(err: unknown): OpenAIErrorClassification {
   if (err instanceof ProxyImageError) {
-    return { retryable: err.retryable, code: err.code, message: err.message };
+    return {
+      retryable: err.retryable,
+      code: err.code,
+      message: err.message,
+      isContentPolicyViolation: err.isContentPolicyViolation,
+    };
   }
   if (err instanceof OpenAI.APIError) {
     const status = err.status ?? 0;
@@ -296,16 +331,18 @@ export function classifyOpenAIError(err: unknown): OpenAIErrorClassification {
         retryable: false,
         code: `OPENAI_${status}`,
         message: `openai ${status}: ${err.message}`,
+        isContentPolicyViolation: isOpenAIContentPolicyError(err),
       };
     }
     return {
       retryable: true,
       code: `OPENAI_${status || 'TRANSIENT'}`,
       message: `openai transient ${status}: ${err.message}`,
+      isContentPolicyViolation: false,
     };
   }
   const message = err instanceof Error ? err.message : String(err);
-  return { retryable: true, code: 'OPENAI_UNKNOWN', message };
+  return { retryable: true, code: 'OPENAI_UNKNOWN', message, isContentPolicyViolation: false };
 }
 
 function decodeImageResponse(resp: OpenAI.Images.ImagesResponse): {

@@ -526,3 +526,42 @@ export async function uploadUserVideoFromUrl(
     mime,
   };
 }
+
+/**
+ * Fetch an EXTERNAL audio URL (e.g. a user's own bring-your-own-audio track
+ * for make_lip_sync, on any host), validate it (SSRF-guarded, size-capped,
+ * MP3/WAV sniffed), upload to R2, and return the public URL. Passthrough when
+ * already on our R2 -- same shape as uploadUserImageFromUrl /
+ * uploadUserVideoFromUrl above, just for audio.
+ */
+export async function uploadUserAudioFromUrl(
+  userId: string,
+  rawUrl: string,
+): Promise<UploadedAudio> {
+  const env = readEnv();
+  const r2Prefix = env.publicUrl.replace(/\/+$/, '') + '/';
+  if (rawUrl.startsWith(r2Prefix)) {
+    return { url: rawUrl, key: rawUrl.slice(r2Prefix.length), bytes: 0, mime: 'audio/mpeg' };
+  }
+
+  const { buffer: bytes, contentType } = await safeFetchToBuffer(rawUrl, MAX_AUDIO_UPLOAD_BYTES, 30_000);
+  if (bytes.byteLength === 0) throw new Error('r2: fetched audio is empty');
+  const ct = contentType.toLowerCase();
+  // Sniff: MP3 frames start 0xFFFB/0xFFF3/etc or an 'ID3' tag; WAV starts 'RIFF'.
+  const isMp3 = (bytes.length > 2 && bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0) || bytes.toString('ascii', 0, 3) === 'ID3';
+  const isWav = bytes.length > 4 && bytes.toString('ascii', 0, 4) === 'RIFF';
+  if (!ct.startsWith('audio/') && !isMp3 && !isWav) {
+    throw new Error('r2: fetched URL is not a recognized audio file (expected mp3/wav)');
+  }
+  const key = `vnext/uploads/${userId}/${randomUUID()}.mp3`;
+  await getClient().send(
+    new PutObjectCommand({ Bucket: env.bucket, Key: key, Body: bytes, ContentType: 'audio/mpeg' }),
+  );
+  return {
+    url: `${env.publicUrl.replace(/\/+$/, '')}/${key}`,
+    key,
+    bytes: bytes.byteLength,
+    mime: 'audio/mpeg',
+  };
+}
+

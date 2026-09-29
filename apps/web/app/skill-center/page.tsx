@@ -17,7 +17,7 @@ const SKILLS: Array<{ slug: string; name: string; desc: string }> = [
   { slug: 'make_product_in_hands', name: 'Make Product In Hands', desc: 'Your character holds, wears, or shows a product — talking-head review or a silent demo, close-up or full body.' },
   { slug: 'make_broll_talking_head', name: 'Make B-roll Talking Head', desc: 'A talking-head video sized to your script, chunked into seamless takes, with optional narrated b-roll overlaid underneath.' },
   { slug: 'make_podcast', name: 'Make Podcast', desc: 'Two saved characters recording a podcast in one room — the camera cuts to whoever is speaking, each with a consistent look and voice.' },
-  { slug: 'make_lip_sync', name: 'Make Lip Sync', desc: 'Bring your own audio and lip-sync it to a face or an existing clip — no text-to-speech involved.' },
+  { slug: 'make_lip_sync', name: 'Redub: New Dialogue', desc: 'Give an existing face or clip brand-new dialogue — bring your own audio, or type new lines and we synthesize + lip-sync them.' },
   { slug: 'make_subtitles', name: 'Make Subtitles', desc: 'Burn TikTok- or Hormozi-style captions onto any video, auto-transcribed when you don’t supply one.' },
   { slug: 'make_character_sheet', name: 'Make Character Sheet', desc: 'Generate a reusable, magazine-style character sheet from a single portrait.' },
   { slug: 'make_portrait', name: 'Make Portrait', desc: 'Generate one photoreal portrait, optionally locked to a reference photo.' },

@@ -254,24 +254,86 @@ export const SubtitlesV2ToolOutputSchema = z.object({
   credits_deducted: z.number().int().nonnegative(),
 });
 
-export const LipSyncToolInputSchema = z.object({
-  image_url: z
-    .string()
-    .url()
-    .regex(/^https:\/\//, 'image_url must use https')
-    .refine(isPublicHttpsUrl, {
-      message: 'image_url must use https and must not target private/internal addresses',
-    }),
-  audio_url: z
-    .string()
-    .url()
-    .regex(/^https:\/\//, 'audio_url must use https')
-    .refine(isPublicHttpsUrl, {
-      message: 'audio_url must use https and must not target private/internal addresses',
-    }),
-  duration: z.union([z.literal(5), z.literal(10), z.literal(15)]).default(10),
-  aspect_ratio: z.enum(['9:16', '1:1']).default('9:16'),
-});
+/**
+ * make_lip_sync's face source: EXACTLY ONE of --
+ *  - image_url: a still portrait / character sheet, used as-is.
+ *  - video_url: an EXISTING generated clip -- the worker extracts a
+ *    representative frame from it and uses THAT as the face reference. This
+ *    is "reuse an existing video for a new dialogue," but be precise about
+ *    what it actually does: it does NOT edit the original clip's mouth in
+ *    place (the rest of that footage -- background, camera motion, body
+ *    performance -- is never reused). A brand-new clip is generated from the
+ *    extracted still + the audio below, same as if a photo had been passed.
+ * And EXACTLY ONE of --
+ *  - audio_url: bring your own final recorded audio track (no TTS applied).
+ *  - script + optional voice_id: NEW dialogue, typed out -- synthesized via
+ *    ElevenLabs (voice_id picks the voice; omit it for a sensible default)
+ *    into a real audio track, then lip-synced exactly like audio_url would
+ *    be. This is the "generate a new story" path: type new lines instead of
+ *    supplying your own recording.
+ */
+export const LipSyncToolInputSchema = z
+  .object({
+    image_url: z
+      .string()
+      .url()
+      .regex(/^https:\/\//, 'image_url must use https')
+      .refine(isPublicHttpsUrl, {
+        message: 'image_url must use https and must not target private/internal addresses',
+      })
+      .optional(),
+    video_url: z
+      .string()
+      .url()
+      .regex(/^https:\/\//, 'video_url must use https')
+      .refine(isPublicHttpsUrl, {
+        message: 'video_url must use https and must not target private/internal addresses',
+      })
+      .optional(),
+    audio_url: z
+      .string()
+      .url()
+      .regex(/^https:\/\//, 'audio_url must use https')
+      .refine(isPublicHttpsUrl, {
+        message: 'audio_url must use https and must not target private/internal addresses',
+      })
+      .optional(),
+    script: z
+      .string()
+      .trim()
+      .min(1)
+      .max(500, 'script is limited to ~500 characters -- roughly one 15s spoken line')
+      .optional(),
+    voice_id: z.string().trim().min(1).optional(),
+    /** BCP-47 (e.g. "es", "hi") -- only used when synthesizing `script`. */
+    language: z.string().trim().min(2).max(35).optional(),
+    duration: z.union([z.literal(5), z.literal(10), z.literal(15)]).default(10),
+    aspect_ratio: z.enum(['9:16', '1:1']).default('9:16'),
+  })
+  .superRefine((value, ctx) => {
+    const hasImage = Boolean(value.image_url);
+    const hasVideo = Boolean(value.video_url);
+    if (hasImage === hasVideo) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: hasImage
+          ? 'pass exactly one of image_url or video_url, not both'
+          : 'pass exactly one of image_url (a still photo/character sheet) or video_url (an existing clip to grab a frame from)',
+        path: ['image_url'],
+      });
+    }
+    const hasAudio = Boolean(value.audio_url);
+    const hasScript = Boolean(value.script);
+    if (hasAudio === hasScript) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: hasAudio
+          ? 'pass exactly one of audio_url or script, not both'
+          : 'pass exactly one of audio_url (your own recorded track) or script (new dialogue to synthesize)',
+        path: ['audio_url'],
+      });
+    }
+  });
 
 export const LipSyncToolOutputSchema = z.object({
   job_id: z.string().uuid(),

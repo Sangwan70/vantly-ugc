@@ -82,7 +82,7 @@ const STEP_LABEL: Record<string, string> = {
 const SKILL_LABEL: Record<string, string> = {
   make_ugc: 'UGC video',
   make_portrait: 'Portrait', make_character_sheet: 'Character sheet', make_wireframe: 'Storyboard',
-  make_simple_selfie: 'Talking-head clip', make_lip_sync: 'Lip-sync clip', make_subtitles: 'Captions',
+  make_simple_selfie: 'Talking-head clip', make_lip_sync: 'Redub clip', make_subtitles: 'Captions',
   make_ugc_video: 'UGC video', make_broll_talking_head: 'B-roll talking-head', make_product_in_hands: 'Product video',
   make_podcast: 'Podcast', make_storybook: 'Storybook', list_my_characters: 'Your characters',
 };

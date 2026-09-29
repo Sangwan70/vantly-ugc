@@ -31,7 +31,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { RunPanel, type RunResult, type SkillEntry } from '../skills/_run-panel';
 import { FORMS, type Field } from '../skills/_forms';
 
-type VideoType = 'talking_head' | 'product' | 'broll_review' | 'silent_action' | 'podcast' | 'storybook';
+type VideoType = 'talking_head' | 'product' | 'broll_review' | 'silent_action' | 'podcast' | 'storybook' | 'redub';
 type Platform = '9:16' | '1:1';
 
 const VIDEO_TYPE_OPTIONS: { value: VideoType; label: string }[] = [
@@ -41,6 +41,7 @@ const VIDEO_TYPE_OPTIONS: { value: VideoType; label: string }[] = [
   { value: 'silent_action', label: 'Silent Action Clip' },
   { value: 'podcast', label: 'Podcast' },
   { value: 'storybook', label: 'Storybook' },
+  { value: 'redub', label: 'Redub Existing Video' },
 ];
 
 // The trailing clause of the header sentence changes shape once the
@@ -51,6 +52,7 @@ const VIDEO_TYPE_OPTIONS: { value: VideoType; label: string }[] = [
 const TRAILING_TEXT_BY_TYPE: Partial<Record<VideoType, string>> = {
   podcast: 'with this conversation..',
   storybook: 'with these characters and scenes..',
+  redub: 'with this new dialogue..',
 };
 
 const PLATFORM_OPTIONS: { value: Platform; label: string }[] = [
@@ -102,6 +104,14 @@ export const MAKE_STORYBOOK_ENTRY: SkillEntry = {
   primitive: 'composed:make_storybook',
 };
 
+export const MAKE_LIP_SYNC_ENTRY: SkillEntry = {
+  slug: 'make_lip_sync',
+  name: 'Redub: New Dialogue',
+  version: '1.1.0',
+  description: 'Give an existing face or clip brand-new dialogue.',
+  primitive: 'lip_sync',
+};
+
 const selectStyle: React.CSSProperties = {
   backgroundColor: '#1F2030',
   color: '#E9E9F0',
@@ -140,7 +150,7 @@ export function CreateComposer({
     if (videoType === 'podcast' && platform !== '9:16') setPlatform('9:16');
   }, [videoType, platform]);
 
-  const activeSkillEntry = videoType === 'podcast' ? MAKE_PODCAST_ENTRY : videoType === 'storybook' ? MAKE_STORYBOOK_ENTRY : MAKE_UGC_ENTRY;
+  const activeSkillEntry = videoType === 'podcast' ? MAKE_PODCAST_ENTRY : videoType === 'storybook' ? MAKE_STORYBOOK_ENTRY : videoType === 'redub' ? MAKE_LIP_SYNC_ENTRY : MAKE_UGC_ENTRY;
 
   const form = useMemo(() => {
     if (videoType === 'podcast') return FORMS.make_podcast;
@@ -149,6 +159,10 @@ export function CreateComposer({
       // dropdown instead, same as make_ugc below.
       const fields = FORMS.make_storybook.fields.filter((f) => f.name !== 'aspect_ratio');
       return { ...FORMS.make_storybook, fields };
+    }
+    if (videoType === 'redub') {
+      const fields = FORMS.make_lip_sync.fields.filter((f) => f.name !== 'aspect_ratio');
+      return { ...FORMS.make_lip_sync, fields };
     }
     const allowedIdentity = new Set(IDENTITY_FIELDS_BY_TYPE[videoType]);
     const fields: Field[] = FORMS.make_ugc.fields.filter((f) => {
@@ -180,7 +194,7 @@ export function CreateComposer({
         activeRun={null}
         onLaunched={(r) => onGenerate(activeSkillEntry, r)}
         initialValues={videoType === 'podcast' ? undefined : { aspect_ratio: platform }}
-        submitLabel={videoType === 'podcast' ? 'Generate Podcast' : videoType === 'storybook' ? 'Generate Storybook' : 'Generate Video'}
+        submitLabel={videoType === 'podcast' ? 'Generate Podcast' : videoType === 'storybook' ? 'Generate Storybook' : videoType === 'redub' ? 'Generate Redub' : 'Generate Video'}
         hideHeading
         onUseSavedPrompt={onUseSavedPrompt}
         onBrowseExamples={onBrowseExamples}

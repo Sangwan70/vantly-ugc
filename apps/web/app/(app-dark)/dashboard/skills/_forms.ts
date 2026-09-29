@@ -202,6 +202,38 @@ function validateMakePodcast(v: Record<string, unknown>): string | null {
   return null;
 }
 
+/**
+ * Mirrors LipSyncToolInputSchema's superRefine (packages/schema): exactly
+ * one face source (image_url / video_url) and exactly one voice source
+ * (audio_url / script), plus script needing a voice picked (the server
+ * falls back to a default voice when script is used via the agent/API, but
+ * the web form always shows the picker, so require it explicitly here
+ * rather than silently picking one behind the user's back).
+ */
+function validateMakeLipSync(v: Record<string, unknown>): string | null {
+  const image = String(v.image_url ?? '').trim();
+  const video = String(v.video_url ?? '').trim();
+  const audio = String(v.audio_url ?? '').trim();
+  const script = String(v.script ?? '').trim();
+  const voice = String(v.voice_id ?? '').trim();
+  if (!image && !video) {
+    return 'Add a face image URL, or an existing video URL to grab a frame from, before generating.';
+  }
+  if (image && video) {
+    return 'Pass only one of Face image URL or Existing video URL, not both.';
+  }
+  if (!audio && !script) {
+    return 'Add your own audio URL, or type new dialogue to synthesize, before generating.';
+  }
+  if (audio && script) {
+    return 'Pass only one of Your own audio URL or New dialogue, not both.';
+  }
+  if (script && !voice) {
+    return 'Pick a voice for the typed dialogue before generating.';
+  }
+  return null;
+}
+
 export const FORMS: Record<string, SkillForm> = {
   make_ugc: {
     composed: true,
@@ -313,9 +345,14 @@ export const FORMS: Record<string, SkillForm> = {
   },
   make_lip_sync: {
     composed: false,
+    exclusiveGroups: [['image_url', 'video_url'], ['audio_url', 'script']],
+    validate: validateMakeLipSync,
     fields: [
-      { kind: 'text', name: 'image_url', label: 'Face image URL (R2-hosted)', placeholder: 'https://pub-...r2.dev/vnext/...', required: true, help: 'A portrait or character-sheet image of the person who will speak.' },
-      { kind: 'text', name: 'audio_url', label: 'Your audio URL (R2-hosted)', placeholder: 'https://pub-...r2.dev/vnext/...', required: true, help: 'An MP3/WAV recording of the voice. The character lip-syncs to THIS audio — no text-to-speech, bring your own voice.' },
+      { kind: 'text', name: 'image_url', label: 'Face image URL', placeholder: 'https://…a portrait or character sheet', help: 'A still photo, portrait, or character sheet of the face that will speak. Any https URL — re-hosted automatically.' },
+      { kind: 'text', name: 'video_url', label: 'Or an existing video URL', placeholder: 'https://…a video you already generated', help: "We grab a representative frame from this clip and use it as the face — the rest of that footage isn't reused, a brand-new clip is rendered from the frame + audio. Leave blank if you gave a Face image URL above." },
+      { kind: 'text', name: 'audio_url', label: 'Your own audio URL', placeholder: 'https://…an mp3/wav of the exact voice track', help: 'An existing recording to lip-sync to exactly, no synthesis. Leave blank to type new dialogue below instead.' },
+      { kind: 'text', name: 'script', label: 'New dialogue', placeholder: 'Type the new line(s) this character should say…', textarea: true, help: 'We synthesize this with the voice you pick below, then lip-sync the face to it. Keep it to roughly one spoken line per clip (≤ ~40 words for 15s). Leave blank if you gave your own audio above.' },
+      { kind: 'voice-picker', name: 'voice_id', label: 'Voice', help: 'Required when using New dialogue above — which ElevenLabs voice speaks it.' },
       { kind: 'number-select', name: 'duration', label: 'Duration (s)', options: [5, 10, 15], defaultValue: 10 },
       { kind: 'select', name: 'aspect_ratio', label: 'Aspect ratio', options: ['9:16', '1:1'], defaultValue: '9:16' },
     ],

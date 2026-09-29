@@ -74,12 +74,24 @@ const EXAMPLE_INPUTS: Record<string, unknown> = {
     n_panels: 6,
     aspect_ratio: '9:16',
   },
+  // Two ways to call this -- pass EXACTLY ONE face source (image_url OR
+  // video_url) and EXACTLY ONE voice source (audio_url OR script):
   make_lip_sync: {
     image_url: 'https://pub-...r2.dev/vnext/primitive-runs/<id>/character-sheet.png',
     audio_url: 'https://pub-...r2.dev/vnext/<your-uploaded-audio>.mp3',
     duration: 10,
     aspect_ratio: '9:16',
   },
+  // (alternative call, same skill: reuse an EXISTING clip's face and type new
+  // dialogue instead of bringing your own audio -- omit voice_id for a
+  // sensible default)
+  // make_lip_sync: {
+  //   video_url: 'https://pub-...r2.dev/vnext/primitive-runs/<id>/simple-selfie.mp4',
+  //   script: "Okay wait, I need to redo this line -- here's the real reason I love this.",
+  //   voice_id: '21m00Tcm4TlvDq8ikWAM',
+  //   duration: 10,
+  //   aspect_ratio: '9:16',
+  // },
   make_ugc_video: {
     description: 'a friendly young woman, soft daylight, candid framing',
     character_description: 'Maya, 27 years old',

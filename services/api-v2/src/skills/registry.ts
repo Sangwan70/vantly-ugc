@@ -546,13 +546,14 @@ export const SKILLS: Record<string, SkillEntry> = {
   },
   make_lip_sync: {
     slug: 'make_lip_sync',
-    name: 'Make Lip Sync',
-    version: '1.0.0',
+    name: 'Redub: New Dialogue',
+    version: '1.1.0',
     description:
-      'Bring your own audio: lip-sync a face (an R2-hosted image / character sheet, OR an existing clip) to a provided audio track. No text-to-speech or voice cloning — the character speaks your uploaded recording. Output is a 9:16 talking-head video.',
+      'Give an existing face or clip brand-new dialogue. Face source (pass EXACTLY ONE): `image_url` (a still portrait / character sheet), or `video_url` (an existing generated video — a representative frame is extracted from it and used as the face; the rest of that original footage is NOT reused or edited, a brand-new clip is rendered). Voice source (pass EXACTLY ONE): `audio_url` (your own recorded track — no TTS, the character lip-syncs to exactly that audio), or `script` + optional `voice_id` (type NEW dialogue and it is synthesized via ElevenLabs, then lip-synced — this is the "write a new story for this character" path). Output is a 9:16 or 1:1 talking-head video, 5/10/15s.',
     primitive: 'lip_sync',
     workflowType: 'lipSyncWorkflow',
     inputSchema: LipSyncToolInputSchema,
+    agentFacing: true,
   },
   make_ugc_video: {
     slug: 'make_ugc_video',

@@ -17,6 +17,48 @@ async function fetchToBuffer(url: string, label: string): Promise<Buffer> {
   return Buffer.from(await resp.arrayBuffer());
 }
 
+/**
+ * Grab the LAST frame of a video (any https URL, already fetched into
+ * `videoBytes`) as JPEG bytes -- the actual ffmpeg work behind
+ * extractLastFrame below, pulled out as its own function so OTHER activities
+ * that just need "a still frame from this clip" (make_lip_sync's video_url
+ * face source, see lip-sync.ts) can reuse the exact same robust
+ * seek-near-EOF + full-decode-fallback logic instead of re-implementing it.
+ * Heartbeats via the CALLER's activity context (Context.current()), so it
+ * reads correctly no matter which activity invokes it.
+ */
+export async function extractLastFrameBytes(videoBytes: Buffer, label: string): Promise<Buffer> {
+  const workDir = await mkdtemp(join(tmpdir(), `vnext-lastframe-${label}-`));
+  try {
+    const videoPath = join(workDir, 'clip.mp4');
+    const framePath = join(workDir, 'frame.jpg');
+    await writeFile(videoPath, videoBytes);
+    const runFfmpeg = (args: string[]) => execFileP('ffmpeg', args);
+    // Primary: seek ~1s before EOF and overwrite a single frame (fast). `-an`
+    // drops the audio stream so a missing/odd audio track can't error the pass.
+    try {
+      await runFfmpeg(['-y', '-sseof', '-1', '-i', videoPath, '-an', '-update', '1', '-q:v', '2', framePath]);
+      await readFile(framePath); // throws if not created → fall through to full decode
+    } catch {
+      // Fallback: full decode, overwriting one frame per decoded frame — the
+      // final write IS the last frame. Robust for any decodable clip.
+      try {
+        await runFfmpeg(['-y', '-i', videoPath, '-an', '-update', '1', '-q:v', '2', framePath]);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        throw new Error(`last-frame extraction failed: ${msg.slice(0, 300)}`);
+      }
+    }
+    try {
+      return await readFile(framePath);
+    } catch {
+      throw new Error('last-frame extraction produced no frame (corrupt / zero-frame clip)');
+    }
+  } finally {
+    await rm(workDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 export interface ExtractLastFrameInput {
   /** A talking-head clip already hosted on R2. */
   video_url: string;
@@ -44,54 +86,22 @@ export function makeExtractLastFrameActivity(cfg: WorkerConfig) {
   return async function extractLastFrame(
     input: ExtractLastFrameInput,
   ): Promise<ExtractLastFrameResult> {
-    const workDir = await mkdtemp(join(tmpdir(), `vnext-lastframe-${input.run_id}-`));
+    const videoBytes = await fetchToBuffer(input.video_url, 'chain clip');
+    Context.current().heartbeat({ stage: 'extracting_last_frame', index: input.index });
+    let bytes: Buffer;
     try {
-      const videoPath = join(workDir, 'clip.mp4');
-      const framePath = join(workDir, 'frame.jpg');
-      await writeFile(videoPath, await fetchToBuffer(input.video_url, 'chain clip'));
-      Context.current().heartbeat({ stage: 'extracting_last_frame', index: input.index });
-      // Grab the LAST frame robustly. `-sseof -0.1 -frames:v 1` is fragile: if
-      // the seek lands past the final keyframe-decodable frame, ffmpeg writes
-      // NOTHING and the file is never created (ENOENT). Instead seek ~1s before
-      // EOF and use `-update 1` (no -frames:v), which overwrites the same file
-      // for every frame in that tail — the final write IS the last frame.
-      // Fallback: full decode with `-update 1` (slower, but always yields the
-      // last frame) for clips shorter than the seek window or odd containers.
-      const runFfmpeg = (args: string[]) => execFileP('ffmpeg', args);
-      // Primary: seek ~1s before EOF and overwrite a single frame (fast). `-an`
-      // drops the audio stream so a missing/odd audio track can't error the pass.
-      try {
-        await runFfmpeg(['-y', '-sseof', '-1', '-i', videoPath, '-an', '-update', '1', '-q:v', '2', framePath]);
-        await readFile(framePath); // throws if not created → fall through to full decode
-      } catch {
-        // Fallback: full decode, overwriting one frame per decoded frame — the
-        // final write IS the last frame. Robust for any decodable clip.
-        try {
-          await runFfmpeg(['-y', '-i', videoPath, '-an', '-update', '1', '-q:v', '2', framePath]);
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          throw new Error(`last-frame extraction failed for ${input.video_url}: ${msg.slice(0, 300)}`);
-        }
-      }
-      let bytes: Buffer;
-      try {
-        bytes = await readFile(framePath);
-      } catch {
-        // Both passes ran but produced no frame (corrupt / zero-frame clip).
-        // Throw a clear error instead of a bare ENOENT so it's diagnosable —
-        // and so the caller can degrade gracefully instead of guessing.
-        throw new Error(`last-frame extraction produced no frame for ${input.video_url}`);
-      }
-      const { publicUrl } = await r2UploadVnext(
-        cfg.r2,
-        input.run_id,
-        `chain-frame-${input.index}.jpg`,
-        bytes,
-        'image/jpeg',
-      );
-      return { frame_url: publicUrl };
-    } finally {
-      await rm(workDir, { recursive: true, force: true }).catch(() => {});
+      bytes = await extractLastFrameBytes(videoBytes, input.run_id);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(`${msg} (video_url: ${input.video_url})`);
     }
+    const { publicUrl } = await r2UploadVnext(
+      cfg.r2,
+      input.run_id,
+      `chain-frame-${input.index}.jpg`,
+      bytes,
+      'image/jpeg',
+    );
+    return { frame_url: publicUrl };
   };
 }

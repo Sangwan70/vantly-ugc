@@ -9,8 +9,14 @@ import { getTemporalClient } from '../../orchestrator/temporal/client.js';
 import { getTemporalConfig } from '../../orchestrator/temporal/config.js';
 import { withTimeout } from '../../orchestrator/temporal/timeout.js';
 import { uploadUserImageBase64, uploadUserImageFromUrl, uploadUserVideoFromUrl } from '../../lib/r2-upload.js';
-import { uploadUserAudioBuffer } from '../../lib/r2-upload.js';
+import { uploadUserAudioBuffer, uploadUserAudioFromUrl } from '../../lib/r2-upload.js';
 import { synthesizeElevenLabsSpeech } from '../../lib/elevenlabs.js';
+
+// ElevenLabs' original built-in preset voice ("Rachel") -- present on every
+// account by default, so it's a safe fallback when make_lip_sync's script
+// path is used with no voice_id picked. Override via env if the account's
+// default should be something else.
+const DEFAULT_LIP_SYNC_VOICE_ID = process.env.ELEVENLABS_DEFAULT_VOICE_ID?.trim() || '21m00Tcm4TlvDq8ikWAM';
 import { ModerationError } from '../../lib/image-moderation.js';
 import { quoteSkillCredits, quoteInFlightPrimitiveRun } from '../../skills/credit-quotes.js';
 import {
@@ -832,6 +838,65 @@ export async function runSkillRoute(req: Request, res: Response): Promise<void> 
         return;
       }
     }
+  }
+
+  // make_lip_sync ("Redub: New Dialogue"): re-host whichever face source was
+  // given (image_url OR video_url -- the schema's superRefine already
+  // guarantees exactly one), and resolve whichever voice source was given
+  // (audio_url OR script) down to a single final audio_url before the
+  // worker ever sees this input:
+  //  - audio_url (bring-your-own): re-hosted like every other external
+  //    media URL, so the worker's R2-only SSRF guard stays intact.
+  //  - script (type new dialogue): synthesized via ElevenLabs into a real
+  //    audio track and uploaded to R2, then treated exactly like a
+  //    bring-your-own audio_url from here on -- the worker never sees
+  //    `script`/`voice_id` at all, so it needs no ElevenLabs access of its
+  //    own. Falls back to DEFAULT_LIP_SYNC_VOICE_ID (ElevenLabs' "Rachel"
+  //    preset, present on every account) when no voice_id was picked --
+  //    unlike make_ugc's Voice Actor field, there is no native/free voice
+  //    to fall back to here: lip_sync always needs a REAL final audio
+  //    track to sync to, so a synthesis failure fails the request rather
+  //    than silently degrading.
+  if (slug === 'make_lip_sync') {
+    const body = activityInputBody as {
+      image_url?: string;
+      video_url?: string;
+      audio_url?: string;
+      script?: string;
+      voice_id?: string;
+      language?: string;
+    };
+    try {
+      if (body.image_url) {
+        const up = await uploadUserImageFromUrl(userId, String(body.image_url));
+        body.image_url = up.url;
+      } else if (body.video_url) {
+        const upv = await uploadUserVideoFromUrl(userId, String(body.video_url));
+        body.video_url = upv.url;
+      }
+    } catch (err) {
+      if (respondIfModerationBlocked(res, err, slug)) return;
+      res.status(400).json({ error: 'face_source_rehost_failed', skill: slug, detail: errorMessage(err) });
+      return;
+    }
+    try {
+      if (body.audio_url) {
+        const upa = await uploadUserAudioFromUrl(userId, String(body.audio_url));
+        body.audio_url = upa.url;
+      } else if (body.script) {
+        const audioBytes = await synthesizeElevenLabsSpeech(body.voice_id || DEFAULT_LIP_SYNC_VOICE_ID, body.script, {
+          languageCode: body.language,
+        });
+        const uploaded = await uploadUserAudioBuffer(userId, audioBytes);
+        body.audio_url = uploaded.url;
+      }
+    } catch (err) {
+      res.status(400).json({ error: 'dialogue_audio_failed', skill: slug, detail: errorMessage(err) });
+      return;
+    }
+    delete body.script;
+    delete body.voice_id;
+    delete body.language;
   }
 
   // Pre-flight credit check — return 402 immediately so the caller

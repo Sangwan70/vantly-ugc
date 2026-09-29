@@ -58,6 +58,13 @@ export const SAMPLE_PROMPTS: SamplePrompt[] = [
       + "This needs a saved character — I'll pick one, or create one first if I don't have one yet.\n"
       + "Look: natural. Aspect ratio: 9:16.",
   },
+  {
+    label: '🔁 Redub with new dialogue',
+    prompt: "I want to reuse an existing character or clip, but with brand-new dialogue — not a new scene.\n\n"
+      + "Face source: my saved character named \"Maya\" (or: this video I already made — https://…mp4).\n\n"
+      + "New dialogue: \"Okay wait, I need to redo this — forget what I said before, here's the real reason I love this.\"\n"
+      + "Voice: use the default voice unless I ask for a specific one. Aspect ratio: 9:16.",
+  },
 ];
 
 /**

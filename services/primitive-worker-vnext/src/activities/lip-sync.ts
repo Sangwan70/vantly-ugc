@@ -11,6 +11,7 @@ import type { WorkerConfig } from '../config.js';
 import { getDb } from '../client/db.js';
 import { r2UploadVnext } from '../client/r2.js';
 import { generateLipSyncEvolink } from '../client/evolink.js';
+import { extractLastFrameBytes } from './extract-last-frame.js';
 import { withHeartbeat } from '../lib/heartbeat.js';
 import { deductPrimitiveCredits, refundPrimitiveCredits, isAdminUser } from '../client/credits.js';
 
@@ -84,19 +85,40 @@ export function makeLipSyncActivity(cfg: WorkerConfig) {
       };
     }
 
-    // SSRF guard: both user-supplied URLs must be on our R2 public prefix.
+    // SSRF guard: every user-supplied URL that's actually present (image_url
+    // XOR video_url, plus audio_url) must be on our R2 public prefix. api-v2
+    // already re-hosts external URLs before dispatch (runSkillRoute's
+    // make_lip_sync block) -- this is the worker's own belt-and-suspenders
+    // check, same as every other primitive.
     const allowedPrefix = cfg.r2.publicUrl.replace(/\/+$/, '') + '/';
-    for (const [field, url] of [
+    const urlChecks: Array<readonly [string, string | undefined]> = [
       ['image_url', input.image_url],
+      ['video_url', input.video_url],
       ['audio_url', input.audio_url],
-    ] as const) {
-      if (!url.startsWith(allowedPrefix)) {
+    ];
+    for (const [field, url] of urlChecks) {
+      if (url && !url.startsWith(allowedPrefix)) {
         throw ApplicationFailure.nonRetryable(
           `${field} must be hosted on the configured R2 public URL (${allowedPrefix})`,
           'REFERENCE_URL_NOT_ALLOWED',
         );
       }
     }
+
+    // The worker never resolves `script` -> audio itself (api-v2's
+    // runSkillRoute does that with ElevenLabs BEFORE dispatch, so this
+    // worker needs no ElevenLabs access of its own) -- so by the time a
+    // request reaches here, audio_url must already be a real value. Narrow
+    // it once so the rest of this function can use a plain `string` instead
+    // of re-checking `input.audio_url` (still typed optional at the schema
+    // level, since `script` is a valid alternative there) everywhere below.
+    if (!input.audio_url) {
+      throw ApplicationFailure.nonRetryable(
+        'lip_sync worker received no audio_url -- script must be synthesized to a real audio_url before dispatch',
+        'INVALID_INPUT',
+      );
+    }
+    const audioUrl = input.audio_url;
 
     // Budget caps — admins (ADMIN_EMAILS) skip both entirely, same bypass as
     // deductPrimitiveCredits.
@@ -155,6 +177,35 @@ export function makeLipSyncActivity(cfg: WorkerConfig) {
       let providerTaskId: string | null = null;
       let providerVideoUrl: string | null = null;
 
+      // Resolve the face source to a single still-image URL: image_url is
+      // used as-is; video_url means "reuse the face from this existing
+      // clip" -- grab its last frame (same robust extraction
+      // extract-last-frame.ts uses for clip-to-clip continuity) and upload
+      // that frame to R2, so everything below (the provider call, the
+      // artifact metadata) only ever deals with a plain image URL, exactly
+      // like the image_url path. IMPORTANT: this reuses the FACE, not the
+      // clip -- none of the original video's background, motion or
+      // performance carries over; a brand-new clip is rendered from this
+      // still + the audio, same as if a photo had been passed directly.
+      let resolvedImageUrl: string;
+      if (input.image_url) {
+        resolvedImageUrl = input.image_url;
+      } else {
+        // schema superRefine guarantees video_url is set whenever image_url isn't.
+        const sourceVideoBytes = await fetchToBuffer(input.video_url as string, 'source video');
+        Context.current().heartbeat({ stage: 'extracting_face_frame' });
+        const frameBytes = await extractLastFrameBytes(sourceVideoBytes, activityInput.primitive_run_id);
+        const { publicUrl: frameUrl } = await r2UploadVnext(
+          cfg.r2,
+          activityInput.primitive_run_id,
+          'source-frame.jpg',
+          frameBytes,
+          'image/jpeg',
+        );
+        resolvedImageUrl = frameUrl;
+        Context.current().heartbeat({ stage: 'face_frame_extracted' });
+      }
+
       if (cfg.openai.simulate) {
         videoBytes = Buffer.from('SIMULATED', 'utf8');
       } else {
@@ -167,8 +218,8 @@ export function makeLipSyncActivity(cfg: WorkerConfig) {
         }
         try {
           const result = await withHeartbeat('seedance_working', () => generateLipSyncEvolink({
-            imageUrl: input.image_url,
-            audioUrl: input.audio_url,
+            imageUrl: resolvedImageUrl,
+            audioUrl: audioUrl,
             aspectRatio: input.aspect_ratio,
             duration: input.duration,
           }));
@@ -196,7 +247,7 @@ export function makeLipSyncActivity(cfg: WorkerConfig) {
           const audioPath = join(workDir, 'audio.mp3');
           const outPath = join(workDir, 'out.mp4');
           await writeFile(silentPath, await fetchToBuffer(providerVideoUrl, 'lip-sync video'));
-          await writeFile(audioPath, await fetchToBuffer(input.audio_url, 'audio'));
+          await writeFile(audioPath, await fetchToBuffer(audioUrl, 'audio'));
           Context.current().heartbeat({ stage: 'muxing' });
           await execFileP('ffmpeg', [
             '-y',
@@ -251,8 +302,9 @@ export function makeLipSyncActivity(cfg: WorkerConfig) {
             model: process.env.EVOLINK_SEEDANCE_MODEL || 'seedance-2.0-reference-to-video',
             simulated: cfg.openai.simulate,
             aspect_ratio: input.aspect_ratio,
-            source_image_url: input.image_url,
-            source_audio_url: input.audio_url,
+            source_image_url: resolvedImageUrl,
+            source_video_url: input.video_url ?? null,
+            source_audio_url: audioUrl,
           },
         })
         .select('id')

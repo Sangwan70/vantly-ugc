@@ -1263,7 +1263,7 @@ async function dispatchBrollTalkingHead(
   });
 }
 
-interface ResolvedPodcastCharacter {
+export interface ResolvedPodcastCharacter {
   ref_url: string;
   seed?: number;
 }
@@ -1312,15 +1312,26 @@ async function resolvePodcastCharacter(
   return { ref_url: up.url, seed };
 }
 
-async function dispatchMakePodcast(
+/**
+ * Resolve both podcast identities + validate the script. Shared by
+ * dispatchMakePodcast (fresh submit) and resumeSkillRunRoute (resume — reuses
+ * the ORIGINAL skill_run_id so the workflow's deterministic child ids match
+ * and every already-succeeded step — scene, reframes, takes rendered before
+ * the failure — is looked up and reused instead of re-billing and
+ * re-rendering it). Writes an error response itself (identical shape to what
+ * dispatchMakePodcast always returned) and returns `null` on failure so the
+ * caller just needs to check for that — and, critically, so NEITHER caller
+ * creates/touches a skill_runs row before this succeeds.
+ */
+async function resolvePodcastWorkflowParts(
   res: Response,
   userId: string,
   body: Record<string, unknown>,
-): Promise<void> {
+): Promise<{ a: ResolvedPodcastCharacter; b: ResolvedPodcastCharacter; script: Array<{ speaker?: string; line?: string }> } | null> {
   const script = body.script as Array<{ speaker?: string; line?: string }> | undefined;
   if (!Array.isArray(script) || script.length === 0) {
     res.status(400).json({ error: 'invalid_input', skill: 'make_podcast', detail: 'script must be a non-empty array of A/B turns' });
-    return;
+    return null;
   }
 
   let a: ResolvedPodcastCharacter | null;
@@ -1329,18 +1340,52 @@ async function dispatchMakePodcast(
     a = await resolvePodcastCharacter(userId, { ref: String(body.character_a ?? ''), ref_base64: String(body.character_a_base64 ?? '') });
     b = await resolvePodcastCharacter(userId, { ref: String(body.character_b ?? ''), ref_base64: String(body.character_b_base64 ?? '') });
   } catch (err) {
-    if (respondIfModerationBlocked(res, err, 'make_podcast')) return;
+    if (respondIfModerationBlocked(res, err, 'make_podcast')) return null;
     res.status(400).json({ error: 'podcast_identity_failed', skill: 'make_podcast', detail: errorMessage(err) });
-    return;
+    return null;
   }
   if (!a) {
     res.status(400).json({ error: 'podcast_character_not_found', skill: 'make_podcast', detail: 'Could not resolve character_a — pass a saved char_… id from list_characters, an https image URL, or an uploaded photo.' });
-    return;
+    return null;
   }
   if (!b) {
     res.status(400).json({ error: 'podcast_character_not_found', skill: 'make_podcast', detail: 'Could not resolve character_b — pass a saved char_… id from list_characters, an https image URL, or an uploaded photo.' });
-    return;
+    return null;
   }
+  return { a, b, script };
+}
+
+export function buildMakePodcastWorkflowInput(
+  userId: string,
+  skillRunId: string,
+  body: Record<string, unknown>,
+  parts: { a: ResolvedPodcastCharacter; b: ResolvedPodcastCharacter; script: Array<{ speaker?: string; line?: string }> },
+): Record<string, unknown> {
+  return {
+    skill_run_id: skillRunId,
+    user_id: userId,
+    character_a_ref_url: parts.a.ref_url,
+    character_a_seed: parts.a.seed,
+    character_b_ref_url: parts.b.ref_url,
+    character_b_seed: parts.b.seed,
+    script: parts.script,
+    room: body.room,
+    aspect_ratio: '9:16',
+    subtitles: body.subtitles ?? false,
+    subtitles_style: body.subtitles_style ?? 'hormozi',
+  };
+}
+
+async function dispatchMakePodcast(
+  res: Response,
+  userId: string,
+  body: Record<string, unknown>,
+): Promise<void> {
+  // Resolve BEFORE creating any skill_runs row — a bad script or an
+  // unresolvable character should fail with a plain 4xx, not leave a
+  // failed row behind (unchanged from the pre-refactor behavior).
+  const parts = await resolvePodcastWorkflowParts(res, userId, body);
+  if (!parts) return;
 
   const { data: skillRunRow, error: insertErr } = await supabase
     .from('skill_runs')
@@ -1359,20 +1404,7 @@ async function dispatchMakePodcast(
     return;
   }
   const skillRunId = skillRunRow.id as string;
-
-  const workflowInput = {
-    skill_run_id: skillRunId,
-    user_id: userId,
-    character_a_ref_url: a.ref_url,
-    character_a_seed: a.seed,
-    character_b_ref_url: b.ref_url,
-    character_b_seed: b.seed,
-    script,
-    room: body.room,
-    aspect_ratio: '9:16',
-    subtitles: body.subtitles ?? false,
-    subtitles_style: body.subtitles_style ?? 'hormozi',
-  };
+  const workflowInput = buildMakePodcastWorkflowInput(userId, skillRunId, body, parts);
 
   let cfg: ReturnType<typeof getTemporalConfig>;
   try {
@@ -1818,6 +1850,172 @@ export async function cancelSkillRunRoute(req: Request, res: Response): Promise<
     return;
   }
   res.status(200).json({ skill_run_id: run.id, status: 'canceled' });
+}
+
+/**
+ * Skills whose composed Temporal workflow is verified safe to RESUME: every
+ * activity it calls early-returns its banked artifact when the deterministic
+ * primitive_run_id it was given already has a 'succeeded' row (see e.g.
+ * podcast-scene.ts / podcast-reframe.ts / simple-selfie.ts / subtitles.ts /
+ * compose-broll-overlay.ts's "Retry-safety" blocks), so restarting the SAME
+ * workflow under the SAME skill_run_id after a failure skips every step that
+ * already succeeded instead of re-rendering (and re-billing) it. Add a skill
+ * here only after confirming its workflow's activities have that same guard —
+ * otherwise "resume" degrades to a plain (harmless, just not faster) retry.
+ */
+const RESUMABLE_SKILLS = new Set(['make_podcast']);
+
+/**
+ * POST /v1/skills/runs/:skill_run_id/resume — continue a FAILED composed run
+ * from wherever it stopped, instead of starting over from scratch.
+ *
+ * Unlike "Retry" (apps/web's RetryButton — reopens the form pre-filled and
+ * resubmits, which mints a brand-new skill_run_id and therefore a brand-new
+ * set of deterministic child ids, so every already-rendered clip is silently
+ * discarded and re-billed), this reuses the ORIGINAL skill_run_id: the
+ * workflow's deterministic makeChildRunId(skillRunId, step) values are
+ * unchanged, so each step's early-return cache hit fires and only the step
+ * that actually failed (and anything after it) does real work.
+ *
+ * Use this when nothing about the request needs to change (e.g. a transient
+ * provider error, or a server-side bug — like a misclassified error — has
+ * since been fixed) and you just want the SAME run to finish. Use Retry
+ * instead when the input itself needs editing.
+ */
+export async function resumeSkillRunRoute(req: Request, res: Response): Promise<void> {
+  const userId = (req as any).userId as string | undefined;
+  if (!userId) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+  const skillRunId = String(req.params.skill_run_id ?? '');
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(skillRunId)) {
+    res.status(400).json({ error: 'invalid_skill_run_id' });
+    return;
+  }
+
+  const { data: run, error: runErr } = await supabase
+    .from('skill_runs')
+    .select('id, user_id, skill_slug, status, input')
+    .eq('id', skillRunId)
+    .maybeSingle();
+  if (runErr) {
+    res.status(500).json({ error: 'lookup_failed', detail: runErr.message });
+    return;
+  }
+  if (!run || run.user_id !== userId) {
+    res.status(404).json({ error: 'not_found' });
+    return;
+  }
+  if (!RESUMABLE_SKILLS.has(run.skill_slug)) {
+    res.status(400).json({
+      error: 'resume_not_supported',
+      detail: `Resume isn't available for ${run.skill_slug} yet — use Retry instead.`,
+    });
+    return;
+  }
+  if (run.status !== 'failed') {
+    res.status(409).json({
+      error: 'not_resumable',
+      status: run.status,
+      detail: `Only a failed run can be resumed (this run is ${run.status}).`,
+    });
+    return;
+  }
+
+  const body = (run.input ?? {}) as Record<string, unknown>;
+  const preflight = await preflightCreditCheck(userId, run.skill_slug, body, isAdminEmail((req as any).userEmail));
+  if (!preflight.ok) {
+    const free = Math.max(0, preflight.available - preflight.committed);
+    res.status(402).json({
+      error: 'insufficient_credits',
+      skill: run.skill_slug,
+      needed: preflight.needed,
+      available: preflight.available,
+      committed: preflight.committed,
+      detail:
+        `This needs ${preflight.needed} credits but you have ${free} available` +
+        (preflight.committed > 0 ? ` (${preflight.committed} reserved by jobs still running)` : '') +
+        `. Top up on the Billing page to continue.`,
+      buy_url: '/dashboard/billing',
+    });
+    return;
+  }
+
+  // Only make_podcast is in RESUMABLE_SKILLS today; this re-resolves the two
+  // saved identities + re-validates the script exactly like a fresh dispatch
+  // would (writes its own error response on failure).
+  const parts = await resolvePodcastWorkflowParts(res, userId, body);
+  if (!parts) return;
+  const workflowInput = buildMakePodcastWorkflowInput(userId, skillRunId, body, parts);
+
+  let cfg: ReturnType<typeof getTemporalConfig>;
+  try {
+    cfg = getTemporalConfig();
+  } catch (err) {
+    res.status(503).json({ error: 'temporal_unconfigured', detail: errorMessage(err) });
+    return;
+  }
+
+  // Reset the row OUT of its terminal 'failed' state before restarting the
+  // workflow — composedSkillState's own guard (composed-state.ts) refuses to
+  // write a non-terminal status onto an already-terminal row, specifically to
+  // stop a race from resurrecting a finalized run. Without this reset, the
+  // resumed workflow's very first {status:'running'} write would be silently
+  // dropped and the row would look permanently stuck on 'failed' even though
+  // the workflow is actually running again.
+  const { error: resetErr } = await supabase
+    .from('skill_runs')
+    .update({
+      status: 'submitted',
+      current_step: 'pending',
+      error_code: null,
+      error_message: null,
+      finished_at: null,
+    })
+    .eq('id', skillRunId)
+    .eq('user_id', userId);
+  if (resetErr) {
+    res.status(500).json({ error: 'resume_reset_failed', detail: resetErr.message });
+    return;
+  }
+  await recordSkillRunStatusEvent(supabase, {
+    skill_run_id: skillRunId,
+    writer: 'resume',
+    from_status: 'failed',
+    to_status: 'submitted',
+    applied: true,
+    current_step: 'pending',
+    error_code: null,
+  });
+
+  const workflowId = `${run.skill_slug}-${skillRunId}`;
+  try {
+    const client = await getTemporalClient();
+    await withTimeout(
+      client.workflow.start('makePodcastWorkflow', {
+        workflowId,
+        taskQueue: getPrimitiveTaskQueue(),
+        workflowExecutionTimeout: 45 * 60_000,
+        workflowRunTimeout: 45 * 60_000,
+        args: [workflowInput],
+      }),
+      cfg.startTimeoutMs,
+      'temporal.workflow.start.make_podcast.resume',
+    );
+  } catch (err) {
+    await markSkillRunDispatchFailed(skillRunId, userId, err);
+    res.status(502).json({ error: 'temporal_dispatch_failed', detail: errorMessage(err) });
+    return;
+  }
+
+  res.status(202).json({
+    skill_run_id: skillRunId,
+    workflow_id: workflowId,
+    skill: run.skill_slug,
+    status: 'submitted',
+    resumed: true,
+  });
 }
 
 function readIdempotencyKey(req: Request): string | null {

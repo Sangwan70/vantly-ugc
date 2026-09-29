@@ -23,7 +23,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2, ExternalLink, ArrowRight, Trash2, Eraser } from 'lucide-react';
-import { RetryButton } from '../skills/_retry';
+import { RetryButton, ResumeButton, isResumableSkill } from '../skills/_retry';
 
 interface JobItem {
   id: string;
@@ -318,6 +318,9 @@ export default function JobsPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          {j.source === 'vnext_skill' && isFailed(j.status) && isResumableSkill(j.primitive) && (
+                            <ResumeButton runId={j.run_id} skillLabel={prettyName(j.primitive)} variant="outline" onResumed={() => void load()} />
+                          )}
                           {j.source === 'vnext_skill' && (isFailed(j.status) || j.stalled) && (
                             <RetryButton runId={j.run_id} skillLabel={prettyName(j.primitive)} variant="outline" />
                           )}

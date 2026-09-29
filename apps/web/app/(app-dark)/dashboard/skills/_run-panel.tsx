@@ -37,6 +37,48 @@ interface TurnItem { speaker: 'A' | 'B'; line: string }
 // the longest edge below and re-encoding as JPEG keeps a solid recognizable
 // reference photo while cutting a typical phone photo to a fraction of its
 // original size, so this stays well under any body-size limit in practice.
+/**
+ * Autosaved draft support (services/api-v2 GET/PUT/DELETE /v1/skills/:slug/draft
+ * + supabase/migrations/20260929120000_skill_drafts.sql). Closes the gap where
+ * everything typed or AI-drafted into a skill form -- a podcast guest
+ * description, a discussion topic, an AI-generated dialogue script -- only
+ * ever lived in this component's React state until the FIRST successful
+ * submit. Any error before that (a client-orchestrated pre-step like
+ * make_portrait failing, a network blip, an accidental tab close) used to
+ * silently discard all of it.
+ */
+const DRAFT_SAVE_DEBOUNCE_MS = 1500;
+
+/** Strip fields that are heavy (uploaded photo data) or plainly not worth
+ *  persisting as a draft -- the user can just re-upload a photo, but losing a
+ *  typed description or an AI-drafted script is the actually painful case
+ *  this exists to prevent. */
+function draftSafeValues(values: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(values)) {
+    if (/base64/i.test(k)) continue;
+    if (typeof v === 'string' && v.startsWith('data:')) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+/** Plain "3 min ago" / "yesterday" phrasing for the restored-draft banner — no
+ *  library needed for a single coarse-grained relative timestamp. */
+function timeAgo(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return '';
+  const diffMs = Date.now() - then;
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'yesterday';
+  return `${days}d ago`;
+}
+
 const IMAGE_MAX_DIM = 1280;
 const IMAGE_JPEG_QUALITY = 0.82;
 
@@ -251,6 +293,68 @@ export function RunPanel({
   // this can take 30-60s BEFORE the main skill even starts.
   const [generatingLabel, setGeneratingLabel] = useState<string | null>(null);
 
+  // Autosaved draft: restored-from banner + the ref that gates autosave until
+  // the initial "is there a draft to restore" check has resolved (so we never
+  // save blank defaults over a real draft while that check is still in
+  // flight — see the two effects below).
+  const [draftBanner, setDraftBanner] = useState<{ updatedAt: string } | null>(null);
+  const draftCheckedRef = useRef(false);
+  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearSavedDraft = () => {
+    void fetch(`/api/v1/skills/${encodeURIComponent(skill.slug)}/draft`, { method: 'DELETE', credentials: 'include' }).catch(() => {});
+  };
+
+  // On mount: an explicit prefill (a Retry redirect's original input, or a
+  // saved-prompt/example pick) always wins over an ambient autosaved draft —
+  // restoring an unrelated draft on top of either would be confusing, not
+  // helpful. Only when the form is opening genuinely blank do we check for
+  // something the user left unfinished last time.
+  useEffect(() => {
+    const hasExplicitPrefill = Boolean((initialValues && Object.keys(initialValues).length > 0) || prefillValues);
+    if (hasExplicitPrefill) { draftCheckedRef.current = true; return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/v1/skills/${encodeURIComponent(skill.slug)}/draft`, { credentials: 'include' });
+        if (!r.ok || cancelled) return;
+        const data = (await r.json()) as { draft?: { form_values?: Record<string, unknown>; updated_at?: string } | null };
+        const formValues = data.draft?.form_values;
+        if (!formValues || cancelled) return;
+        setValues((p) => ({ ...p, ...formValues }));
+        setDraftBanner({ updatedAt: data.draft?.updated_at ?? '' });
+      } catch {
+        /* best-effort — a form that just opens blank is a fine fallback */
+      } finally {
+        draftCheckedRef.current = true;
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skill.slug]);
+
+  // Debounced autosave: fires only once the mount-time restore decision above
+  // has resolved, and only when there's actually something worth keeping
+  // (comparing the SAME stripped view on both sides, so an uploaded photo's
+  // base64 alone never counts as "dirty").
+  useEffect(() => {
+    if (!draftCheckedRef.current) return;
+    if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+    const safeValues = draftSafeValues(values);
+    const safeInitial = draftSafeValues(initial);
+    if (JSON.stringify(safeValues) === JSON.stringify(safeInitial)) return;
+    draftSaveTimerRef.current = setTimeout(() => {
+      void fetch(`/api/v1/skills/${encodeURIComponent(skill.slug)}/draft`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ form_values: safeValues }),
+      }).catch(() => {});
+    }, DRAFT_SAVE_DEBOUNCE_MS);
+    return () => { if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values]);
+
   // "Cancel" (next to the submit button) resets every field back to this
   // screen's starting point in one click. Comparing live `values` against
   // `initial` (stable for the lifetime of this form — see its own useMemo
@@ -260,6 +364,8 @@ export function RunPanel({
   const onCancel = () => {
     setValues(initial);
     setSubmitErr(null);
+    setDraftBanner(null);
+    clearSavedDraft();
   };
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -348,6 +454,11 @@ export function RunPanel({
       const id = (data.skill_run_id ?? data.run_id) as string | undefined;
       if (!id) { setSubmitErr('no run id returned'); return; }
       setLaunchEta(estimateSkillEta(skill.slug, body));
+      // The run is now durably dispatched (skill_runs.input has everything),
+      // so the autosaved draft is redundant — clear it rather than leaving a
+      // stale one to (confusingly) restore next time this form opens blank.
+      setDraftBanner(null);
+      clearSavedDraft();
       onLaunched({ composed: form.composed, id, status: 'submitted' });
     } catch (err) {
       setSubmitErr((err as Error).message);
@@ -403,6 +514,18 @@ export function RunPanel({
   return (
     <div className="flex flex-col gap-4 rounded-2xl p-5" style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#14151F' }}>
       {!hideHeading && <h2 className="text-sm font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.55)' }}>Run</h2>}
+      {draftBanner && (
+        <div className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-[12px]" style={{ border: '1px solid rgba(167,139,250,0.3)', backgroundColor: 'rgba(167,139,250,0.08)', color: '#C4B5FD' }}>
+          <span>Restored what you had typed here before{draftBanner.updatedAt ? ` (${timeAgo(draftBanner.updatedAt)})` : ''}.</span>
+          <button
+            type="button"
+            onClick={() => { setValues(initial); setDraftBanner(null); clearSavedDraft(); }}
+            className="shrink-0 underline decoration-dotted underline-offset-2 hover:opacity-80"
+          >
+            Discard
+          </button>
+        </div>
+      )}
       {form ? (
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           {stackedFields.map((f) => (
@@ -1570,9 +1693,22 @@ function AiDraftPanelField({ field, allValues, onChangeAny }: {
   const isPodcast = field.mode === 'podcast';
   const inputStyle: React.CSSProperties = { backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 10px', fontSize: 13, width: '100%' };
 
-  const [prompt, setPrompt] = useState('');
-  const [sourceUrl, setSourceUrl] = useState('');
-  const [orientation, setOrientation] = useState<'positive' | 'negative' | 'neutral'>('neutral');
+  // Lifted into the PARENT form's values (keyed off this field's own name, so
+  // multiple ai-draft-panel fields never collide) instead of local useState --
+  // this is exactly the state a draft-generation error used to silently lose
+  // (typed topic/premise, source URL, orientation) since it never lived
+  // anywhere RunPanel's own autosave-draft mechanism could see it. Still
+  // '_'-prefixed like every other UI-only helper field, so it's stripped
+  // before the real skill submit but included in an autosaved draft.
+  const promptKey = `${field.name}_prompt`;
+  const sourceUrlKey = `${field.name}_source_url`;
+  const orientationKey = `${field.name}_orientation`;
+  const prompt = String(allValues?.[promptKey] ?? '');
+  const sourceUrl = String(allValues?.[sourceUrlKey] ?? '');
+  const orientation = (allValues?.[orientationKey] as 'positive' | 'negative' | 'neutral' | undefined) ?? 'neutral';
+  const setPrompt = (v: string) => onChangeAny?.(promptKey, v);
+  const setSourceUrl = (v: string) => onChangeAny?.(sourceUrlKey, v);
+  const setOrientation = (v: 'positive' | 'negative' | 'neutral') => onChangeAny?.(orientationKey, v);
   const [generating, setGenerating] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [notes, setNotes] = useState<string[] | null>(null);

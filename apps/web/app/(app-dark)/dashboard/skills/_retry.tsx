@@ -20,7 +20,7 @@
  * unrelated tab/session.
  */
 
-import { useState } from 'react';
+import { useState, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 
 const RETRY_DRAFT_KEY = 'vantly:retry-draft';
@@ -58,6 +58,83 @@ export function popRetryDraft(): RetryDraft | null {
  * retry-with-prefill support today, they don't carry the rich structured
  * input a composed skill's RunPanel form needs).
  */
+/**
+ * Skills whose composed workflow is verified safe to resume from where it
+ * stopped (mirrors RESUMABLE_SKILLS in services/api-v2/src/routes/v1/skills.ts
+ * — keep in sync; the server is the real gate, this only decides whether the
+ * button renders at all instead of the user clicking it and getting a
+ * "not supported yet" error).
+ */
+const RESUMABLE_SKILLS = new Set(['make_podcast']);
+
+export function isResumableSkill(skillSlug: string | null | undefined): boolean {
+  return Boolean(skillSlug && RESUMABLE_SKILLS.has(skillSlug));
+}
+
+/**
+ * "Resume" for a FAILED composed run: continues the SAME run in place
+ * (POST /v1/skills/runs/:id/resume) instead of reopening the form. Every step
+ * that already succeeded before the failure — the podcast's master scene, its
+ * locked per-actor frames, any dialogue takes already rendered — is reused,
+ * not re-billed or re-rendered; only the step that actually failed (and
+ * anything after it) does real work. Complements Retry rather than replacing
+ * it: use Resume when nothing about the request needs to change, Retry when
+ * the input itself needs editing.
+ */
+export function ResumeButton({
+  runId,
+  skillLabel,
+  variant = 'solid',
+  onResumed,
+}: {
+  runId: string;
+  skillLabel?: string;
+  variant?: 'solid' | 'outline';
+  onResumed?: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function resume(e: MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    setLoading(true);
+    setErr(null);
+    try {
+      const r = await fetch(`/api/v1/skills/runs/${encodeURIComponent(runId)}/resume`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = (await r.json().catch(() => ({}))) as { detail?: string; error?: string };
+      if (!r.ok) throw new Error(data.detail || data.error || `Could not resume this run (${r.status}).`);
+      onResumed?.();
+    } catch (e2) {
+      setErr((e2 as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const solidClass = 'inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-60';
+  const outlineClass = 'inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] transition-opacity hover:opacity-90 disabled:opacity-60';
+
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <button
+        type="button"
+        onClick={(e) => void resume(e)}
+        disabled={loading}
+        title={`Continue this ${skillLabel ?? 'generation'} from where it stopped — already-completed steps won't be redone`}
+        className={variant === 'solid' ? solidClass : outlineClass}
+        style={variant === 'solid' ? { background: '#34D399', color: '#0F1015' } : { border: '1px solid rgba(52,211,153,0.4)', color: '#34D399' }}
+      >
+        {loading ? 'Resuming…' : 'Resume'}
+      </button>
+      {err && <span className="text-[11px]" style={{ color: '#F87171' }}>{err}</span>}
+    </span>
+  );
+}
+
 export function RetryButton({
   runId,
   skillLabel,

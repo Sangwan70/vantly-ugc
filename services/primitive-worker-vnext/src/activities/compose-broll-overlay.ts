@@ -127,6 +127,30 @@ export function makeComposeBrollOverlayActivity(cfg: WorkerConfig) {
   ): Promise<ComposeBrollOverlayResult> {
     const db = getDb(cfg.supabase.url, cfg.supabase.serviceRoleKey);
 
+    // Retry-safety: a completed run early-returns its banked video so a workflow
+    // resume/retry never re-renders (ffmpeg concat + overlay is cheap, but a
+    // resumed run should still never redo finished work).
+    const { data: existing, error: existingErr } = await db
+      .from('primitive_runs')
+      .select('status, primitive_artifacts(id, url, metadata)')
+      .eq('id', input.primitive_run_id)
+      .maybeSingle();
+    if (existingErr) throw new Error(`primitive_runs lookup failed: ${existingErr.message}`);
+    if (existing && existing.status === 'succeeded') {
+      const art = (existing.primitive_artifacts as Array<{ id: string; url: string; metadata: any }> | null)?.[0];
+      if (!art) {
+        throw new Error(
+          `inconsistent state: primitive_run ${input.primitive_run_id} is succeeded but has no artifact`,
+        );
+      }
+      return {
+        primitive_run_id: input.primitive_run_id,
+        video_url: art.url,
+        duration_seconds: Number(art.metadata?.duration_seconds ?? 0),
+        artifact_id: art.id,
+      };
+    }
+
     if (!Array.isArray(input.clip_urls) || input.clip_urls.length === 0) {
       throw ApplicationFailure.nonRetryable('no clips to compose', 'INVALID_INPUT');
     }

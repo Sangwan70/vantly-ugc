@@ -17,7 +17,7 @@ import { useSearchParams } from 'next/navigation';
 import { ArrowLeft, ExternalLink, Loader2 } from 'lucide-react';
 import { estimateSkillEta } from '../../_run-panel';
 import { prettyPrimitiveLabel, prettyStepLabel, storybookMilestoneIndex, STORYBOOK_MILESTONES } from '../../_step-labels';
-import { RetryButton } from '../../_retry';
+import { RetryButton, ResumeButton, isResumableSkill } from '../../_retry';
 import { RunInputView } from '../../_run-input-view';
 
 interface Artifact { url: string; kind?: string; mime?: string | null; bytes?: number }
@@ -445,7 +445,10 @@ function RunBodyView({ body, composed, id }: { body: RunBody; composed: boolean;
             )}
           </div>
           {composed && body.status === 'failed' && (
-            <div className="shrink-0">
+            <div className="shrink-0 flex items-center gap-2">
+              {isResumableSkill(body.skill) && (
+                <ResumeButton runId={id} skillLabel={body.skill ?? undefined} onResumed={() => window.location.reload()} />
+              )}
               <RetryButton runId={id} skillLabel={body.skill ?? undefined} />
             </div>
           )}

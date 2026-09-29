@@ -20,7 +20,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
  */
 export interface SkillRunStatusEvent {
   skill_run_id: string;
-  writer: 'worker_activity' | 'dispatch_failure' | 'cancel' | 'reconciler';
+  writer: 'worker_activity' | 'dispatch_failure' | 'cancel' | 'reconciler' | 'resume';
   from_status: string | null;
   to_status: string;
   applied: boolean;

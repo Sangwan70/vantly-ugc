@@ -68,7 +68,8 @@ import {
   getPrimitiveRunRoute,
   getPrimitiveRunInputRoute,
 } from './routes/v1/primitives.js';
-import { listSkillsRoute, runSkillRoute, getSkillRunRoute, getSkillRunInputRoute, cancelSkillRunRoute, quoteSkillRoute } from './routes/v1/skills.js';
+import { listSkillsRoute, runSkillRoute, getSkillRunRoute, getSkillRunInputRoute, cancelSkillRunRoute, resumeSkillRunRoute, quoteSkillRoute } from './routes/v1/skills.js';
+import { getSkillDraftRoute, saveSkillDraftRoute, deleteSkillDraftRoute } from './routes/v1/skill-drafts.js';
 import { asyncHandler } from './lib/async-handler.js';
 import { getMyGalleryRoute } from './routes/v1/me-gallery.js';
 import { deleteRunRoute, purgeFailedRunsRoute } from './routes/v1/runs.js';
@@ -961,6 +962,13 @@ if (isPrimitivesRouteEnabled()) {
   app.get('/v1/skills/runs/:skill_run_id', readLimiter, authMiddleware, asyncHandler(getSkillRunRoute));
   app.post('/v1/skills/runs/:skill_run_id/cancel', generateLimiter, authMiddleware, asyncHandler(cancelSkillRunRoute));
   app.get('/v1/skills/runs/:skill_run_id/input', readLimiter, authMiddleware, asyncHandler(getSkillRunInputRoute));
+  app.post('/v1/skills/runs/:skill_run_id/resume', generateLimiter, authMiddleware, videoConcurrencyGate, asyncHandler(resumeSkillRunRoute));
+  // Autosaved unsubmitted form state (see skill-drafts.ts) — light reads/writes,
+  // the standard readLimiter/generateLimiter split isn't warranted; use readLimiter
+  // for all three since none of them dispatch a run or cost credits.
+  app.get('/v1/skills/:slug/draft', readLimiter, authMiddleware, asyncHandler(getSkillDraftRoute));
+  app.put('/v1/skills/:slug/draft', readLimiter, authMiddleware, asyncHandler(saveSkillDraftRoute));
+  app.delete('/v1/skills/:slug/draft', readLimiter, authMiddleware, asyncHandler(deleteSkillDraftRoute));
   app.get('/v1/me/gallery', readLimiter, authMiddleware, getMyGalleryRoute);
   app.delete('/v1/runs/:id', generateLimiter, authMiddleware, asyncHandler(deleteRunRoute));
   app.post('/v1/runs/purge-failed', generateLimiter, authMiddleware, asyncHandler(purgeFailedRunsRoute));

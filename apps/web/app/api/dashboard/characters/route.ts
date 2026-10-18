@@ -38,7 +38,7 @@ export async function GET(_req: NextRequest) {
 
   const { data: characters, error } = await supabase
     .from('user_characters')
-    .select('id, name, source_kind, actor_slug, source_image_url, description, character_sheet_url, thumbnail_url, voice_brief, preset_default, signature_look, created_at')
+    .select('id, public_id, name, source_kind, actor_slug, source_image_url, description, character_sheet_url, thumbnail_url, voice_brief, preset_default, signature_look, created_at')
     .eq('user_id', user.id)
     .is('archived_at', null)
     .order('created_at', { ascending: false })
@@ -95,6 +95,7 @@ export async function GET(_req: NextRequest) {
 
   const sharedDecorated = sharedRows.map((row) => ({
     id: `share-${row.id as string}`,
+    public_id: null,
     name: (row.name as string | null) ?? 'Untitled character',
     source_kind: 'description' as const,
     actor_slug: null,
@@ -119,4 +120,64 @@ export async function GET(_req: NextRequest) {
     { characters: merged },
     { headers: { 'Cache-Control': 'no-store' } },
   );
+}
+
+const API_V2_URL = process.env.API_V2_URL?.replace(/\/+$/, '')
+  ?? 'https://api.vantly-ugc.com';
+
+/**
+ * POST /api/dashboard/characters
+ *
+ * Creates a reusable character from a TEXT DESCRIPTION (no photo needed) by
+ * forwarding to api-v2's POST /v2/characters — the same endpoint behind
+ * `vantly-ugc character create` and the create_character MCP tool. Body:
+ * { display_name, description, voice_brief?, photo_url? } (validated
+ * upstream against CharacterCreateSchema). Returns the upstream
+ * { job_id, status, credits_deducted } so the Actors page can poll
+ * /api/dashboard/job/:job_id until the saved character (and its char_… id)
+ * exists.
+ */
+export async function POST(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    return NextResponse.json(
+      { error: { code: 'unauthenticated', message: 'Not authenticated' } },
+      { status: 401 },
+    );
+  }
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json(
+      { error: { code: 'invalid_json', message: 'Invalid JSON body' } },
+      { status: 400 },
+    );
+  }
+  // Forward only the fields the create schema knows; nothing else can ride along.
+  const payload: Record<string, unknown> = {};
+  for (const k of ['display_name', 'description', 'voice_brief', 'photo_url', 'signature_look'] as const) {
+    if (typeof body[k] === 'string' && (body[k] as string).trim() !== '') payload[k] = (body[k] as string).trim();
+  }
+  try {
+    const upstream = await fetch(`${API_V2_URL}/v2/characters`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+    });
+    const text = await upstream.text();
+    let data: unknown;
+    try { data = text ? JSON.parse(text) : null; } catch { data = { error: { message: text.slice(0, 400) } }; }
+    return NextResponse.json(data, { status: upstream.status });
+  } catch (err) {
+    return NextResponse.json(
+      { error: { code: 'upstream_unreachable', message: (err as Error).message } },
+      { status: 502 },
+    );
+  }
 }

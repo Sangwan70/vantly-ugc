@@ -4,7 +4,9 @@
 
 /**
  * /dashboard/actors — browse the caller's saved characters and the stock
- * actor catalog, or upload a new photo to create a reusable character.
+ * actor catalog, or create a new reusable character either from a text
+ * description (POST /api/dashboard/characters -> api-v2 /v2/characters) or
+ * from an uploaded photo (make_character_sheet).
  *
  * "Create" reuses the existing make_character_sheet primitive (same skill
  * that powers /dashboard/skills/make_character_sheet): the worker's
@@ -23,6 +25,8 @@ import { CharacterShareModal, type ShareableCharacter } from './_character-share
 
 interface SavedCharacter {
   id: string;
+  /** The public char_… id (what the CLI, MCP and skills such as make_podcast accept). Null on shared rows / very old rows. */
+  public_id?: string | null;
   name: string | null;
   description?: string | null;
   character_sheet_url: string | null;
@@ -276,6 +280,7 @@ export default function ActorsPage() {
           subtitle={selectedCharacter.description ?? undefined}
           copyValue={selectedCharacter.character_sheet_url ?? undefined}
           copyLabel="character_sheet_url"
+          idValue={selectedCharacter.public_id ?? undefined}
           editable={!selectedCharacter.shared}
           characterId={selectedCharacter.id}
           editDescription={selectedCharacter.description}
@@ -345,6 +350,7 @@ function DetailLightbox({
   subtitle,
   copyValue,
   copyLabel,
+  idValue,
   editable,
   characterId,
   editDescription,
@@ -365,6 +371,8 @@ function DetailLightbox({
   subtitle?: string;
   copyValue?: string;
   copyLabel?: string;
+  /** Public char_… id, shown with its own copy button when present. */
+  idValue?: string;
   /** When true (only for "My characters"), shows an Edit affordance that opens a form to update name/metadata. */
   editable?: boolean;
   characterId?: string;
@@ -593,6 +601,7 @@ function DetailLightbox({
                   )}
                 </div>
               ) : null}
+              {idValue && <CopyRow label="character_id (use this in podcasts, the CLI and the API)" value={idValue} />}
               {copyValue && (
                 <div className="flex flex-col gap-1">
                   <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.4)' }}>{copyLabel}</span>
@@ -619,7 +628,7 @@ function DetailLightbox({
   );
 }
 
-function CreateCharacterCard({ onCreated }: { onCreated: () => void }) {
+function PhotoCharacterForm({ onCreated }: { onCreated: () => void }) {
   const [dataUrl, setDataUrl] = useState('');
   const [description, setDescription] = useState('');
   const [aspectRatio, setAspectRatio] = useState<'1:1' | '9:16'>('1:1');
@@ -777,5 +786,245 @@ function CreateCharacterCard({ onCreated }: { onCreated: () => void }) {
         </p>
       </div>
     </form>
+  );
+}
+
+/** A labelled, click-to-copy value (used for the char_… id). */
+function CopyRow({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.4)' }}>{label}</span>
+      <button
+        type="button"
+        onClick={async () => {
+          try { await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1200); } catch { /* clipboard unavailable */ }
+        }}
+        className="truncate rounded-lg px-3 py-2 text-left text-[12px] font-mono"
+        style={{ backgroundColor: '#0F1015', border: '1px solid rgba(255,255,255,0.08)', color: copied ? '#34D399' : '#A78BFA' }}
+      >
+        {copied ? 'copied!' : value}
+      </button>
+    </div>
+  );
+}
+
+const NAME_RE = /^[A-Za-z0-9 _-]+$/;
+const POLL_MS = 3000;
+const POLL_MAX_TICKS = 200; // ~10 minutes, then stop polling and tell the user to refresh
+
+/**
+ * Create a character from a text description alone (no photo). Mirrors the
+ * limits of CharacterCreateSchema (packages/schema/src/v2/character.ts):
+ * name 2-40 chars of letters/digits/space/_/-, description 8-400, voice 4-240.
+ * Generation is asynchronous: POST returns a job id, we poll
+ * /api/dashboard/job/:id until it reaches a terminal state, then show the
+ * new char_… id.
+ */
+function DescribeCharacterForm({ onCreated }: { onCreated: () => void }) {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [voiceBrief, setVoiceBrief] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [createdId, setCreatedId] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => { if (pollRef.current) clearTimeout(pollRef.current); }, []);
+
+  const n = name.trim();
+  const d = description.trim();
+  const v = voiceBrief.trim();
+  const nameErr = n.length > 0 && (n.length < 2 || !NAME_RE.test(n))
+    ? 'Name: 2-40 letters, digits, spaces, _ or -.'
+    : null;
+  const descErr = d.length > 0 && d.length < 8 ? 'Describe them in at least 8 characters.' : null;
+  const voiceErr = v.length > 0 && v.length < 4 ? 'Voice notes need at least 4 characters (or leave empty).' : null;
+  const canSubmit = !submitting && n.length >= 2 && !nameErr && d.length >= 8 && !voiceErr;
+
+  const poll = useCallback((jobId: string) => {
+    let ticks = 0;
+    const tick = async () => {
+      ticks += 1;
+      try {
+        const r = await fetch(`/api/dashboard/job/${encodeURIComponent(jobId)}`, { credentials: 'include' });
+        if (r.ok) {
+          const j = (await r.json()) as { status?: string; error_message?: string | null; character_id?: string | null };
+          if (j.status) setStatus(j.status);
+          if (j.status && TERMINAL.has(j.status)) {
+            setSubmitting(false);
+            if (j.status === 'failed' || j.status === 'canceled' || j.status === 'cancelled') {
+              setErr(j.error_message ?? 'Character generation failed.');
+            } else {
+              setCreatedId(j.character_id ?? null);
+              setName('');
+              setDescription('');
+              setVoiceBrief('');
+              void onCreated();
+            }
+            return;
+          }
+        }
+      } catch { /* keep polling */ }
+      if (ticks >= POLL_MAX_TICKS) {
+        setSubmitting(false);
+        setStatus(null);
+        setErr('Still generating after 10 minutes. Refresh the page in a bit - the character will appear in "My characters" once it is ready.');
+        return;
+      }
+      pollRef.current = setTimeout(tick, POLL_MS);
+    };
+    pollRef.current = setTimeout(tick, POLL_MS);
+  }, [onCreated]);
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setErr(null);
+    setCreatedId(null);
+    setSubmitting(true);
+    setStatus('submitting');
+    try {
+      const body: Record<string, string> = { display_name: n, description: d };
+      if (v) body.voice_brief = v;
+      const resp = await fetch('/api/dashboard/characters', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = (await resp.json()) as Record<string, any>;
+      if (!resp.ok) {
+        const issue = data?.error?.issues?.[0]?.message as string | undefined;
+        const msg = issue ?? data?.error?.message ?? data?.error ?? `HTTP ${resp.status}`;
+        setErr(typeof msg === 'string' ? msg : JSON.stringify(data));
+        setSubmitting(false);
+        setStatus(null);
+        return;
+      }
+      const jobId = data.job_id as string | undefined;
+      if (!jobId) { setErr('No job id returned.'); setSubmitting(false); setStatus(null); return; }
+      setStatus((data.status as string | undefined) ?? 'submitted');
+      poll(jobId);
+    } catch (e2) {
+      setErr((e2 as Error).message);
+      setSubmitting(false);
+      setStatus(null);
+    }
+  };
+
+  const fieldStyle = { backgroundColor: '#0F1015', color: '#E9E9F0', border: '1px solid rgba(255,255,255,0.08)' } as const;
+  const labelStyle = { color: 'rgba(255,255,255,0.5)' } as const;
+
+  return (
+    <form
+      onSubmit={onSubmit}
+      className="flex flex-col gap-3 rounded-2xl p-5"
+      style={{ border: '1px solid rgba(255,255,255,0.06)', backgroundColor: '#14151F' }}
+    >
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-semibold uppercase tracking-wider" style={labelStyle}>Name</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Arya"
+            maxLength={40}
+            className="rounded-lg px-3 py-2 text-[13px]"
+            style={fieldStyle}
+          />
+          {nameErr && <span className="text-[11px]" style={{ color: '#FCA5A5' }}>{nameErr}</span>}
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-semibold uppercase tracking-wider" style={labelStyle}>
+            Voice notes (optional) - {v.length}/240
+          </label>
+          <input
+            type="text"
+            value={voiceBrief}
+            onChange={(e) => setVoiceBrief(e.target.value)}
+            placeholder="Warm, calm and unhurried; clear Indian English; slightly low, steady pitch"
+            maxLength={240}
+            className="rounded-lg px-3 py-2 text-[13px]"
+            style={fieldStyle}
+          />
+          {voiceErr && <span className="text-[11px]" style={{ color: '#FCA5A5' }}>{voiceErr}</span>}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <label className="text-[11px] font-semibold uppercase tracking-wider" style={labelStyle}>
+          Description (looks, age, clothing, vibe) - {d.length}/400
+        </label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={3}
+          maxLength={400}
+          placeholder="A warm, confident woman in her late 30s with shoulder-length dark hair and round tortoiseshell glasses. Deep teal blazer over a white top. Looks like a trusted teacher."
+          className="resize-none rounded-lg px-3 py-2 text-[13px]"
+          style={fieldStyle}
+        />
+        {descErr && <span className="text-[11px]" style={{ color: '#FCA5A5' }}>{descErr}</span>}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors"
+          style={{ backgroundColor: canSubmit ? '#A78BFA' : 'rgba(167,139,250,0.4)', color: '#0F1015' }}
+        >
+          {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+          Create character
+        </button>
+        {status && !err && (
+          <span className="text-[12px]" style={{ color: 'rgba(255,255,255,0.5)' }}>
+            {submitting ? `${status}... (usually a minute or two)` : status}
+          </span>
+        )}
+      </div>
+
+      {createdId && (
+        <div className="flex flex-col gap-2 rounded-lg p-3" style={{ border: '1px solid rgba(52,211,153,0.3)', backgroundColor: 'rgba(52,211,153,0.06)' }}>
+          <span className="text-[12px]" style={{ color: '#34D399' }}>Character created and saved to My characters.</span>
+          <CopyRow label="character_id" value={createdId} />
+        </div>
+      )}
+      {err && (
+        <div className="rounded-lg px-3 py-2 text-xs" style={{ border: '1px solid rgba(255,79,79,0.3)', backgroundColor: 'rgba(255,79,79,0.08)', color: '#FCA5A5' }}>
+          {err}
+        </div>
+      )}
+      <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.35)' }}>
+        Generates a portrait and a multi-pose character sheet from your text, then saves it as a reusable character
+        with a fixed look and voice. Use one saved character for a whole series so the face stays the same.
+      </p>
+    </form>
+  );
+}
+
+/** Create-character panel: describe a character in words, or start from a photo. */
+function CreateCharacterCard({ onCreated }: { onCreated: () => void }) {
+  const [mode, setMode] = useState<'describe' | 'photo'>('describe');
+  const tabStyle = (active: boolean) => ({
+    backgroundColor: active ? 'rgba(167,139,250,0.18)' : 'transparent',
+    color: active ? '#E9E9F0' : 'rgba(255,255,255,0.55)',
+    border: `1px solid ${active ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.1)'}`,
+  });
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => setMode('describe')} className="rounded-full px-3 py-1.5 text-[12px] font-medium" style={tabStyle(mode === 'describe')}>
+          From a description
+        </button>
+        <button type="button" onClick={() => setMode('photo')} className="rounded-full px-3 py-1.5 text-[12px] font-medium" style={tabStyle(mode === 'photo')}>
+          From a photo
+        </button>
+      </div>
+      {mode === 'describe' ? <DescribeCharacterForm onCreated={onCreated} /> : <PhotoCharacterForm onCreated={onCreated} />}
+    </div>
   );
 }

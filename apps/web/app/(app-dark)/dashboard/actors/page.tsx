@@ -27,6 +27,8 @@ interface SavedCharacter {
   id: string;
   /** The public char_… id (what the CLI, MCP and skills such as make_podcast accept). Null on shared rows / very old rows. */
   public_id?: string | null;
+  /** The generation job that created this character (lets the create form recognise its own result). */
+  sheet_job_id?: string | null;
   name: string | null;
   description?: string | null;
   character_sheet_url: string | null;
@@ -861,16 +863,16 @@ function CreateProgress({ name, status, stage, elapsed }: { name: string; status
         })}
       </ol>
       <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.45)' }}>
-        {elapsed > 300
+        {elapsed > 720
           ? `${name || 'Your character'} is taking longer than usual, but it is still working. `
-          : `Creating ${name || 'your character'} usually takes 1-3 minutes. `}
+          : `Creating ${name || 'your character'} usually takes about 3-8 minutes: two image steps, one after the other. `}
         You can leave this page - it keeps running and the character will appear in My characters.
       </p>
     </div>
   );
 }
 const POLL_MS = 3000;
-const POLL_MAX_TICKS = 200; // ~10 minutes, then stop polling and tell the user to refresh
+const POLL_MAX_TICKS = 400; // ~20 minutes (the worker's own ceiling is 45), then stop polling and tell the user to refresh
 
 /**
  * Create a character from a text description alone (no photo). Mirrors the
@@ -914,6 +916,24 @@ function DescribeCharacterForm({ onCreated }: { onCreated: () => void }) {
 
   const poll = useCallback((jobId: string) => {
     let ticks = 0;
+
+    // The character is saved (and visible) the moment the worker persists it,
+    // which can be a little before - or, if the job-status plumbing lags,
+    // long before - the job row itself flips to "completed". So we treat any
+    // of these as success: the job reports completed, the job carries the
+    // new character id, or "My characters" already holds a row made by this
+    // job.
+    const finishOk = (characterId: string | null) => {
+      setSubmitting(false);
+      setStage(null);
+      setStatus(null);
+      setCreatedId(characterId);
+      setName('');
+      setDescription('');
+      setVoiceBrief('');
+      void onCreated();
+    };
+
     const tick = async () => {
       ticks += 1;
       try {
@@ -922,26 +942,39 @@ function DescribeCharacterForm({ onCreated }: { onCreated: () => void }) {
           const j = (await r.json()) as { status?: string; error_message?: string | null; character_id?: string | null; progress?: { stage?: string } | null };
           if (j.status) setStatus(j.status);
           if (j.progress?.stage) setStage(j.progress.stage);
-          if (j.status && TERMINAL.has(j.status)) {
+          if (j.status === 'failed' || j.status === 'canceled' || j.status === 'cancelled') {
             setSubmitting(false);
             setStage(null);
-            if (j.status === 'failed' || j.status === 'canceled' || j.status === 'cancelled') {
-              setErr(j.error_message ?? 'Character generation failed.');
-            } else {
-              setCreatedId(j.character_id ?? null);
-              setName('');
-              setDescription('');
-              setVoiceBrief('');
-              void onCreated();
-            }
+            setErr(j.error_message ?? 'Character generation failed.');
+            return;
+          }
+          if ((j.status && TERMINAL.has(j.status)) || j.character_id) {
+            finishOk(j.character_id ?? null);
             return;
           }
         }
       } catch { /* keep polling */ }
+
+      // Safety net: look for the finished character itself every few polls
+      // (and once more right before giving up).
+      if (ticks % 3 === 0 || ticks >= POLL_MAX_TICKS) {
+        try {
+          const lr = await fetch('/api/dashboard/characters', { credentials: 'include' });
+          if (lr.ok) {
+            const lj = (await lr.json()) as { characters?: SavedCharacter[] };
+            const made = (lj.characters ?? []).find((c) => c.sheet_job_id === jobId);
+            if (made) {
+              finishOk(made.public_id ?? null);
+              return;
+            }
+          }
+        } catch { /* keep polling */ }
+      }
+
       if (ticks >= POLL_MAX_TICKS) {
         setSubmitting(false);
         setStatus(null);
-        setErr('Still generating after 10 minutes. Refresh the page in a bit - the character will appear in "My characters" once it is ready.');
+        setErr('Still generating after 20 minutes, which is unusually long. Nothing is lost: refresh the page in a bit and the character will appear in "My characters" once it is ready.');
         return;
       }
       pollRef.current = setTimeout(tick, POLL_MS);

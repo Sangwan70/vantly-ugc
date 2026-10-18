@@ -38,7 +38,7 @@ export async function GET(_req: NextRequest) {
 
   const { data: characters, error } = await supabase
     .from('user_characters')
-    .select('id, public_id, name, source_kind, actor_slug, source_image_url, description, character_sheet_url, thumbnail_url, voice_brief, preset_default, signature_look, created_at')
+    .select('id, public_id, sheet_job_id, name, source_kind, actor_slug, source_image_url, description, character_sheet_url, thumbnail_url, voice_brief, preset_default, signature_look, created_at')
     .eq('user_id', user.id)
     .is('archived_at', null)
     .order('created_at', { ascending: false })
@@ -96,6 +96,7 @@ export async function GET(_req: NextRequest) {
   const sharedDecorated = sharedRows.map((row) => ({
     id: `share-${row.id as string}`,
     public_id: null,
+    sheet_job_id: null,
     name: (row.name as string | null) ?? 'Untitled character',
     source_kind: 'description' as const,
     actor_slug: null,

@@ -67,7 +67,10 @@ export async function characterCreateRoute(req: Request, res: Response): Promise
   const { error: jobErr } = await supabase.from('generation_jobs').insert({
     id: jobId,
     user_id: userId,
-    model_slug: 'gpt-image-2-character',
+    // generation_jobs.model_slug has an FK to public.models(slug); 'character-sheet'
+    // is the registered slug for character-sheet generation (20260507000001), so
+    // use it rather than an unregistered label (which made the insert fail).
+    model_slug: 'character-sheet',
     operation: 'character_create',
     status: 'submitted',
     prompt: input.description,

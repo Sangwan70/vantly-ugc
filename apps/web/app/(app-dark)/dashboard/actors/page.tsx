@@ -810,6 +810,65 @@ function CopyRow({ label, value }: { label: string; value: string }) {
 }
 
 const NAME_RE = /^[A-Za-z0-9 _-]+$/;
+
+/** The worker's character-create stages (character-create-pipeline.js), in order, in plain words. */
+const CREATE_STEPS: Array<{ key: string; title: string; hint: string }> = [
+  { key: 'portrait', title: 'Drawing the portrait', hint: 'Creating the face from your description.' },
+  { key: 'sheet', title: 'Building the character sheet', hint: 'The same person in several poses, so the look stays the same in every video.' },
+  { key: 'persona_brief', title: 'Writing personality notes', hint: 'How they carry themselves on camera.' },
+  { key: 'persist', title: 'Saving to My characters', hint: 'Almost done.' },
+];
+
+function formatElapsed(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const r = sec % 60;
+  return `${m}:${r.toString().padStart(2, '0')}`;
+}
+
+/** Live progress for a character being created: a short headline plus the four steps. */
+function CreateProgress({ name, status, stage, elapsed }: { name: string; status: string | null; stage: string | null; elapsed: number }) {
+  const active = CREATE_STEPS.findIndex((st) => st.key === stage);
+  const headline =
+    active >= 0
+      ? `Step ${active + 1} of ${CREATE_STEPS.length}: ${CREATE_STEPS[active].title.toLowerCase()}`
+      : status === 'processing'
+        ? 'Starting up...'
+        : 'Request received. Waiting for a free slot...';
+  return (
+    <div className="flex flex-col gap-3 rounded-lg p-3" style={{ border: '1px solid rgba(167,139,250,0.3)', backgroundColor: 'rgba(167,139,250,0.06)' }} aria-live="polite">
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex items-center gap-2 text-[13px]" style={{ color: '#E9E9F0' }}>
+          <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: '#A78BFA' }} />
+          {headline}
+        </span>
+        <span className="text-[11px] tabular-nums" style={{ color: 'rgba(255,255,255,0.4)' }}>{formatElapsed(elapsed)}</span>
+      </div>
+      <ol className="flex flex-col gap-1.5">
+        {CREATE_STEPS.map((st, i) => {
+          const done = active > i;
+          const current = active === i;
+          return (
+            <li key={st.key} className="flex items-start gap-2 text-[12px]" style={{ color: done ? '#34D399' : current ? '#E9E9F0' : 'rgba(255,255,255,0.35)' }}>
+              <span className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center">
+                {done ? <Check className="h-3.5 w-3.5" /> : current ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.25)' }} />}
+              </span>
+              <span>
+                {st.title}
+                {current && <span className="block text-[11px]" style={{ color: 'rgba(255,255,255,0.5)' }}>{st.hint}</span>}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+      <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.45)' }}>
+        {elapsed > 300
+          ? `${name || 'Your character'} is taking longer than usual, but it is still working. `
+          : `Creating ${name || 'your character'} usually takes 1-3 minutes. `}
+        You can leave this page - it keeps running and the character will appear in My characters.
+      </p>
+    </div>
+  );
+}
 const POLL_MS = 3000;
 const POLL_MAX_TICKS = 200; // ~10 minutes, then stop polling and tell the user to refresh
 
@@ -829,9 +888,19 @@ function DescribeCharacterForm({ onCreated }: { onCreated: () => void }) {
   const [status, setStatus] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [createdId, setCreatedId] = useState<string | null>(null);
+  const [stage, setStage] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => { if (pollRef.current) clearTimeout(pollRef.current); }, []);
+
+  useEffect(() => {
+    if (!submitting) return;
+    const t0 = Date.now();
+    setElapsed(0);
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [submitting]);
 
   const n = name.trim();
   const d = description.trim();
@@ -850,10 +919,12 @@ function DescribeCharacterForm({ onCreated }: { onCreated: () => void }) {
       try {
         const r = await fetch(`/api/dashboard/job/${encodeURIComponent(jobId)}`, { credentials: 'include' });
         if (r.ok) {
-          const j = (await r.json()) as { status?: string; error_message?: string | null; character_id?: string | null };
+          const j = (await r.json()) as { status?: string; error_message?: string | null; character_id?: string | null; progress?: { stage?: string } | null };
           if (j.status) setStatus(j.status);
+          if (j.progress?.stage) setStage(j.progress.stage);
           if (j.status && TERMINAL.has(j.status)) {
             setSubmitting(false);
+            setStage(null);
             if (j.status === 'failed' || j.status === 'canceled' || j.status === 'cancelled') {
               setErr(j.error_message ?? 'Character generation failed.');
             } else {
@@ -883,6 +954,7 @@ function DescribeCharacterForm({ onCreated }: { onCreated: () => void }) {
     if (!canSubmit) return;
     setErr(null);
     setCreatedId(null);
+    setStage(null);
     setSubmitting(true);
     setStatus('submitting');
     try {
@@ -980,12 +1052,9 @@ function DescribeCharacterForm({ onCreated }: { onCreated: () => void }) {
           {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
           Create character
         </button>
-        {status && !err && (
-          <span className="text-[12px]" style={{ color: 'rgba(255,255,255,0.5)' }}>
-            {submitting ? `${status}... (usually a minute or two)` : status}
-          </span>
-        )}
       </div>
+
+      {submitting && !err && <CreateProgress name={n} status={status} stage={stage} elapsed={elapsed} />}
 
       {createdId && (
         <div className="flex flex-col gap-2 rounded-lg p-3" style={{ border: '1px solid rgba(52,211,153,0.3)', backgroundColor: 'rgba(52,211,153,0.06)' }}>

@@ -191,7 +191,12 @@ function runJob(key, jobEnvelope) {
     onProgress: (stage, meta) =>
       sendCallback(callback_url, {
         job_id,
-        status: 'processing',
+        // The webhook only records progress_detail (what the dashboard shows
+        // the user) for status 'progress'; a plain 'processing' event just
+        // advances the lifecycle checkpoint and drops the stage. Character
+        // creation reports stage names the Actors page turns into friendly
+        // step messages, so it opts in; other pipelines are unchanged.
+        status: pipeline === 'character-create' ? 'progress' : 'processing',
         stage,
         ...(meta ?? {}),
       }).catch(() => {}),

@@ -110,6 +110,9 @@ importers:
       '@types/three':
         specifier: ^0.184.1
         version: 0.184.1
+      '@vantly-ugc/schema':
+        specifier: workspace:*
+        version: link:../../packages/schema
       '@vantly-ugc/types':
         specifier: workspace:*
         version: link:../../packages/types

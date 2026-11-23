@@ -15,3 +15,4 @@ export * from './tooling/contracts.js';
 // MUST plan identically. See src/take-planner.ts.
 export * from './take-planner.js';
 export * from './storybook.js';
+export * from './voiceover.js';

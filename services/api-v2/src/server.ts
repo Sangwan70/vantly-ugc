@@ -42,6 +42,11 @@ import { characterCreateRoute, listCharactersRoute, updateCharacterRoute } from 
 import { listMyCharactersRoute } from './routes/v1/characters.js';
 import { createCharacterFromUploadRoute } from './routes/v1/characters-from-upload.js';
 import { listElevenLabsVoicesRoute } from './routes/v1/voices.js';
+import {
+  listStudioProjectsRoute, createStudioProjectRoute, getStudioProjectRoute, patchStudioProjectRoute,
+  deleteStudioProjectRoute, listStudioVoicesRoute, getStudioProviderKeyRoute, putStudioProviderKeyRoute,
+  deleteStudioProviderKeyRoute, studioTtsRoute, quoteStudioRenderRoute, startStudioRenderRoute, getStudioRenderRoute,
+} from './routes/v1/studio.js';
 import { subtitleRoute } from './routes/v2/subtitle.js';
 import { jobStreamRoute } from './routes/v2/job-stream.js';
 import { generateRoute as looseGenerateRoute, quoteGenerateRoute } from './routes/v2/generate.js';
@@ -974,6 +979,20 @@ if (isPrimitivesRouteEnabled()) {
   app.post('/v1/runs/purge-failed', generateLimiter, authMiddleware, asyncHandler(purgeFailedRunsRoute));
   app.get('/v1/characters', readLimiter, authMiddleware, listMyCharactersRoute);
 app.get('/v1/voices/elevenlabs', readLimiter, authMiddleware, listElevenLabsVoicesRoute);
+// Voiceover Studio — edit a screen recording + ElevenLabs voice-over. See routes/v1/studio.ts.
+app.get('/v1/studio/projects',             readLimiter,     authMiddleware, asyncHandler(listStudioProjectsRoute));
+app.post('/v1/studio/projects',            generateLimiter, authMiddleware, asyncHandler(createStudioProjectRoute));
+app.get('/v1/studio/projects/:id',         readLimiter,     authMiddleware, asyncHandler(getStudioProjectRoute));
+app.patch('/v1/studio/projects/:id',       readLimiter,     authMiddleware, asyncHandler(patchStudioProjectRoute));
+app.delete('/v1/studio/projects/:id',      generateLimiter, authMiddleware, asyncHandler(deleteStudioProjectRoute));
+app.post('/v1/studio/projects/:id/quote',  readLimiter,     authMiddleware, asyncHandler(quoteStudioRenderRoute));
+app.post('/v1/studio/projects/:id/render', generateLimiter, authMiddleware, asyncHandler(startStudioRenderRoute));
+app.get('/v1/studio/renders/:run_id',      readLimiter,     authMiddleware, asyncHandler(getStudioRenderRoute));
+app.get('/v1/studio/voices',               readLimiter,     authMiddleware, asyncHandler(listStudioVoicesRoute));
+app.get('/v1/studio/provider-key',         readLimiter,     authMiddleware, asyncHandler(getStudioProviderKeyRoute));
+app.put('/v1/studio/provider-key',         generateLimiter, authMiddleware, asyncHandler(putStudioProviderKeyRoute));
+app.delete('/v1/studio/provider-key',      generateLimiter, authMiddleware, asyncHandler(deleteStudioProviderKeyRoute));
+app.post('/v1/studio/tts',                 generateLimiter, authMiddleware, asyncHandler(studioTtsRoute));
   app.post('/v1/characters/from-upload', generateLimiter, authMiddleware, asyncHandler(createCharacterFromUploadRoute));
   app.get('/v1/me/api-keys', readLimiter, authMiddleware, listApiKeysRoute);
   app.post('/v1/me/api-keys', generateLimiter, authMiddleware, createApiKeyRoute);

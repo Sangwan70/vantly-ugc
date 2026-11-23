@@ -28,6 +28,7 @@
     "@tiptap/react": "2.27.2",
     "@tiptap/starter-kit": "2.27.2",
     "@types/three": "^0.184.1",
+    "@vantly-ugc/schema": "workspace:*",
     "@vantly-ugc/types": "workspace:*",
     "@vantly-ugc/ui": "workspace:*",
     "class-variance-authority": "^0.7.1",

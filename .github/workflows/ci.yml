@@ -227,6 +227,17 @@ jobs:
         shell: bash
         run: |
           cp .env.example .env.local
+          # compose refuses to start without real secrets (${VAR:?...}), and
+          # .env.example deliberately leaves them blank. Fill each blank one
+          # with a CI-only placeholder so this step checks interpolation, not
+          # whether a secret was committed.
+          for v in $(grep -oE '\$\{[A-Z_0-9]+:\?' docker-compose.yml | sed 's/[${:?]//g' | sort -u); do
+            if grep -qE "^${v}=$" .env.local; then
+              sed -i "s/^${v}=$/${v}=ci-placeholder-not-a-secret/" .env.local
+            elif ! grep -qE "^${v}=" .env.local; then
+              echo "${v}=ci-placeholder-not-a-secret" >> .env.local
+            fi
+          done
           docker compose --env-file .env.local config > /tmp/resolved.yml
           rm -f .env.local
           # A value that still contains '#' means an inline comment leaked

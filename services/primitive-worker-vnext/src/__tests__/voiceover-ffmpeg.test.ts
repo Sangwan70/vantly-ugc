@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CaptionStyleSchema,
   CardSchema,
+  EffectSchema,
   VoiceoverClipSchema,
   VoiceoverTimelineSchema,
   applySuggestions,
@@ -32,6 +33,9 @@ import {
   buildOverlayAss,
   buildSegmentArgs,
   computeCanvas,
+  coverChain,
+  coverContentAt,
+  coverViewAt,
   keyframeExpr,
   zoomFilter,
 } from '../lib/voiceover-ffmpeg.js';
@@ -169,6 +173,45 @@ describe('final pass', () => {
   it('emits silence when there is no audio at all', () => {
     const g = fg(buildFinalArgs({ video: { kind: 'concat', path: 'l' }, canvas, quality: 'draft', total: 5, outPath: 'o', voices: [] }));
     expect(g).toContain('anullsrc');
+  });
+});
+
+describe('vertical framing (cover follows the camera)', () => {
+  const src = { width: 1920, height: 1080 };
+  const v = computeCanvas(src, { aspect: '9:16', fit: 'cover', quality: 'standard' });
+  const sq = computeCanvas(src, { aspect: '1:1', fit: 'cover', quality: 'standard' });
+  const fw = Math.round(v.content!.w / 2) * 2;
+  it('centre-crops when the camera never moves', () => {
+    expect(coverChain(clip(), v, 'standard')).toEqual([`scale=${fw}:1920:flags=lanczos`, 'setsar=1', 'crop=1080:1920:(iw-ow)/2:(ih-oh)/2']);
+    expect(coverViewAt(clip(), v, 3).ox).toBeCloseTo((fw - 1080) / 2, 0);
+  });
+  it('follows the focus point and only zooms past what the narrow window already shows', () => {
+    const c = clip({ keyframes: [{ t: 0, zoom: 1, x: 0.2, y: 0.5 }, { t: 4, zoom: 1.8, x: 0.8, y: 0.3 }] });
+    const g = fg(buildSegmentArgs({ srcPath: 's', outPath: 'o', clip: c, canvas: v, quality: 'standard', withAudio: false }));
+    expect(g).toContain(`scale=${fw}:1920`);
+    expect(g).toContain("crop=1080:1920:x='(max(0,min(");
+    expect(g).not.toContain('zoompan'); // 1.8× is still wider than a 9:16 window (≈3.2×)
+    expect(coverViewAt(c, v, 0).ox).toBeCloseTo(Math.max(0, 0.2 * fw - 540), 0);
+    expect(coverViewAt(c, v, 4).ox).toBeCloseTo(Math.min(fw - 1080, 0.8 * fw - 540), 0);
+    // 1:1 is only ≈1.8× tighter, so a 2.4× camera zooms a little further.
+    const z = clip({ keyframes: [{ t: 0, zoom: 2.4, x: 0.5, y: 0.4 }, { t: 2, zoom: 2.4, x: 0.5, y: 0.4 }] });
+    const gs = fg(buildSegmentArgs({ srcPath: 's', outPath: 'o', clip: z, canvas: sq, quality: 'standard', withAudio: false }));
+    expect(gs).toContain('zoompan');
+    expect(coverViewAt(z, sq, 1).zp).toBeCloseTo(2.4 / (Math.round(sq.content!.w / 2) * 2 / 1080), 2);
+  });
+  it('maps effects through the moving window; text keeps its screen position and stays on the canvas', () => {
+    const tl = { clips: [clip({ src_in: 0, src_out: 10, keyframes: [{ t: 0, zoom: 1, x: 0.9, y: 0.5 }] })] };
+    const at = coverContentAt(tl, v);
+    expect(at(1).x).toBeCloseTo(-(fw - 1080), 0); // window flush right
+    const ass = buildOverlayAss(
+      [{ id: 'o', start: 1, end: 3, text: '5 · Path Finder: five quick questions', x: 0.12, y: 0.9, size: 46, color: '#FFFFFF', box: true, box_color: '#0B2E5C', animation: 'fade', kind: 'text', subtitle: '', tx: 0.5, ty: 0.5, font: 'Liberation Sans' }],
+      1080, 1920, { content: { x: 0, y: 0, w: 1080, h: 1920 }, contentAt: at, textScale: 1, effects: [EffectSchema.parse({ id: 'e', kind: 'click', start: 1, end: 2, x: 0.85, y: 0.2 })] },
+    );
+    const pos = /\\pos\((\d+),(\d+)\)\\fad/.exec(ass)!;
+    expect(Number(pos[1])).toBeGreaterThan(0); // pulled in from the left edge
+    expect(Number(pos[2])).toBe(Math.round(0.9 * 1920));
+    const click = /\\an7\\pos\((-?\d+),(-?\d+)\)\\p1/.exec(ass)!;
+    expect(Number(click[1])).toBeCloseTo(0.85 * fw - (fw - 1080), -1);
   });
 });
 

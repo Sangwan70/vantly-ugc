@@ -17,9 +17,12 @@
 
 import {
   captionLines,
+  clipCameraAt,
   clipOutputDuration,
   clipStarts,
+  locateOutputTime,
   resolveCaptionStyle,
+  zoomWindow,
   transitionOverlap,
   type CameraKeyframe,
   type TextOverlay,
@@ -156,34 +159,118 @@ export function keyframeExpr(kf: CameraKeyframe[], channel: 'zoom' | 'x' | 'y', 
  * zoompan for a clip, or null when the camera never moves. `on` is the output
  * frame number; with d=1 zoompan emits one frame per input frame, so T = on/fps.
  */
-export function zoomFilter(clip: VoiceoverClip, cw: number, ch: number): string | null {
-  const T = `on/${RENDER_FPS}`;
-  let z: string;
-  let x: string;
-  let y: string;
+/**
+ * Camera of a clip as ffmpeg expressions over T (seconds into the clip), or
+ * null when it never zooms or pans. Mirrors clipCameraAt().
+ */
+function cameraExprs(clip: VoiceoverClip, T: string): { z: string; x: string; y: string; zooms: boolean } | null {
   if (clip.keyframes?.length) {
-    if (clip.keyframes.every((k) => k.zoom <= 1.001)) return null;
-    z = keyframeExpr(clip.keyframes, 'zoom', T);
-    x = keyframeExpr(clip.keyframes, 'x', T);
-    y = keyframeExpr(clip.keyframes, 'y', T);
-  } else {
-    const zm = clip.zoom;
-    if (!zm || zm.mode === 'none' || zm.scale <= 1.001) return null;
-    const d = clipOutputDuration(clip);
-    const S = num(zm.scale);
-    const smooth = (p: string) => `(${p})*(${p})*(3-2*(${p}))`;
-    if (zm.mode === 'in') z = `1+(${S}-1)*${smooth(`min(${T}/${num(d)},1)`)}`;
-    else if (zm.mode === 'out') z = `${S}-(${S}-1)*${smooth(`min(${T}/${num(d)},1)`)}`;
-    else {
-      const e = Math.min(zm.ease, d / 2);
-      z = e <= 0 ? S : `1+(${S}-1)*${smooth(`max(min(min(${T}/${num(e)},(${num(d)}-${T})/${num(e)}),1),0)`)}`;
-    }
-    x = num(zm.x);
-    y = num(zm.y);
+    const zooms = clip.keyframes.some((k) => k.zoom > 1.001);
+    const pans = clip.keyframes.some((k) => Math.abs(k.x - 0.5) > 1e-3 || Math.abs(k.y - 0.5) > 1e-3);
+    if (!zooms && !pans) return null;
+    return { z: keyframeExpr(clip.keyframes, 'zoom', T), x: keyframeExpr(clip.keyframes, 'x', T), y: keyframeExpr(clip.keyframes, 'y', T), zooms };
   }
+  const zm = clip.zoom;
+  if (!zm || zm.mode === 'none' || zm.scale <= 1.001) return null;
+  const d = clipOutputDuration(clip);
+  const S = num(zm.scale);
+  const smooth = (p: string) => `(${p})*(${p})*(3-2*(${p}))`;
+  let z: string;
+  if (zm.mode === 'in') z = `1+(${S}-1)*${smooth(`min(${T}/${num(d)},1)`)}`;
+  else if (zm.mode === 'out') z = `${S}-(${S}-1)*${smooth(`min(${T}/${num(d)},1)`)}`;
+  else {
+    const e = Math.min(zm.ease, d / 2);
+    z = e <= 0 ? S : `1+(${S}-1)*${smooth(`max(min(min(${T}/${num(e)},(${num(d)}-${T})/${num(e)}),1),0)`)}`;
+  }
+  return { z, x: num(zm.x), y: num(zm.y), zooms: true };
+}
+
+export function zoomFilter(clip: VoiceoverClip, cw: number, ch: number): string | null {
+  const cam = cameraExprs(clip, `on/${RENDER_FPS}`);
+  if (!cam || !cam.zooms) return null;
+  const { z, x, y } = cam;
   const zx = `max(0,min(iw-iw/zoom,(${x})*iw-iw/zoom/2))`;
   const zy = `max(0,min(ih-ih/zoom,(${y})*ih-ih/zoom/2))`;
   return `zoompan=z='${z}':x='${zx}':y='${zy}':d=1:s=${cw}x${ch}:fps=${RENDER_FPS}`;
+}
+
+// ── Vertical / square framing ──────────────────────────────────────────────
+//
+// "cover" fills a 9:16 or 1:1 canvas from a wider recording. A canvas-shaped
+// window, cut from the recording scaled to the canvas height, follows the
+// camera's focus point — so what the 16:9 cut zooms or pans to stays in frame
+// instead of a fixed centre strip. That window is already tighter than any
+// 16:9 view (9:16 ≈ 3.2×, 1:1 ≈ 1.8×), so the camera's zoom is applied only
+// beyond that ("zoom past the window"). No camera moves → a centre crop.
+
+interface CoverGeometry { fw: number; fh: number; W: number; H: number; c: number }
+
+function coverGeometry(canvas: Canvas): CoverGeometry {
+  const fw = even(canvas.content?.w ?? canvas.W);
+  const fh = even(canvas.content?.h ?? canvas.H);
+  return { fw, fh, W: canvas.W, H: canvas.H, c: Math.max(fw / canvas.W, fh / canvas.H) };
+}
+
+/** Video chain (after fps/retime) that frames one clip for a cover canvas. */
+export function coverChain(clip: VoiceoverClip, canvas: Canvas, quality: Quality): string[] {
+  const g = coverGeometry(canvas);
+  const cam = cameraExprs(clip, `n/${RENDER_FPS}`);
+  if (!cam) return [`scale=${g.fw}:${g.fh}:flags=lanczos`, 'setsar=1', `crop=${g.W}:${g.H}:(iw-ow)/2:(ih-oh)/2`];
+  const extra = cam.zooms && (clip.keyframes?.length ? clip.keyframes.some((k) => k.zoom > g.c + 1e-3) : (clip.zoom?.scale ?? 1) > g.c + 1e-3);
+  const up = extra && quality !== 'draft' ? 2 : 1;
+  const strip = (f: string, full: number, win: number) => `max(0,min(${full - win},(${f})*${full}-${win / 2}))`;
+  const chain = [
+    `scale=${g.fw * up}:${g.fh * up}:flags=lanczos`,
+    'setsar=1',
+    `crop=${g.W * up}:${g.H * up}:x='(${strip(cam.x, g.fw, g.W)})*${up}':y='(${strip(cam.y, g.fh, g.H)})*${up}'`,
+  ];
+  if (extra) {
+    // Focus point inside the strip (0..1), then zoompan by the zoom left over.
+    // zoompan counts output frames as `on` (crop uses `n`).
+    const zc = cameraExprs(clip, `on/${RENDER_FPS}`)!;
+    const ux = `((${zc.x})*${g.fw}-(${strip(zc.x, g.fw, g.W)}))/${g.W}`;
+    const uy = `((${zc.y})*${g.fh}-(${strip(zc.y, g.fh, g.H)}))/${g.H}`;
+    const z = `max(1,(${zc.z})/${num(g.c)})`;
+    chain.push(`zoompan=z='${z}':x='max(0,min(iw-iw/zoom,(${ux})*iw-iw/zoom/2))':y='max(0,min(ih-ih/zoom,(${uy})*ih-ih/zoom/2))':d=1:s=${g.W}x${g.H}:fps=${RENDER_FPS}`);
+  }
+  return chain;
+}
+
+/** Numeric twin of coverChain at clip-local time t: strip offset, leftover zoom and its window, in frame pixels. */
+export function coverViewAt(clip: VoiceoverClip, canvas: Canvas, localT: number): { ox: number; oy: number; zp: number; zx: number; zy: number; cam: { zoom: number; x: number; y: number } } {
+  const g = coverGeometry(canvas);
+  const cam = clipCameraAt(clip, localT);
+  const ox = Math.max(0, Math.min(g.fw - g.W, cam.x * g.fw - g.W / 2));
+  const oy = Math.max(0, Math.min(g.fh - g.H, cam.y * g.fh - g.H / 2));
+  const zp = Math.max(1, cam.zoom / g.c);
+  const ux = (cam.x * g.fw - ox) / g.W;
+  const uy = (cam.y * g.fh - oy) / g.H;
+  const zx = Math.max(0, Math.min(g.W - g.W / zp, ux * g.W - g.W / zp / 2));
+  const zy = Math.max(0, Math.min(g.H - g.H / zp, uy * g.H - g.H / zp / 2));
+  return { ox, oy, zp, zx, zy, cam };
+}
+
+/**
+ * Where the recording frame (as seen in the 16:9 cut, i.e. after its camera
+ * zoom) lands on a cover canvas at output time t. Effects are authored on that
+ * frame, so this maps clicks, highlights and arrows into the moving window.
+ */
+export function coverContentAt(timeline: { clips: VoiceoverClip[] }, canvas: Canvas): (t: number) => Rect {
+  const g = coverGeometry(canvas);
+  return (t: number) => {
+    const loc = locateOutputTime(timeline, t);
+    const clip = loc ? timeline.clips[loc.index] : null;
+    if (!loc || !clip || clip.kind === 'card') return { x: 0, y: 0, w: canvas.W, h: canvas.H };
+    const v = coverViewAt(clip, canvas, Math.max(0, t - loc.clipStart));
+    const z = Math.max(1, v.cam.zoom);
+    const win = zoomWindow(z, v.cam.x, v.cam.y); // the 16:9 cut's visible window, in frame units
+    return {
+      x: (win.x * g.fw - v.ox - v.zx) * v.zp,
+      y: (win.y * g.fh - v.oy - v.zy) * v.zp,
+      w: (g.fw / z) * v.zp,
+      h: (g.fh / z) * v.zp,
+    };
+  };
 }
 
 // ── Segments ────────────────────────────────────────────────────────────────
@@ -214,16 +301,15 @@ export function buildSegmentArgs(p: SegmentPlan): string[] {
   const { clip, canvas } = p;
   const d = clipOutputDuration(clip);
   const chain: string[] = [`setpts=(PTS-STARTPTS)/${num(clip.speed)}`, `fps=${RENDER_FPS}`];
-  const zoom = zoomFilter(clip, canvas.cw, canvas.ch);
-  // Pre-scale 2× before zoompan so slow pans don't step a whole pixel at a time.
-  const up = zoom && p.quality !== 'draft' ? 2 : 1;
   if (canvas.cover) {
-    chain.push(`scale=${canvas.cw * up}:${canvas.ch * up}:force_original_aspect_ratio=increase:flags=lanczos`, `crop=${canvas.cw * up}:${canvas.ch * up}`);
+    chain.push(...coverChain(clip, canvas, p.quality));
   } else {
-    chain.push(`scale=${canvas.cw * up}:${canvas.ch * up}:flags=lanczos`);
+    const zoom = zoomFilter(clip, canvas.cw, canvas.ch);
+    // Pre-scale 2× before zoompan so slow pans don't step a whole pixel at a time.
+    const up = zoom && p.quality !== 'draft' ? 2 : 1;
+    chain.push(`scale=${canvas.cw * up}:${canvas.ch * up}:flags=lanczos`, 'setsar=1');
+    if (zoom) chain.push(zoom);
   }
-  chain.push('setsar=1');
-  if (zoom) chain.push(zoom);
   const graph = [`[0:v]${chain.join(',')}[box]`, ...canvasChain(canvas, '[box]', '[can]')];
   const post: string[] = [];
   if (clip.fade_in > 0) post.push(`fade=t=in:st=0:d=${num(Math.min(clip.fade_in, d / 2))}`);
@@ -269,8 +355,14 @@ export function buildCardSegmentArgs(p: {
   const graph: string[] = [`[0:v]ass=filename=${escapeFilterPath(p.assPath)}${p.fontsDir ? `:fontsdir=${escapeFilterPath(p.fontsDir)}` : ''}[t]`];
   let v = '[t]';
   if (useLogo) {
-    const lw = even(canvas.W * 0.14);
-    graph.push(`[1:v]scale=${lw}:-2,format=rgba[lg]`, `[t][lg]overlay=(W-w)/2:H*0.16[c]`);
+    // On a white plate: most logos are dark artwork that vanishes on a dark card.
+    const lw = even(Math.min(canvas.W, canvas.H) * 0.3);
+    const pad = even(lw * 0.08);
+    const top = canvas.H > canvas.W ? 0.24 : 0.14;
+    graph.push(
+      `[1:v]scale=${lw}:-2,format=rgba,pad=iw+${pad * 2}:ih+${pad * 2}:${pad}:${pad}:color=white@0.96[lg]`,
+      `[t][lg]overlay=(W-w)/2:H*${top}[c]`,
+    );
     v = '[c]';
   }
   graph.push(`${v}fade=t=in:st=0:d=0.3,fade=t=out:st=${num(Math.max(0, card.duration - 0.3))}:d=0.3,format=yuv420p[v]`);
@@ -438,7 +530,8 @@ export interface FinalPlan {
   overlayAssPath?: string;
   captionsAssPath?: string;
   fontsDir?: string;
-  logo?: { path: string; branding: VoiceoverBranding } | null;
+  /** Output-time ranges where the corner logo is hidden (cards carry their own). */
+  logo?: { path: string; branding: VoiceoverBranding; hide?: Array<[number, number]> } | null;
   music?: { path: string; settings: NonNullable<VoiceoverAudio['music']> } | null;
   audio?: Pick<VoiceoverAudio, 'loudness' | 'voice_fades'>;
   /** Segments carry the recording's audio; mix it at this volume. 0 / undefined = none. */
@@ -495,7 +588,9 @@ export function buildFinalArgs(p: FinalPlan): string[] {
     const m = Math.round(Math.min(W, H) * 0.03);
     const x = b.logo_position.endsWith('l') ? `${m}` : `W-w-${m}`;
     const y = b.logo_position.startsWith('t') ? `${m}` : `H-h-${m}`;
-    graph.push(`[${logoIdx}:v]scale=${lw}:-2,format=rgba,colorchannelmixer=aa=${num(b.logo_opacity)}[lg]`, `${v}[lg]overlay=${x}:${y}:format=auto[vlogo]`);
+    const hide = (p.logo.hide ?? []).filter(([a, z]) => z > a);
+    const enable = hide.length ? `:enable='not(${hide.map(([a, z]) => `between(t,${num(a)},${num(z)})`).join('+')})'` : '';
+    graph.push(`[${logoIdx}:v]scale=${lw}:-2,format=rgba,colorchannelmixer=aa=${num(b.logo_opacity)}[lg]`, `${v}[lg]overlay=${x}:${y}:format=auto${enable}[vlogo]`);
     v = '[vlogo]';
   }
   graph.push(`${v}format=yuv420p[vout]`);
@@ -642,11 +737,17 @@ export function arrowPath(x0: number, y0: number, x1: number, y1: number, width:
   return `m ${pts[0]} l ${pts.slice(1).join(' l ')}`;
 }
 
-function effectEvents(effects: VoiceoverEffect[], W: number, H: number, R: Rect = { x: 0, y: 0, w: W, h: H }): string[] {
-  const k = R.h / 1080;
+/** Where an item authored on the recording frame lands: fixed, or following a moving crop. */
+type ContentAt = Rect | ((t: number) => Rect);
+const rectFor = (c: ContentAt, start: number, end: number): Rect =>
+  typeof c === 'function' ? c(start + Math.min(0.25, Math.max(0, end - start) / 2)) : c;
+
+function effectEvents(effects: VoiceoverEffect[], W: number, H: number, content: ContentAt = { x: 0, y: 0, w: W, h: H }, scale?: number): string[] {
   const out: string[] = [];
   for (const e of effects) {
     if (e.kind === 'blur') continue; // pixelated in the filtergraph
+    const R = rectFor(content, e.start, e.end);
+    const k = scale ?? R.h / 1080;
     const s = assTime(e.start);
     const en = assTime(e.end);
     const dur = Math.round((e.end - e.start) * 1000);
@@ -685,20 +786,30 @@ export function buildOverlayAss(
   overlays: TextOverlay[],
   W: number,
   H: number,
-  opts?: { effects?: VoiceoverEffect[]; fonts?: FontResolver; disclosure?: { position: 'tl' | 'tr' | 'bl' | 'br'; total: number } | null; content?: Rect },
+  opts?: {
+    effects?: VoiceoverEffect[];
+    fonts?: FontResolver;
+    disclosure?: { position: 'tl' | 'tr' | 'bl' | 'br'; total: number } | null;
+    content?: Rect;
+    /** A following crop (9:16 / 1:1 cover): where the recording frame is at time t — used for effects, which track the picture. */
+    contentAt?: (t: number) => Rect;
+    /** Text/effect scale; defaults to the recording box height / 1080. */
+    textScale?: number;
+  },
 ): string {
   // Overlays are authored on the recording frame; scale and place them in its box.
   const R = contentRect({ W, H, content: opts?.content });
-  const k = R.h / 1080;
+  const k = opts?.textScale ?? R.h / 1080;
   const font = opts?.fonts ?? builtinFonts;
-  const lines: string[] = effectEvents(opts?.effects ?? [], W, H, R);
+  const lines: string[] = effectEvents(opts?.effects ?? [], W, H, opts?.contentAt ?? R, opts?.textScale);
+  const margin = Math.round(Math.min(W, H) * 0.015);
   overlays
     .slice()
     .sort((a, b) => a.start - b.start)
     .forEach((o, i) => {
       const layer = 10 + i * 2;
-      const x = Math.round(R.x + o.x * R.w);
-      const y = Math.round(R.y + o.y * R.h);
+      let x = Math.round(R.x + o.x * R.w);
+      let y = Math.round(R.y + o.y * R.h);
       const fs = Math.round(o.size * k);
       const durMs = Math.round((o.end - o.start) * 1000);
       const fadeMs = Math.min(250, Math.floor(durMs / 3));
@@ -709,6 +820,9 @@ export function buildOverlayAss(
         const subFs = Math.round(fs * 0.55);
         const estW = Math.round(Math.max(o.text.length * fs * 0.56, o.subtitle.length * subFs * 0.52) + 48 * k);
         const barH = Math.round(fs * 1.25 + (o.subtitle ? subFs * 1.35 : 0) + 16 * k);
+        // Keep the whole bar on the canvas (a cropped frame can push it off an edge).
+        x = Math.max(margin, Math.min(W - margin - estW, x));
+        y = Math.max(margin + Math.round(barH / 2), Math.min(H - margin - Math.round(barH / 2), y));
         const top = y - Math.round(barH / 2);
         const slide = Math.round(60 * k);
         const mv = (yy: number, xx: number) => `\\move(${xx - slide},${yy},${xx},${yy},0,${Math.min(450, durMs)})`;
@@ -723,6 +837,15 @@ export function buildOverlayAss(
         const path = arrowPath(x, y, R.x + o.tx * R.w, R.y + o.ty * R.h, Math.max(5, Math.round(9 * k)));
         lines.push(`Dialogue: ${layer},${s},${e},FX,,0,0,0,,{\\an7\\pos(0,0)\\p1\\1c${assColor(o.box ? o.box_color : o.color)}&\\bord${Math.max(1, Math.round(2 * k))}\\3c&H000000&\\shad0\\fad(${fadeMs},${fadeMs})}${path}{\\p0}`);
       }
+      // Wrap to the canvas and keep the block inside it (centre-anchored \\an5).
+      const textLines = wrapForWidth(o.text, fs, W - 2 * margin - (o.box ? 28 * k : 0), true);
+      const halfW = Math.min(W / 2 - margin, (Math.max(...textLines.map((l) => l.length)) * fs * 0.5 + (o.box ? 14 * k : 0)) / 2 + 2);
+      const halfH = (textLines.length * fs * 1.2) / 2 + (o.box ? 14 * k : 0);
+      if (o.kind !== 'callout') {
+        x = Math.round(Math.max(margin + halfW, Math.min(W - margin - halfW, x)));
+        y = Math.round(Math.max(margin + halfH, Math.min(H - margin - halfH, y)));
+      }
+      const text = textLines.join('\n');
       const tags: string[] = ['\\an5', `\\fn${fam}`, `\\fs${fs}`, `\\1c${assColor(o.color)}&`];
       if (o.box) tags.push(`\\3c${assColor(o.box_color)}&`, `\\4c${assColor(o.box_color)}&`);
       const style = o.box ? 'Box' : 'Plain';
@@ -735,7 +858,6 @@ export function buildOverlayAss(
           break;
         case 'typewriter': {
           // One event per reveal step (2 chars); hidden chars keep the line width stable.
-          const text = o.text;
           const steps = Math.ceil(text.length / 2);
           const stepS = Math.min(1 / 15, (o.end - o.start) / Math.max(1, steps) / 2);
           for (let st = 1; st <= steps; st++) {
@@ -747,7 +869,7 @@ export function buildOverlayAss(
         }
         default: tags.push(`\\pos(${x},${y})`);
       }
-      lines.push(`Dialogue: ${layer},${s},${e},${style},,0,0,0,,{${tags.join('')}}${assText(o.text)}`);
+      lines.push(`Dialogue: ${layer},${s},${e},${style},,0,0,0,,{${tags.join('')}}${assText(text)}`);
     });
   if (opts?.disclosure) {
     const d = opts.disclosure;

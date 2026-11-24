@@ -15,6 +15,7 @@ import { ApplicationFailure, Context } from '@temporalio/activity';
 import {
   VoiceoverRenderInputSchema,
   clipOutputDuration,
+  clipStarts,
   quoteVoiceoverRenderCredits,
   renderAspects,
   timelineDuration,
@@ -46,6 +47,7 @@ import {
   buildOverlayAss,
   buildSegmentArgs,
   computeCanvas,
+  coverContentAt,
   concatListFile,
   hasTransitions,
   type FontResolver,
@@ -342,6 +344,8 @@ export function makeVoiceoverRenderActivity(cfg: WorkerConfig) {
       const videos: VoiceoverRenderActivityResult['videos'] = [];
       const manifestOutputs: Array<Record<string, unknown>> = [];
       const words = timelineWords(tl).filter((w) => w.start < total);
+      const starts = clipStarts(tl);
+      const cardRanges: Array<[number, number]> = tl.clips.flatMap((c, i) => (c.kind === 'card' ? [[starts[i], starts[i] + clipOutputDuration(c)] as [number, number]] : []));
 
       for (const [ai, aspect] of aspects.entries()) {
         const base = ai / aspects.length;
@@ -388,7 +392,11 @@ export function makeVoiceoverRenderActivity(cfg: WorkerConfig) {
           overlayAssPath = join(dir, 'overlays.ass');
           const badgePos = tl.branding.logo_position === 'tr' ? 'tl' : 'tr';
           await writeFile(overlayAssPath, buildOverlayAss(tl.overlays, canvas.W, canvas.H, {
-            content: canvas.content,
+            // Cover crops follow the camera: effects track the picture through the moving
+            // window; text stays where it was placed on screen, sized for the canvas.
+            ...(canvas.cover
+              ? { content: { x: 0, y: 0, w: canvas.W, h: canvas.H }, contentAt: coverContentAt(tl, canvas), textScale: Math.min(canvas.W, canvas.H) / 1080 }
+              : { content: canvas.content }),
             effects: drawn,
             fonts,
             disclosure: tl.branding.disclosure_badge ? { position: badgePos, total } : null,
@@ -412,7 +420,7 @@ export function makeVoiceoverRenderActivity(cfg: WorkerConfig) {
             overlayAssPath,
             captionsAssPath,
             fontsDir,
-            logo: logoPath ? { path: logoPath, branding: tl.branding } : null,
+            logo: logoPath ? { path: logoPath, branding: tl.branding, hide: cardRanges } : null,
             music: musicPath && tl.audio.music ? { path: musicPath, settings: tl.audio.music } : null,
             audio: tl.audio,
             originalVolume: withAudio ? out.original_volume : 0,

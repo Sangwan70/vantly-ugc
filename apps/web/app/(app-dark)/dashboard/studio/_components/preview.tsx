@@ -398,7 +398,8 @@ export function Preview(p: Props) {
 
         {capLine ? <CaptionView line={capLine} t={p.time} style={captions.style} box={box} font={fontCss(captions.style.font)} /> : null}
 
-        {branding.logo_url ? (
+        {branding.logo_url && clip?.kind !== 'card' ? (
+          // Hidden on title cards, which carry their own logo (as in the render).
           // eslint-disable-next-line @next/next/no-img-element
           <img src={branding.logo_url} alt="" className="pointer-events-none absolute" style={{ ...corner(branding.logo_position), width: logoW, opacity: branding.logo_opacity }} />
         ) : null}

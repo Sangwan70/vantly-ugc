@@ -371,6 +371,8 @@ export function Preview(p: Props) {
             style={{
               width: cover ? cover.fw : content.w,
               height: cover ? cover.fh : content.h,
+              // Tailwind's base styles cap media at max-width: 100%; the cover frame is wider than the box on purpose.
+              maxWidth: 'none',
               objectFit: 'fill',
               transformOrigin: '0 0',
               transform: cover

@@ -135,5 +135,13 @@ export const FREE_MUSIC: readonly FreeMusicTrack[] = [
   },
 ];
 
-/** Studio defaults for a background bed: quiet, ducked under narration. */
-export const FREE_MUSIC_DEFAULTS = { volume: 0.18, duck: true, duck_amount: 0.75, fade_in: 1.5, fade_out: 2.5, loop: true } as const;
+/**
+ * Studio defaults for a steady background bed under narration.
+ *
+ * Measured on a real render (EP1 ad, 2026-11-24): these recordings are quiet
+ * and the renderer's sidechain duck pulls music ~17 dB under any voice, so the
+ * first defaults (18% + 75% duck) left the bed ~28 dB below the voice even
+ * between sentences — inaudible on a phone. 80% with no ducking sits ~15-17 dB
+ * under narration (-35 dBFS RMS vs voice -19), audible but never competing.
+ */
+export const FREE_MUSIC_DEFAULTS = { volume: 0.8, duck: false, duck_amount: 0.75, fade_in: 1.5, fade_out: 2.5, loop: true } as const;

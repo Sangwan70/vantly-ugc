@@ -3,9 +3,10 @@ FROM node:22-slim
 # System deps for the subtitles primitive:
 #   ffmpeg            — audio extraction + subtitle burn
 #   fonts-liberation  — Liberation Sans Bold (referenced by ASS styles)
+#   fontconfig        — fc-scan reads family names of uploaded brand fonts (Voiceover Studio)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      ffmpeg fonts-liberation \
+      ffmpeg fonts-liberation fontconfig \
       ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 

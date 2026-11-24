@@ -14,3 +14,5 @@ export { lipSyncWorkflow } from './lip-sync.js';
 export { brollTalkingHeadWorkflow } from './broll-talking-head.js';
 export { makePodcastWorkflow } from './make-podcast.js';
 export { makeStorybookWorkflow } from './make-storybook.js';
+export { voiceoverRenderWorkflow } from './voiceover-render.js';
+export { voiceoverPrepareWorkflow, voiceoverAutomateWorkflow } from './voiceover-studio.js';

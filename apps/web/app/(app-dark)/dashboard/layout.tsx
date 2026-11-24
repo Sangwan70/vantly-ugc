@@ -26,7 +26,7 @@
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Home, Images, LogOut, Loader2, LifeBuoy, BookOpen, Sparkles, ListChecks, KeyRound, Share2, ShieldCheck, Bot, Users } from 'lucide-react';
+import { Home, Images, LogOut, Loader2, LifeBuoy, BookOpen, Sparkles, ListChecks, KeyRound, Share2, ShieldCheck, Bot, Users, Clapperboard } from 'lucide-react';
 import { VantlyLogo } from '@/components/vantly-logo';
 import { createClient } from '@/lib/supabase/client';
 import { goToMarketingSite } from '@/lib/marketing';
@@ -56,6 +56,7 @@ const NAV = [
   { href: '/dashboard/jobs',      label: 'Jobs',         icon: ListChecks },
   { href: '/dashboard/gallery',   label: 'Gallery',      icon: Images },
   { href: '/dashboard/actors',    label: 'Actors',       icon: Users },
+  { href: '/dashboard/studio',    label: 'Voiceover Studio', icon: Clapperboard },
   { href: '/dashboard/social',    label: 'Social',       icon: Share2 },
   { href: '/dashboard/api-keys',  label: 'API Keys',     icon: KeyRound },
 ] as const;
@@ -138,7 +139,9 @@ export default function DashboardDarkLayout({
   // Agent mode: collapse the global nav to a slim ICON rail so the agent's own
   // chat-history rail becomes the primary left panel (Cowork-style). Labels move
   // to hover tooltips; the full sidebar returns on every other dashboard route.
-  const isAgent = pathname === '/dashboard/agent' || pathname.startsWith('/dashboard/agent/');
+  const isAgent = pathname === '/dashboard/agent' || pathname.startsWith('/dashboard/agent/')
+    // The Voiceover Studio editor is a full-screen work surface too.
+    || /^\/dashboard\/studio\/[^/]+/.test(pathname);
   if (isAgent) {
     return (
       <div className="flex min-h-screen" style={{ backgroundColor: '#0F1015', color: '#E9E9F0' }}>

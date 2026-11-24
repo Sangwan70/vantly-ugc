@@ -42,6 +42,22 @@ import { characterCreateRoute, listCharactersRoute, updateCharacterRoute } from 
 import { listMyCharactersRoute } from './routes/v1/characters.js';
 import { createCharacterFromUploadRoute } from './routes/v1/characters-from-upload.js';
 import { listElevenLabsVoicesRoute } from './routes/v1/voices.js';
+import {
+  listStudioProjectsRoute, createStudioProjectRoute, getStudioProjectRoute, patchStudioProjectRoute, deleteStudioProjectRoute,
+  prepareStudioProjectRoute, startStudioUploadRoute, completeStudioUploadRoute, abortStudioUploadRoute, createStudioAssetRoute,
+  listStudioVoicesRoute, getStudioProviderKeyRoute, putStudioProviderKeyRoute, deleteStudioProviderKeyRoute, studioTtsRoute,
+  quoteStudioRenderRoute, startStudioRenderRoute, getStudioRenderRoute,
+} from './routes/v1/studio.js';
+import {
+  listTemplatesRoute, saveTemplateRoute, deleteTemplateRoute, applyTemplateRoute, shortenRoute, localizeRoute, reviewRoute,
+  listCommentsRoute, createCommentRoute, patchCommentRoute, deleteCommentRoute, listConsentsRoute, createConsentRoute,
+  revokeConsentRoute, automateRoute, automateStepRoute,
+} from './routes/v1/studio-pro.js';
+import {
+  listWorkspacesRoute, createWorkspaceRoute, getWorkspaceRoute, patchWorkspaceRoute, createInviteRoute, deleteInviteRoute,
+  acceptInviteRoute, patchMemberRoute, deleteMemberRoute, putWorkspaceKeyRoute, deleteWorkspaceKeyRoute, workspaceUsageRoute,
+  workspaceAuditRoute, retentionSweepRoute,
+} from './routes/v1/studio-workspaces.js';
 import { subtitleRoute } from './routes/v2/subtitle.js';
 import { jobStreamRoute } from './routes/v2/job-stream.js';
 import { generateRoute as looseGenerateRoute, quoteGenerateRoute } from './routes/v2/generate.js';
@@ -461,6 +477,9 @@ async function mcpAuthMiddleware(
 // x-internal-secret; not behind the public authMiddleware. Defined early so it
 // is never shadowed by the public route table.
 app.post('/internal/gpt-image', internalGptImageRoute);
+// Voiceover Studio worker/cron callbacks (x-internal-secret).
+app.post('/internal/studio/automate-step', automateStepRoute);
+app.post('/internal/studio/retention-sweep', retentionSweepRoute);
 
 app.get('/health', (_req, res) => {
   res.json({
@@ -974,6 +993,54 @@ if (isPrimitivesRouteEnabled()) {
   app.post('/v1/runs/purge-failed', generateLimiter, authMiddleware, asyncHandler(purgeFailedRunsRoute));
   app.get('/v1/characters', readLimiter, authMiddleware, listMyCharactersRoute);
 app.get('/v1/voices/elevenlabs', readLimiter, authMiddleware, listElevenLabsVoicesRoute);
+// Voiceover Studio — routes/v1/studio.ts (core), studio-pro.ts (templates, localize, automate,
+// review, consent), studio-workspaces.ts (teams + governance). Handlers map StudioError → JSON.
+app.get('/v1/studio/projects', readLimiter, authMiddleware, listStudioProjectsRoute);
+app.post('/v1/studio/projects', generateLimiter, authMiddleware, createStudioProjectRoute);
+app.get('/v1/studio/projects/:id', readLimiter, authMiddleware, getStudioProjectRoute);
+app.patch('/v1/studio/projects/:id', readLimiter, authMiddleware, patchStudioProjectRoute);
+app.delete('/v1/studio/projects/:id', generateLimiter, authMiddleware, deleteStudioProjectRoute);
+app.post('/v1/studio/projects/:id/prepare', generateLimiter, authMiddleware, prepareStudioProjectRoute);
+app.post('/v1/studio/projects/:id/quote', readLimiter, authMiddleware, quoteStudioRenderRoute);
+app.post('/v1/studio/projects/:id/render', generateLimiter, authMiddleware, startStudioRenderRoute);
+app.post('/v1/studio/projects/:id/apply-template', generateLimiter, authMiddleware, applyTemplateRoute);
+app.post('/v1/studio/projects/:id/localize', generateLimiter, authMiddleware, localizeRoute);
+app.post('/v1/studio/projects/:id/review', generateLimiter, authMiddleware, reviewRoute);
+app.get('/v1/studio/projects/:id/comments', readLimiter, authMiddleware, listCommentsRoute);
+app.post('/v1/studio/projects/:id/comments', readLimiter, authMiddleware, createCommentRoute);
+app.patch('/v1/studio/comments/:comment_id', readLimiter, authMiddleware, patchCommentRoute);
+app.delete('/v1/studio/comments/:comment_id', readLimiter, authMiddleware, deleteCommentRoute);
+app.get('/v1/studio/renders/:run_id', readLimiter, authMiddleware, getStudioRenderRoute);
+app.post('/v1/studio/uploads', generateLimiter, authMiddleware, startStudioUploadRoute);
+app.post('/v1/studio/uploads/complete', generateLimiter, authMiddleware, completeStudioUploadRoute);
+app.post('/v1/studio/uploads/abort', generateLimiter, authMiddleware, abortStudioUploadRoute);
+app.post('/v1/studio/assets', generateLimiter, authMiddleware, createStudioAssetRoute);
+app.get('/v1/studio/voices', readLimiter, authMiddleware, listStudioVoicesRoute);
+app.get('/v1/studio/provider-key', readLimiter, authMiddleware, getStudioProviderKeyRoute);
+app.put('/v1/studio/provider-key', generateLimiter, authMiddleware, putStudioProviderKeyRoute);
+app.delete('/v1/studio/provider-key', generateLimiter, authMiddleware, deleteStudioProviderKeyRoute);
+app.post('/v1/studio/tts', generateLimiter, authMiddleware, studioTtsRoute);
+app.get('/v1/studio/templates', readLimiter, authMiddleware, listTemplatesRoute);
+app.post('/v1/studio/templates', generateLimiter, authMiddleware, saveTemplateRoute);
+app.delete('/v1/studio/templates/:id', generateLimiter, authMiddleware, deleteTemplateRoute);
+app.post('/v1/studio/assist/shorten', generateLimiter, authMiddleware, shortenRoute);
+app.post('/v1/studio/automate', generateLimiter, authMiddleware, automateRoute);
+app.get('/v1/studio/consents', readLimiter, authMiddleware, listConsentsRoute);
+app.post('/v1/studio/consents', generateLimiter, authMiddleware, createConsentRoute);
+app.delete('/v1/studio/consents/:id', generateLimiter, authMiddleware, revokeConsentRoute);
+app.get('/v1/studio/workspaces', readLimiter, authMiddleware, listWorkspacesRoute);
+app.post('/v1/studio/workspaces', generateLimiter, authMiddleware, createWorkspaceRoute);
+app.get('/v1/studio/workspaces/:id', readLimiter, authMiddleware, getWorkspaceRoute);
+app.patch('/v1/studio/workspaces/:id', generateLimiter, authMiddleware, patchWorkspaceRoute);
+app.post('/v1/studio/workspaces/:id/invites', generateLimiter, authMiddleware, createInviteRoute);
+app.delete('/v1/studio/workspaces/:id/invites/:invite_id', generateLimiter, authMiddleware, deleteInviteRoute);
+app.post('/v1/studio/invites/:token/accept', generateLimiter, authMiddleware, acceptInviteRoute);
+app.patch('/v1/studio/workspaces/:id/members/:user_id', generateLimiter, authMiddleware, patchMemberRoute);
+app.delete('/v1/studio/workspaces/:id/members/:user_id', generateLimiter, authMiddleware, deleteMemberRoute);
+app.put('/v1/studio/workspaces/:id/provider-key', generateLimiter, authMiddleware, putWorkspaceKeyRoute);
+app.delete('/v1/studio/workspaces/:id/provider-key', generateLimiter, authMiddleware, deleteWorkspaceKeyRoute);
+app.get('/v1/studio/workspaces/:id/usage', readLimiter, authMiddleware, workspaceUsageRoute);
+app.get('/v1/studio/workspaces/:id/audit', readLimiter, authMiddleware, workspaceAuditRoute);
   app.post('/v1/characters/from-upload', generateLimiter, authMiddleware, asyncHandler(createCharacterFromUploadRoute));
   app.get('/v1/me/api-keys', readLimiter, authMiddleware, listApiKeysRoute);
   app.post('/v1/me/api-keys', generateLimiter, authMiddleware, createApiKeyRoute);

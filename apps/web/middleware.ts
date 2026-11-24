@@ -174,7 +174,9 @@ const SECURITY_HEADERS: Record<string, string> = {
       .filter(Boolean)
       .join(' '),
     [
-      "connect-src 'self' *.supabase.co *.supabase.in wss://*.supabase.co https://api.stripe.com https://api.razorpay.com https://lumberjack.razorpay.com https://plausible.io https://api.dub.co",
+      // *.r2.cloudflarestorage.com: Voiceover Studio uploads recordings
+      // straight from the browser to R2 with presigned multipart PUTs.
+      "connect-src 'self' *.supabase.co *.supabase.in wss://*.supabase.co https://api.stripe.com https://api.razorpay.com https://lumberjack.razorpay.com https://plausible.io https://api.dub.co https://*.r2.cloudflarestorage.com",
       SUPABASE_PUBLIC_URL,
       SUPABASE_PUBLIC_URL.replace(/^http/, 'ws'),
     ]

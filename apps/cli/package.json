@@ -48,7 +48,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@vantly-ugc/schema": "workspace:*",
+    "@vantly-ugc/schema": "^0.5.5",
     "chalk": "^5.4.1",
     "commander": "^13.1.0",
     "open": "^10.1.0",

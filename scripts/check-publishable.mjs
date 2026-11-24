@@ -53,8 +53,10 @@ function manifests() {
 }
 
 const problems = [];
+const all = manifests();
+const workspaceVersion = new Map(all.map(({ json }) => [json.name, json.version]));
 
-for (const { path, json } of manifests()) {
+for (const { path, json } of all) {
   if (json.private === true) continue; // not published, workspace: is fine
   const where = relative(ROOT, path);
 
@@ -63,7 +65,7 @@ for (const { path, json } of manifests()) {
       if (typeof spec === 'string' && BAD_SPEC.test(spec)) {
         problems.push(
           `${where}: ${field}.${dep} is "${spec}" — npm cannot resolve this. ` +
-            `Pin the published version instead (e.g. "^${json.version}"-style range).`,
+            `Pin the published version instead (e.g. "^${workspaceVersion.get(dep) ?? 'x.y.z'}").`,
         );
       }
     }

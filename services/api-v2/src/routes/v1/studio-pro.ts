@@ -537,7 +537,7 @@ export async function automateStepRoute(req: Request, res: Response): Promise<vo
           previous_text: blocks[i - 1]?.text.slice(-1000), next_text: blocks[i + 1]?.text.slice(0, 1000), language_code: cfg.language_code,
         }),
       });
-      blocks[i] = { ...b, audio_url: r.audio_url, audio_duration: r.audio_duration, words: r.words, take_id: r.take_id, generated_text: b.text };
+      blocks[i] = { ...b, audio_url: r.audio_url, audio_duration: r.audio_duration, words: r.words, take_id: r.take_id, generated_text: b.text, generated_voice_id: b.voice_id };
     }
     tl = autoSpaceTimelineBlocks({ ...tl, blocks });
 

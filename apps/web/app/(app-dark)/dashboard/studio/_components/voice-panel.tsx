@@ -99,7 +99,7 @@ export function VoicePanel(p: Props) {
         language_code: p.language ?? undefined,
       });
       p.update((t) => updateBlock(t, b.id, {
-        audio_url: r.audio_url, audio_duration: r.audio_duration, words: r.words, take_id: r.take_id, generated_text: b.text, audio_in: 0, audio_out: null,
+        audio_url: r.audio_url, audio_duration: r.audio_duration, words: r.words, take_id: r.take_id, generated_text: b.text, generated_voice_id: b.voice_id, audio_in: 0, audio_out: null,
         // Keep the previous generation as a take for A/B.
         takes: b.audio_url && b.take_id && b.audio_duration
           ? [{ take_id: b.take_id, audio_url: b.audio_url, audio_duration: b.audio_duration, words: b.words, text: b.generated_text ?? b.text, voice_name: b.voice_name, created_at: new Date().toISOString() }, ...b.takes].slice(0, 10)
@@ -296,7 +296,7 @@ function BlockCard(p: {
     const cur = { take_id: b.take_id, audio_url: b.audio_url, audio_duration: b.audio_duration, words: b.words, text: b.generated_text ?? b.text, voice_name: b.voice_name, created_at: new Date().toISOString() };
     const takes = [...b.takes];
     takes.splice(i, 1, cur);
-    p.onChange({ audio_url: t.audio_url, audio_duration: t.audio_duration, words: t.words, take_id: t.take_id, generated_text: t.text, text: t.text, audio_in: 0, audio_out: null, takes });
+    p.onChange({ audio_url: t.audio_url, audio_duration: t.audio_duration, words: t.words, take_id: t.take_id, generated_text: t.text, generated_voice_id: null, text: t.text, audio_in: 0, audio_out: null, takes });
   };
 
   return (

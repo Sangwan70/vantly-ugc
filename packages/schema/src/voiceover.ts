@@ -131,6 +131,8 @@ export const VoiceBlockSchema = z.object({
   words: z.array(VoiceoverWordSchema).max(2000).default([]),
   /** Text the current audio was generated from — lets the UI flag stale audio. */
   generated_text: z.string().max(5000).nullable().default(null),
+  /** Voice the current audio was generated with — a voice change also makes it stale. */
+  generated_voice_id: z.string().max(120).nullable().default(null),
   /** Play only part of the take (seconds into the audio) — used by split / regenerate-selection. */
   audio_in: z.number().min(0).default(0),
   audio_out: z.number().min(0).nullable().default(null),

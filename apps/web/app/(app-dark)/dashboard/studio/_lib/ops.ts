@@ -34,7 +34,9 @@ export function blockDuration(b: VoiceBlock): number {
 }
 
 export function blockIsStale(b: VoiceBlock): boolean {
-  return Boolean(b.audio_url) && b.generated_text !== null && b.generated_text !== b.text;
+  if (!b.audio_url) return false;
+  if (b.generated_text !== null && b.generated_text !== b.text) return true;
+  return b.generated_voice_id !== null && b.generated_voice_id !== b.voice_id;
 }
 
 /** Output-time start of every clip (transitions overlap neighbours). */

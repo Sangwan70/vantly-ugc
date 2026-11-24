@@ -17,6 +17,7 @@
 
 import {
   captionLines,
+  cardStingLength,
   clipCameraAt,
   clipOutputDuration,
   clipStarts,
@@ -346,12 +347,19 @@ export function buildCardSegmentArgs(p: {
   logoPath?: string | null;
   /** The recording — the backdrop look takes a still from it. */
   srcPath?: string;
+  /** Local copy of card.sting_url: played first, then the card dissolves in. */
+  stingPath?: string | null;
   withAudio: boolean;
   outPath: string;
 }): string[] {
   const { canvas, card } = p;
   const { W, H } = canvas;
-  const D = num(card.duration);
+  const sting = p.stingPath ? cardStingLength(card) : 0;
+  const X = sting > 0 ? cardStingOverlap(card) : 0;
+  const total = sting + card.duration;
+  // The card's own content runs X longer: its first X seconds dissolve over the sting's tail.
+  const Dc = card.duration + X;
+  const D = num(Dc);
   const useLogo = Boolean(p.logoPath && card.logo);
   const look = card.look === 'backdrop' && !p.srcPath ? 'gradient' : (card.look ?? 'solid');
   const args = ['-y', '-hide_banner', '-nostdin', '-f', 'lavfi', '-i', `color=c=0x${card.bg.slice(1)}:s=${W}x${H}:r=${RENDER_FPS}:d=${D}`];
@@ -401,10 +409,24 @@ export function buildCardSegmentArgs(p: {
     );
     v = '[c]';
   }
-  graph.push(`${v}fade=t=in:st=0:d=0.3,fade=t=out:st=${num(Math.max(0, card.duration - 0.3))}:d=0.3,format=yuv420p[v]`);
+  const fadeOut = `fade=t=out:st=${num(Math.max(0, Dc - 0.3))}:d=0.3`;
+  if (sting > 0) {
+    args.push('-i', p.stingPath!);
+    const si = idx++;
+    // Fit the sting on the canvas (on white, like a logo reveal), hold its last
+    // frame if it runs short, then dissolve into the card.
+    graph.push(
+      `[${si}:v]fps=${RENDER_FPS},scale=${W}:${H}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=white,setsar=1,format=yuv420p,` +
+        `tpad=stop_mode=clone:stop_duration=${num(sting)},trim=duration=${num(sting)},setpts=PTS-STARTPTS[stv]`,
+      `${v}${fadeOut},format=yuv420p,setsar=1[cv]`,
+      `[stv][cv]xfade=transition=fade:duration=${num(X)}:offset=${num(sting - X)},format=yuv420p[v]`,
+    );
+  } else {
+    graph.push(`${v}fade=t=in:st=0:d=0.3,${fadeOut},format=yuv420p[v]`);
+  }
   args.push('-filter_complex', graph.join(';'), '-map', '[v]');
   if (p.withAudio) args.push('-map', `${audioIdx}:a`, '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2');
-  args.push('-t', num(card.duration), ...encoderArgs(p.quality, true), '-pix_fmt', 'yuv420p', '-r', String(RENDER_FPS), '-video_track_timescale', '15360', p.outPath);
+  args.push('-t', num(total), ...encoderArgs(p.quality, true), '-pix_fmt', 'yuv420p', '-r', String(RENDER_FPS), '-video_track_timescale', '15360', p.outPath);
   return args;
 }
 
@@ -738,6 +760,17 @@ export function assTime(t: number): string {
 }
 
 /** #RRGGBB → ASS &HAABBGGRR (AA=00 opaque). */
+/** Seconds the card dissolves over the end of its sting. */
+export function cardStingOverlap(card: VoiceoverCard): number {
+  const sting = cardStingLength(card);
+  return sting > 0 ? Math.min(0.5, sting / 2, card.duration / 2) : 0;
+}
+
+/** Length of the card's own content (text + background) — longer than card.duration by the dissolve. */
+export function cardContentLength(card: VoiceoverCard, hasSting: boolean): number {
+  return card.duration + (hasSting ? cardStingOverlap(card) : 0);
+}
+
 function hexRgb(hex: string): [number, number, number] {
   const h = hex.replace('#', '');
   return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];

@@ -84,6 +84,13 @@ export const CardSchema = z.object({
   eyebrow: z.string().max(60).default(''),
   /** Call-to-action pill under the subtitle, e.g. "theskillpedia.com/courses". */
   pill: z.string().max(80).default(''),
+  /**
+   * Brand sting played before the card's own content (a logo-reveal video
+   * hosted on our storage). The card then dissolves in from its last frame.
+   * The clip lasts sting_duration + duration.
+   */
+  sting_url: z.string().url().nullable().default(null),
+  sting_duration: z.number().min(0).max(15).default(0),
 });
 export type VoiceoverCard = z.infer<typeof CardSchema>;
 
@@ -334,8 +341,13 @@ export type VoiceoverTimeline = z.infer<typeof VoiceoverTimelineSchema>;
 
 // ── Timeline math (shared by preview, quote and render) ────────────────────
 
-export function clipOutputDuration(c: Pick<VoiceoverClip, 'src_in' | 'src_out' | 'speed'> & { kind?: string; card?: { duration: number } }): number {
-  if (c.kind === 'card') return c.card?.duration ?? 3;
+/** Seconds of brand sting a card plays before its own content (0 without one). */
+export function cardStingLength(card: { sting_url?: string | null; sting_duration?: number } | null | undefined): number {
+  return card?.sting_url ? Math.max(0, card.sting_duration ?? 0) : 0;
+}
+
+export function clipOutputDuration(c: Pick<VoiceoverClip, 'src_in' | 'src_out' | 'speed'> & { kind?: string; card?: { duration: number; sting_url?: string | null; sting_duration?: number } }): number {
+  if (c.kind === 'card') return (c.card?.duration ?? 3) + cardStingLength(c.card);
   return Math.max(0, c.src_out - c.src_in) / (c.speed || 1);
 }
 

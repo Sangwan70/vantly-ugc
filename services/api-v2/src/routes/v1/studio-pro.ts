@@ -18,6 +18,7 @@ import type { Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
+  cardStingLength,
   CardSchema,
   StudioTtsRequestSchema,
   VoiceBlockSchema,
@@ -120,7 +121,9 @@ export function applyTemplateToTimeline(tl: VoiceoverTimeline, tpl: TemplateBody
   if (tpl.outro) {
     clips = [...clips, { id: `card_${randomUUID().slice(0, 8)}`, kind: 'card', card: tpl.outro, src_in: 0, src_out: 1, speed: 1, zoom: { mode: 'none', scale: 1.6, x: 0.5, y: 0.5, ease: 0.6 }, keyframes: [], fade_in: 0, fade_out: 0, transition: (tr ?? { kind: 'none', duration: 0.5 }) as never }];
   }
-  const introShift = tpl.intro && tl.clips[0]?.kind !== 'card' ? tpl.intro.duration - (tr ? Math.min(tr.duration, tpl.intro.duration / 2) : 0) : 0;
+  // The intro occupies its own content plus any brand sting it plays first.
+  const introLen = tpl.intro ? tpl.intro.duration + cardStingLength(tpl.intro) : 0;
+  const introShift = tpl.intro && tl.clips[0]?.kind !== 'card' ? introLen - (tr ? Math.min(tr.duration, introLen / 2) : 0) : 0;
   const voice = tpl.voice;
   return VoiceoverTimelineSchema.parse({
     ...tl,

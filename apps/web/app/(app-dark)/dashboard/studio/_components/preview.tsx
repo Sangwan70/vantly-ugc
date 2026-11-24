@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  cardStingLength,
   blockAudioLength,
   captionLines,
   clipCameraAt,
@@ -419,7 +420,20 @@ export function Preview(p: Props) {
 }
 
 /** Mirrors buildCardSegmentArgs / buildCardAss: solid, gradient or a blurred backdrop still, plus label, shapes and button. */
-function CardView({ card, t, k, logo, opacity, font, filmstrip }: { card: VoiceoverCard; t: number; k: number; logo: string | null; opacity: number; font: string; filmstrip?: Filmstrip }) {
+/** The card's brand sting, kept in step with the playhead (muted; the voice/music play separately). */
+function StingView({ url, t }: { url: string; t: number }) {
+  const ref = useRef<HTMLVideoElement | null>(null);
+  useEffect(() => {
+    const v = ref.current;
+    if (v && Math.abs(v.currentTime - t) > 0.12) v.currentTime = t;
+  }, [t]);
+  return <video ref={ref} src={url} muted playsInline preload="auto" className="pointer-events-none absolute inset-0 h-full w-full" style={{ objectFit: 'contain', background: '#FFFFFF', maxWidth: 'none' }} />;
+}
+
+function CardView({ card, t: clipT, k, logo, opacity, font, filmstrip }: { card: VoiceoverCard; t: number; k: number; logo: string | null; opacity: number; font: string; filmstrip?: Filmstrip }) {
+  const stingLen = cardStingLength(card);
+  if (stingLen > 0 && card.sting_url && clipT < stingLen) return <StingView url={card.sting_url} t={clipT} />;
+  const t = clipT - stingLen; // the card's own content starts after its sting
   const look = card.look ?? 'solid';
   const wash = `linear-gradient(120deg, ${card.bg} 0%, ${card.bg2 ?? card.bg} 100%)`;
   const still = (() => {

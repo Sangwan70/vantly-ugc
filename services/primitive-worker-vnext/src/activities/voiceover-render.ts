@@ -14,6 +14,7 @@
 import { ApplicationFailure, Context } from '@temporalio/activity';
 import {
   VoiceoverRenderInputSchema,
+  cardStingLength,
   clipOutputDuration,
   clipStarts,
   quoteVoiceoverRenderCredits,
@@ -39,6 +40,7 @@ import { deductPrimitiveCredits, refundPrimitiveCredits } from '../client/credit
 import {
   XFADE_NAMES,
   buildAudioNormalizeArgs,
+  cardContentLength,
   buildCaptionsAss,
   buildCardAss,
   buildCardSegmentArgs,
@@ -254,6 +256,7 @@ export function makeVoiceoverRenderActivity(cfg: WorkerConfig) {
       ...(tl.audio.music ? [tl.audio.music.url] : []),
       ...(tl.branding.logo_url ? [tl.branding.logo_url] : []),
       ...tl.fonts.map((f) => f.url),
+      ...tl.clips.flatMap((c) => (c.kind === 'card' && c.card?.sting_url ? [c.card.sting_url] : [])),
     ];
     if (urls.some((u) => !prefixes.some((p) => u.startsWith(p)))) {
       throw ApplicationFailure.nonRetryable('all media must be hosted on our storage', 'REFERENCE_URL_NOT_ALLOWED');
@@ -310,6 +313,16 @@ export function makeVoiceoverRenderActivity(cfg: WorkerConfig) {
         musicPath = join(workDir, 'music.wav');
         await runFfmpeg(buildAudioNormalizeArgs(rawMusic, musicPath), 0);
       }
+      // Brand stings (one download per distinct URL).
+      const stingPaths = new Map<string, string>();
+      for (const c of tl.clips) {
+        const u = c.kind === 'card' && c.card && cardStingLength(c.card) > 0 ? c.card.sting_url : null;
+        if (u && !stingPaths.has(u)) {
+          const pth = join(workDir, `sting-${stingPaths.size}.mp4`);
+          await download(u, pth, 200 * 1024 * 1024);
+          stingPaths.set(u, pth);
+        }
+      }
       let logoPath: string | null = null;
       if (tl.branding.logo_url) {
         logoPath = join(workDir, `logo${extname(new URL(tl.branding.logo_url).pathname) || '.png'}`);
@@ -363,8 +376,10 @@ export function makeVoiceoverRenderActivity(cfg: WorkerConfig) {
         await pool(tl.clips, concurrency, async (raw, i) => {
           if (raw.kind === 'card' && raw.card) {
             const assPath = join(dir, `card-${i}.ass`);
-            await writeFile(assPath, buildCardAss(raw.card, canvas.W, canvas.H, fonts(tl.overlays[0]?.font ?? '')));
-            await runFfmpeg(buildCardSegmentArgs({ card: raw.card, canvas, quality: out.quality, assPath, fontsDir, logoPath, srcPath, withAudio, outPath: segPaths[i] }), 0);
+            const stingPath = raw.card.sting_url ? stingPaths.get(raw.card.sting_url) ?? null : null;
+            // Card text runs the length of the card's own content (it overlaps the sting's tail).
+            await writeFile(assPath, buildCardAss({ ...raw.card, duration: cardContentLength(raw.card, Boolean(stingPath)) }, canvas.W, canvas.H, fonts(tl.overlays[0]?.font ?? '')));
+            await runFfmpeg(buildCardSegmentArgs({ card: raw.card, canvas, quality: out.quality, assPath, fontsDir, logoPath, srcPath, stingPath, withAudio, outPath: segPaths[i] }), 0);
           } else {
             const clip = { ...raw, src_out: Math.min(raw.src_out, meta.duration || raw.src_out) };
             await runFfmpeg(buildSegmentArgs({ srcPath, outPath: segPaths[i], clip, canvas, quality: out.quality, withAudio }), 0);

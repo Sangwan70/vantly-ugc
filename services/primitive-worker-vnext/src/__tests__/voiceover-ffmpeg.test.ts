@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CaptionStyleSchema,
   CardSchema,
+  clipOutputDuration,
   EffectSchema,
   VoiceoverClipSchema,
   VoiceoverTimelineSchema,
@@ -192,6 +193,17 @@ describe('card looks', () => {
     expect(back.join(' ')).toContain('-ss 45 -i src.mp4');
     expect(fg(back)).toContain('boxblur=18:2');
     expect(fg(back)).toContain('[3:v]scale='); // logo after color, wash and still
+  });
+  it('plays a brand sting first, then dissolves into the card', () => {
+    const card = CardSchema.parse({ title: 'Hi', duration: 2.5, sting_url: 'https://r2.test/sting.mp4', sting_duration: 5 });
+    expect(clipOutputDuration({ kind: 'card', card, src_in: 0, src_out: 1, speed: 1 })).toBe(7.5);
+    const args = buildCardSegmentArgs({ card, canvas, quality: 'standard', assPath: 'c.ass', stingPath: 'sting.mp4', withAudio: false, outPath: 'o' });
+    expect(fg(args)).toContain('xfade=transition=fade:duration=0.5:offset=4.5');
+    expect(fg(args)).toContain('tpad=stop_mode=clone');
+    expect(args[args.indexOf('-t') + 1]).toBe('7.5');
+    // No sting file → the plain card, at its own length.
+    const plain = buildCardSegmentArgs({ card, canvas, quality: 'standard', assPath: 'c.ass', withAudio: false, outPath: 'o' });
+    expect(plain[plain.indexOf('-t') + 1]).toBe('2.5');
   });
   it('draws the label, the button and the drifting shapes', () => {
     const ass = buildCardAss(CardSchema.parse({ title: 'Open any course', subtitle: 'Next: EP 3', eyebrow: 'Your turn', pill: 'theskillpedia.com/courses', look: 'gradient' }), 1920, 1080);

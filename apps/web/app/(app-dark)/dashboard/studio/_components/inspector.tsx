@@ -188,6 +188,10 @@ function CardEditor({ card, onChange }: { card: VoiceoverCard; onChange: (p: Par
           ) : null}
         </div>
       ) : null}
+      <div className="grid grid-cols-[1fr_80px] gap-2">
+        <Field label="Brand sting (video URL)"><Input value={card.sting_url ?? ''} placeholder="Played before this card" onChange={(e) => onChange({ sting_url: e.target.value.trim() || null, sting_duration: e.target.value.trim() ? card.sting_duration || 5 : 0 }, 'csu')} /></Field>
+        <Field label="Sting (s)"><Input type="number" min={0} max={15} step={0.5} value={card.sting_duration ?? 0} onChange={(e) => onChange({ sting_duration: Math.max(0, Math.min(15, Number(e.target.value) || 0)) }, 'csd')} /></Field>
+      </div>
       <Field label="Label above title"><Input value={card.eyebrow ?? ''} maxLength={60} placeholder="e.g. Episode 2" onChange={(e) => onChange({ eyebrow: e.target.value }, 'ce')} /></Field>
       <Field label="Button"><Input value={card.pill ?? ''} maxLength={80} placeholder="e.g. theskillpedia.com/courses" onChange={(e) => onChange({ pill: e.target.value }, 'cp')} /></Field>
       <Field label="Animation"><Seg value={card.animation} onChange={(animation) => onChange({ animation })} options={[{ value: 'slide_up', label: 'Slide up' }, { value: 'fade', label: 'Fade' }, { value: 'pop', label: 'Pop' }]} /></Field>

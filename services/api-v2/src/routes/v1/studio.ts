@@ -250,6 +250,7 @@ export const patchStudioProjectRoute = studioRoute(async (req, res) => {
       tl.audio.music?.url,
       tl.branding.logo_url,
       ...tl.fonts.map((f) => f.url),
+      ...tl.clips.map((c) => (c.kind === 'card' ? c.card?.sting_url : null)),
     ].filter((u): u is string => Boolean(u));
     if (media.some((u) => !isStudioHosted(u))) throw new StudioError(400, 'INVALID_INPUT', 'media must be uploaded through Studio');
     patch.timeline = tl;

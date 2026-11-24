@@ -37,6 +37,7 @@ import { r2UploadVnext, type R2Config } from '../client/r2.js';
 import { deductPrimitiveCredits, refundPrimitiveCredits } from '../client/credits.js';
 import {
   XFADE_NAMES,
+  buildAudioNormalizeArgs,
   buildCaptionsAss,
   buildCardAss,
   buildCardSegmentArgs,
@@ -292,16 +293,20 @@ export function makeVoiceoverRenderActivity(cfg: WorkerConfig) {
       const voiced = tl.blocks.filter((b) => b.audio_url && b.text.trim());
       const byUrl = new Map<string, string>();
       await pool([...new Set(voiced.map((b) => b.audio_url!))], 6, async (u, i) => {
-        const p = join(workDir, `voice-${i}.mp3`);
-        await download(u, p, 50 * 1024 * 1024);
+        const raw = join(workDir, `voice-${i}.mp3`);
+        await download(u, raw, 50 * 1024 * 1024);
+        const p = join(workDir, `voice-${i}.wav`);
+        await runFfmpeg(buildAudioNormalizeArgs(raw, p), 0);
         byUrl.set(u, p);
       });
       const voices = voiced.map((b) => ({ path: byUrl.get(b.audio_url!)!, start: b.start, volume: b.volume, audioIn: b.audio_in, audioOut: b.audio_out }));
 
       let musicPath: string | null = null;
       if (tl.audio.music) {
-        musicPath = join(workDir, `music${extname(new URL(tl.audio.music.url).pathname) || '.mp3'}`);
-        await download(tl.audio.music.url, musicPath, 100 * 1024 * 1024);
+        const rawMusic = join(workDir, `music${extname(new URL(tl.audio.music.url).pathname) || '.mp3'}`);
+        await download(tl.audio.music.url, rawMusic, 100 * 1024 * 1024);
+        musicPath = join(workDir, 'music.wav');
+        await runFfmpeg(buildAudioNormalizeArgs(rawMusic, musicPath), 0);
       }
       let logoPath: string | null = null;
       if (tl.branding.logo_url) {

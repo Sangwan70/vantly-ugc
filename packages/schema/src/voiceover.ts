@@ -727,8 +727,13 @@ export function parseNarrationScript(raw: string): NarrationCue[] {
     const cues: NarrationCue[] = [];
     const chunks = text.split(/^(?=CUE\s+\d+\s*\|)/im);
     for (const ch of chunks) {
-      const m = /^CUE\s+\d+\s*\|\s*start\s+([\d:.,]+)[^\n]*\n([\s\S]*)$/i.exec(ch.trim());
-      if (m && m[2].trim()) cues.push({ start: parseClockValue(m[1]), text: m[2].trim().replace(/\s*\n\s*/g, ' ') });
+      const m = /^CUE\s+\d+\s*\|\s*start\s+([\d:.,]+)([^\n]*)(?:\n([\s\S]*))?$/i.exec(ch.trim());
+      if (!m) continue;
+      // Text may follow the header on the same line ("CUE 1 | start 0:00 | Hello"),
+      // after metadata fields such as "max 9.4s", or on the lines below it.
+      const inline = m[2].split('|').map((f) => f.trim()).filter((f) => f && !/^(max|end|duration|voice|speaker)\b/i.test(f)).join(' ');
+      const text = [inline, (m[3] ?? '').trim()].filter(Boolean).join(' ').replace(/\s*\n\s*/g, ' ');
+      if (text) cues.push({ start: parseClockValue(m[1]), text });
     }
     if (cues.length) return cues;
   }

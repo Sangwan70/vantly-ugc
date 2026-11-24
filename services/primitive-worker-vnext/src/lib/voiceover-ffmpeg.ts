@@ -297,6 +297,17 @@ export const XFADE_NAMES: Record<string, string> = {
   wipe: 'wipeleft',
 };
 
+/**
+ * Decode a narration/music file to 48 kHz stereo PCM before the final mix.
+ * ElevenLabs returns mono MP3s whose frame parameters can shift mid-stream;
+ * ffmpeg 5.x then reinitialises the whole filter graph and fails layout
+ * negotiation ("Cannot select channel layout … alimiter"). Uniform WAV inputs
+ * never trigger a reinit.
+ */
+export function buildAudioNormalizeArgs(inPath: string, outPath: string): string[] {
+  return ['-y', '-hide_banner', '-nostdin', '-i', inPath, '-vn', '-ar', '48000', '-ac', '2', '-c:a', 'pcm_s16le', outPath];
+}
+
 /** True when any clip transitions from the previous one. */
 export function hasTransitions(clips: VoiceoverClip[]): boolean {
   return clips.some((_, i) => transitionOverlap({ clips }, i) > 0);
@@ -487,7 +498,9 @@ export function buildFinalArgs(p: FinalPlan): string[] {
   const loud = p.audio?.loudness ?? 'youtube';
   const master: string[] = [];
   if (loud !== 'off') master.push(`loudnorm=I=${LUFS[loud]}:TP=-1.5:LRA=11`, 'aresample=48000');
-  master.push('alimiter=limit=0.95', 'apad');
+  // Pin the format before the limiter so negotiation never depends on what
+  // loudnorm/amix leave unspecified.
+  master.push('aformat=sample_rates=48000:channel_layouts=stereo', 'alimiter=limit=0.95', 'apad');
   if (bus.length === 0) graph.push('anullsrc=r=48000:cl=stereo[aout]');
   else if (bus.length === 1) graph.push(`${bus[0]}${master.join(',')}[aout]`);
   else graph.push(`${bus.join('')}amix=inputs=${bus.length}:normalize=0:dropout_transition=0,${master.join(',')}[aout]`);

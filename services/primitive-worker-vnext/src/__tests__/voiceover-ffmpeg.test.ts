@@ -23,6 +23,7 @@ import {
   arrowPath,
   assColor,
   atempoChain,
+  buildAudioNormalizeArgs,
   buildCaptionsAss,
   buildCardAss,
   buildFinalArgs,
@@ -237,6 +238,10 @@ describe('scripts, spacing, pricing', () => {
     expect(parseNarrationScript('CUE 1  |  start 0:00.0  |  max 17s\nHello there.\n\nCUE 2  |  start 0:17.1  |  max 9s\nNext bit.')).toEqual([{ start: 0, text: 'Hello there.' }, { start: 17.1, text: 'Next bit.' }]);
     expect(parseNarrationScript('1\n00:00:01,500 --> 00:00:03,000\nHi\n')).toEqual([{ start: 1.5, text: 'Hi' }]);
     expect(parseNarrationScript('One.\n\nTwo.')).toHaveLength(2);
+    expect(parseNarrationScript('CUE 1 | start 0:00.5 | Too many courses?\nCUE 2 | start 0:04.0 | max 9s | Start here.')).toEqual([{ start: 0.5, text: 'Too many courses?' }, { start: 4, text: 'Start here.' }]);
+  });
+  it('normalises narration to 48 kHz stereo and pins the format before the limiter', () => {
+    expect(buildAudioNormalizeArgs('in.mp3', 'out.wav')).toEqual(['-y', '-hide_banner', '-nostdin', '-i', 'in.mp3', '-vn', '-ar', '48000', '-ac', '2', '-c:a', 'pcm_s16le', 'out.wav']);
   });
   it('auto-spaces overlapping blocks', () => {
     const t = VoiceoverTimelineSchema.parse({ blocks: [{ id: 'a', start: 0, text: 'x'.repeat(140) }, { id: 'b', start: 5, text: 'y' }] });

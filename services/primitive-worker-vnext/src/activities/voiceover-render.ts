@@ -388,6 +388,7 @@ export function makeVoiceoverRenderActivity(cfg: WorkerConfig) {
           overlayAssPath = join(dir, 'overlays.ass');
           const badgePos = tl.branding.logo_position === 'tr' ? 'tl' : 'tr';
           await writeFile(overlayAssPath, buildOverlayAss(tl.overlays, canvas.W, canvas.H, {
+            content: canvas.content,
             effects: drawn,
             fonts,
             disclosure: tl.branding.disclosure_badge ? { position: badgePos, total } : null,

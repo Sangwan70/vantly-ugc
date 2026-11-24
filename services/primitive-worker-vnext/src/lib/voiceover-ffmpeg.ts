@@ -49,7 +49,20 @@ export interface Canvas {
   /** Fill the canvas by cropping instead of letter/pillar-boxing. */
   cover: boolean;
   fit: VoiceoverOutput['fit'];
+  /**
+   * Where the recording's full frame lands on the canvas, in canvas pixels:
+   * the centred box for blur/black, the scaled-up (edge-cropped) frame for
+   * cover. Effects, overlays and redactions are authored in recording-frame
+   * coordinates (0..1), so they are mapped through this rect; captions, the
+   * logo and the disclosure badge stay anchored to the canvas. Omitted = the
+   * whole canvas.
+   */
+  content?: Rect;
 }
+
+export interface Rect { x: number; y: number; w: number; h: number }
+
+const contentRect = (c: { W: number; H: number; content?: Rect }): Rect => c.content ?? { x: 0, y: 0, w: c.W, h: c.H };
 
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
 const num = (n: number) => Number(n.toFixed(4)).toString();
@@ -79,11 +92,19 @@ export function computeCanvas(
       H = even(sh * k);
     }
   }
-  if (output.aspect === 'source' || output.fit === 'cover') {
-    return { W, H, cw: W, ch: H, cover: output.aspect !== 'source', fit: output.fit };
+  if (output.aspect === 'source') {
+    return { W, H, cw: W, ch: H, cover: false, fit: output.fit, content: { x: 0, y: 0, w: W, h: H } };
+  }
+  if (output.fit === 'cover') {
+    const s = Math.max(W / sw, H / sh);
+    const w = sw * s;
+    const h = sh * s;
+    return { W, H, cw: W, ch: H, cover: true, fit: output.fit, content: { x: (W - w) / 2, y: (H - h) / 2, w, h } };
   }
   const k = Math.min(W / sw, H / sh);
-  return { W, H, cw: Math.min(W, even(sw * k)), ch: Math.min(H, even(sh * k)), cover: false, fit: output.fit };
+  const cw = Math.min(W, even(sw * k));
+  const ch = Math.min(H, even(sh * k));
+  return { W, H, cw, ch, cover: false, fit: output.fit, content: { x: (W - cw) / 2, y: (H - ch) / 2, w: cw, h: ch } };
 }
 
 export function encoderArgs(quality: Quality, intermediate = false): string[] {
@@ -420,11 +441,12 @@ export function buildFinalArgs(p: FinalPlan): string[] {
 
   // Video
   let v = '[0:v]';
+  const R = contentRect(canvas);
   (p.redactions ?? []).forEach((e, i) => {
-    const bw = even(e.w * W);
-    const bh = even(e.h * H);
-    const bx = Math.max(0, Math.min(W - bw, Math.round(e.x * W - bw / 2)));
-    const by = Math.max(0, Math.min(H - bh, Math.round(e.y * H - bh / 2)));
+    const bw = Math.min(even(W), even(e.w * R.w));
+    const bh = Math.min(even(H), even(e.h * R.h));
+    const bx = Math.max(0, Math.min(W - bw, Math.round(R.x + e.x * R.w - bw / 2)));
+    const by = Math.max(0, Math.min(H - bh, Math.round(R.y + e.y * R.h - bh / 2)));
     // Pixelate (not blur): blurred text can sometimes be recovered.
     const block = Math.max(6, Math.round(8 + e.intensity * 28));
     graph.push(
@@ -590,8 +612,8 @@ export function arrowPath(x0: number, y0: number, x1: number, y1: number, width:
   return `m ${pts[0]} l ${pts.slice(1).join(' l ')}`;
 }
 
-function effectEvents(effects: VoiceoverEffect[], W: number, H: number): string[] {
-  const k = H / 1080;
+function effectEvents(effects: VoiceoverEffect[], W: number, H: number, R: Rect = { x: 0, y: 0, w: W, h: H }): string[] {
+  const k = R.h / 1080;
   const out: string[] = [];
   for (const e of effects) {
     if (e.kind === 'blur') continue; // pixelated in the filtergraph
@@ -599,10 +621,10 @@ function effectEvents(effects: VoiceoverEffect[], W: number, H: number): string[
     const en = assTime(e.end);
     const dur = Math.round((e.end - e.start) * 1000);
     const fade = Math.min(200, Math.floor(dur / 3));
-    const x = Math.round(e.x * W);
-    const y = Math.round(e.y * H);
-    const bw = Math.round(e.w * W);
-    const bh = Math.round(e.h * H);
+    const x = Math.round(R.x + e.x * R.w);
+    const y = Math.round(R.y + e.y * R.h);
+    const bw = Math.round(e.w * R.w);
+    const bh = Math.round(e.h * R.h);
     if (e.kind === 'click') {
       const r = Math.round((26 + 40 * e.intensity) * k);
       const ring = Math.max(2, Math.round(5 * k));
@@ -621,7 +643,7 @@ function effectEvents(effects: VoiceoverEffect[], W: number, H: number): string[
       const path = `m 0 0 l ${bw} 0 l ${bw} ${bh} l 0 ${bh}`;
       out.push(`Dialogue: 1,${s},${en},FX,,0,0,0,,{\\an7\\pos(${Math.round(x - bw / 2)},${Math.round(y - bh / 2)})\\p1\\1c${assColor(e.color)}&\\1a${assAlpha(0.18 * e.intensity)}\\bord${Math.max(2, Math.round(5 * k))}\\3c${assColor(e.color)}&\\shad0\\fad(${fade},${fade})}${path}{\\p0}`);
     } else if (e.kind === 'arrow') {
-      const path = arrowPath(e.from_x * W, e.from_y * H, x, y, Math.max(6, Math.round(12 * k)));
+      const path = arrowPath(R.x + e.from_x * R.w, R.y + e.from_y * R.h, x, y, Math.max(6, Math.round(12 * k)));
       out.push(`Dialogue: 2,${s},${en},FX,,0,0,0,,{\\an7\\pos(0,0)\\p1\\1c${assColor(e.color)}&\\bord${Math.max(1, Math.round(3 * k))}\\3c&H000000&\\shad0\\fad(${fade},${fade})}${path}{\\p0}`);
     }
   }
@@ -633,18 +655,20 @@ export function buildOverlayAss(
   overlays: TextOverlay[],
   W: number,
   H: number,
-  opts?: { effects?: VoiceoverEffect[]; fonts?: FontResolver; disclosure?: { position: 'tl' | 'tr' | 'bl' | 'br'; total: number } | null },
+  opts?: { effects?: VoiceoverEffect[]; fonts?: FontResolver; disclosure?: { position: 'tl' | 'tr' | 'bl' | 'br'; total: number } | null; content?: Rect },
 ): string {
-  const k = H / 1080;
+  // Overlays are authored on the recording frame; scale and place them in its box.
+  const R = contentRect({ W, H, content: opts?.content });
+  const k = R.h / 1080;
   const font = opts?.fonts ?? builtinFonts;
-  const lines: string[] = effectEvents(opts?.effects ?? [], W, H);
+  const lines: string[] = effectEvents(opts?.effects ?? [], W, H, R);
   overlays
     .slice()
     .sort((a, b) => a.start - b.start)
     .forEach((o, i) => {
       const layer = 10 + i * 2;
-      const x = Math.round(o.x * W);
-      const y = Math.round(o.y * H);
+      const x = Math.round(R.x + o.x * R.w);
+      const y = Math.round(R.y + o.y * R.h);
       const fs = Math.round(o.size * k);
       const durMs = Math.round((o.end - o.start) * 1000);
       const fadeMs = Math.min(250, Math.floor(durMs / 3));
@@ -666,7 +690,7 @@ export function buildOverlayAss(
         return;
       }
       if (o.kind === 'callout') {
-        const path = arrowPath(x, y, o.tx * W, o.ty * H, Math.max(5, Math.round(9 * k)));
+        const path = arrowPath(x, y, R.x + o.tx * R.w, R.y + o.ty * R.h, Math.max(5, Math.round(9 * k)));
         lines.push(`Dialogue: ${layer},${s},${e},FX,,0,0,0,,{\\an7\\pos(0,0)\\p1\\1c${assColor(o.box ? o.box_color : o.color)}&\\bord${Math.max(1, Math.round(2 * k))}\\3c&H000000&\\shad0\\fad(${fadeMs},${fadeMs})}${path}{\\p0}`);
       }
       const tags: string[] = ['\\an5', `\\fn${fam}`, `\\fs${fs}`, `\\1c${assColor(o.color)}&`];

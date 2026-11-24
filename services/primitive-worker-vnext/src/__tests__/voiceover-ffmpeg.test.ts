@@ -50,6 +50,13 @@ describe('canvas + quality', () => {
     expect(c).toMatchObject({ W: 1080, H: 1920, cw: 1080, cover: false });
     expect(computeCanvas({ width: 1920, height: 1080 }, { aspect: '1:1', fit: 'cover' })).toMatchObject({ W: 1080, H: 1080, cover: true });
   });
+  it('reports where the recording lands on the canvas', () => {
+    expect(computeCanvas({ width: 1920, height: 1080 }, { aspect: 'source', fit: 'blur' }).content).toEqual({ x: 0, y: 0, w: 1920, h: 1080 });
+    // 16:9 recording in a 9:16 frame: centred 1080x608 box.
+    expect(computeCanvas({ width: 1920, height: 1080 }, { aspect: '9:16', fit: 'blur' }).content).toEqual({ x: 0, y: 656, w: 1080, h: 608 });
+    // Cover scales the frame up and crops the sides, so the rect overhangs.
+    expect(computeCanvas({ width: 1920, height: 1080 }, { aspect: '1:1', fit: 'cover' }).content).toEqual({ x: -420, y: 0, w: 1920, h: 1080 });
+  });
 });
 
 describe('segments', () => {
@@ -183,6 +190,27 @@ describe('ASS: overlays, effects, captions', () => {
     expect(ass).toContain('m 0 0 l 1920 0 l 1920 1080 l 0 1080 m 768 432');
     expect(ass).toContain('AI-generated voice');
     expect(arrowPath(0, 0, 100, 0, 10).startsWith('m 0 5')).toBe(true);
+  });
+  it('places effects and overlays inside the recording box, not the whole frame', () => {
+    // Regression: in a 9:16 / 1:1 export, clicks and highlights authored on the
+    // 16:9 recording landed in the blurred bands, and step labels sized for
+    // the full 1920px height ran off the left edge.
+    const content = computeCanvas({ width: 1920, height: 1080 }, { aspect: '9:16', fit: 'blur' }).content;
+    const ass = buildOverlayAss(
+      [{ id: 'o', start: 1, end: 4, text: 'Step', x: 0.5, y: 0.1, size: 54, color: '#FFFFFF', box: true, box_color: '#0B2E5C', animation: 'slide_up', kind: 'text', subtitle: '', tx: 0.5, ty: 0.5, font: 'Liberation Sans' }],
+      1080, 1920,
+      {
+        content,
+        effects: [
+          { id: 'c', kind: 'click', start: 1, end: 2, x: 0.5, y: 0.5, w: 0.1, h: 0.1, from_x: 0, from_y: 0, color: '#FF0000', intensity: 0.5 },
+          { id: 'h', kind: 'highlight', start: 1, end: 2, x: 0.1, y: 0.1, w: 0.2, h: 0.1, from_x: 0, from_y: 0, color: '#FF0000', intensity: 0.5 },
+        ],
+      },
+    );
+    expect(ass).toContain('\\pos(540,960)'); // click at the box centre
+    expect(ass).toContain('\\pos(0,687)'); // highlight top-left: (0.1-0.1)*1080, 656+(0.1-0.05)*608
+    expect(ass).toContain('\\move(540,744,540,717,0,400)'); // label y = 656 + 0.1*608
+    expect(ass).toContain('\\fs30'); // 54px authored at 1080 -> 608px-tall box
   });
   it('karaoke captions highlight one word per event', () => {
     const words = [{ word: 'hello', start: 0, end: 0.4 }, { word: 'world.', start: 0.5, end: 0.9 }, { word: 'next', start: 2, end: 2.4 }];

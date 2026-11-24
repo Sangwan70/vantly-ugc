@@ -352,6 +352,14 @@ interface FetchedBody {
 /** One HTTPS GET, connected to a pinned IP, with SNI + Host set to the real
  *  hostname (so TLS still validates), a Content-Length pre-check, and a
  *  streaming byte cap. Redirects are returned (drained), not followed. */
+/**
+ * Sent on every server-side fetch of a user/asset URL. Some hosts reject bare
+ * agents: Wikimedia (Commons music for the Studio's free library) answers 429/403
+ * unless the agent names the client and a contact URL
+ * (https://meta.wikimedia.org/wiki/User-Agent_policy).
+ */
+const OUTBOUND_USER_AGENT = 'VantlyUGC/1.0 (+https://vantly-ugc.com) node';
+
 function httpsGetPinned(
   url: URL,
   ip: string,
@@ -368,7 +376,7 @@ function httpsGetPinned(
         port: url.port ? Number(url.port) : 443,
         path: url.pathname + url.search,
         method: 'GET',
-        headers: { Host: url.hostname, 'User-Agent': 'vantly-ugc/1', Accept: '*/*' },
+        headers: { Host: url.hostname, 'User-Agent': OUTBOUND_USER_AGENT, Accept: '*/*' },
         timeout: timeoutMs,
       },
       (res: IncomingMessage) => {
@@ -417,7 +425,12 @@ export async function safeFetchToBuffer(
   let url = validateOutboundUrl(rawUrl);
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
     const { address, family } = await resolveToPublicIp(url.hostname);
-    const res = await httpsGetPinned(url, address, family, maxBytes, timeoutMs);
+    let res = await httpsGetPinned(url, address, family, maxBytes, timeoutMs);
+    // Rate-limited (Wikimedia, CDNs): back off briefly and retry, at most twice.
+    for (let attempt = 1; attempt <= 2 && (res.status === 429 || res.status === 503); attempt += 1) {
+      await new Promise((r) => setTimeout(r, 1500 * attempt));
+      res = await httpsGetPinned(url, address, family, maxBytes, timeoutMs);
+    }
     if (res.status >= 300 && res.status < 400 && res.location) {
       // Re-validate every redirect target (protocol/port/credentials) then loop —
       // the next iteration re-resolves + re-validates the IP, so a redirect can't

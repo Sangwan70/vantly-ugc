@@ -16,3 +16,4 @@ export * from './tooling/contracts.js';
 export * from './take-planner.js';
 export * from './storybook.js';
 export * from './voiceover.js';
+export * from './voiceover-music.js';

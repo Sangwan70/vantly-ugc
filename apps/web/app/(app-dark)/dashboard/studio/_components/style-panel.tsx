@@ -4,9 +4,9 @@
 
 /** Brand (logo, palette, badge), fonts, captions, audio (music, loudness), intro/outro cards and templates. */
 
-import { useEffect, useState } from 'react';
-import { Download, Loader2, Music, Plus, Trash2, Upload } from 'lucide-react';
-import { CardSchema, type VoiceoverTimeline } from '@vantly-ugc/schema';
+import { useEffect, useRef, useState } from 'react';
+import { Download, ExternalLink, Loader2, Music, Pause, Play, Plus, Trash2, Upload } from 'lucide-react';
+import { CardSchema, FREE_MUSIC, FREE_MUSIC_DEFAULTS, type FreeMusicTrack, type VoiceoverTimeline } from '@vantly-ugc/schema';
 import { studioApi, uploadDirect, type Template } from '../_lib/api';
 import { uid } from '../_lib/ops';
 import { BUILTIN_FONTS } from './inspector';
@@ -29,6 +29,72 @@ function FilePick({ accept, label, busy, onFile }: { accept: string; label: stri
       {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />} {label}
       <input type="file" accept={accept} className="hidden" disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ''; }} />
     </label>
+  );
+}
+
+const fmtDur = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+const MOODS: { id: FreeMusicTrack['mood']; label: string }[] = [
+  { id: 'upbeat', label: 'Upbeat' },
+  { id: 'energetic', label: 'Energetic' },
+  { id: 'calm', label: 'Calm' },
+];
+
+/** Free, ad-safe background music: public-domain / CC0 recordings re-hosted on pick. */
+function FreeMusicPicker({ projectId, onPicked }: { projectId: string; onPicked: (url: string, track: FreeMusicTrack) => void }) {
+  const [id, setId] = useState(FREE_MUSIC[0]?.id ?? '');
+  const [playing, setPlaying] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const audio = useRef<HTMLAudioElement | null>(null);
+  const track = FREE_MUSIC.find((t) => t.id === id) ?? FREE_MUSIC[0];
+
+  useEffect(() => () => { audio.current?.pause(); }, []);
+  useEffect(() => { audio.current?.pause(); setPlaying(false); }, [id]);
+  if (!track) return null;
+
+  const togglePreview = () => {
+    if (playing) { audio.current?.pause(); setPlaying(false); return; }
+    if (!audio.current || audio.current.dataset.id !== track.id) {
+      audio.current?.pause();
+      audio.current = new Audio(track.url);
+      audio.current.dataset.id = track.id;
+      audio.current.volume = 0.6;
+      audio.current.onended = () => setPlaying(false);
+    }
+    audio.current.play().then(() => setPlaying(true)).catch(() => { setErr('Preview could not start — try "Use this track".'); setPlaying(false); });
+  };
+
+  const use = async () => {
+    setBusy(true); setErr(null);
+    audio.current?.pause(); setPlaying(false);
+    try {
+      const { url } = await studioApi.asset({ kind: 'music', url: track.url, project_id: projectId, name: track.title });
+      onPicked(url, track);
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="space-y-2 rounded-lg p-2" style={{ background: C.bg }}>
+      <p className="text-[10px] uppercase tracking-wider" style={{ color: C.faint }}>Free music · public domain, ad-safe, no attribution</p>
+      <Select value={id} onChange={(e) => setId(e.target.value)}>
+        {MOODS.map((m) => (
+          <optgroup key={m.id} label={m.label}>
+            {FREE_MUSIC.filter((t) => t.mood === m.id).map((t) => (
+              <option key={t.id} value={t.id}>{t.composer} — {t.title} ({fmtDur(t.duration)})</option>
+            ))}
+          </optgroup>
+        ))}
+      </Select>
+      <div className="flex items-center gap-1.5 text-[10px]" style={{ color: C.muted }}>
+        <span className="truncate">{track.performer} · {track.license}</span>
+        <a href={track.source} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-0.5" style={{ color: C.accent }}>Source <ExternalLink className="h-3 w-3" /></a>
+      </div>
+      <div className="flex gap-2">
+        <Btn small onClick={togglePreview}>{playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />} {playing ? 'Stop' : 'Preview'}</Btn>
+        <Btn small primary disabled={busy} onClick={use}>{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Music className="h-3.5 w-3.5" />} Use this track</Btn>
+      </div>
+      {err ? <p className="text-[11px]" style={{ color: '#FCA5A5' }}>{err}</p> : null}
+    </div>
   );
 }
 
@@ -215,6 +281,7 @@ export function StylePanel({ projectId, workspaceId, timeline, update, onTimelin
             <label className="flex items-center gap-2 text-[11px]" style={{ color: C.muted }}><input type="checkbox" checked={music.loop} onChange={(e) => update((t) => ({ ...t, audio: { ...t.audio, music: { ...t.audio.music!, loop: e.target.checked } } }))} /> Loop</label>
           </div>
         ) : null}
+        <FreeMusicPicker projectId={projectId} onPicked={(url, tr) => update((t) => ({ ...t, audio: { ...t.audio, music: { url, name: `${tr.composer} — ${tr.title} (${tr.license})`, ...FREE_MUSIC_DEFAULTS } } }))} />
         <Field label="Loudness (final mix)">
           <Seg value={timeline.audio.loudness} onChange={(loudness) => update((t) => ({ ...t, audio: { ...t.audio, loudness } }))}
             options={[{ value: 'youtube', label: '−14 LUFS' }, { value: 'podcast', label: '−16' }, { value: 'broadcast', label: '−23' }, { value: 'off', label: 'Off' }]} />

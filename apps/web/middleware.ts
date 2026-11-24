@@ -168,7 +168,7 @@ const SECURITY_HEADERS: Record<string, string> = {
       .filter(Boolean)
       .join(' '),
     [
-      "media-src 'self' blob: *.supabase.co *.fal.media fal.media *.r2.dev storage.googleapis.com",
+      "media-src 'self' blob: *.supabase.co *.fal.media fal.media *.r2.dev storage.googleapis.com https://upload.wikimedia.org",
       SUPABASE_PUBLIC_URL,
     ]
       .filter(Boolean)

@@ -39,18 +39,60 @@ export const VoiceoverZoomSchema = z.object({
 });
 export type VoiceoverZoom = z.infer<typeof VoiceoverZoomSchema>;
 
+const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+const easing = z.enum(['linear', 'ease_in_out', 'ease_in', 'ease_out', 'hold']);
+export type VoiceoverEasing = z.infer<typeof easing>;
+
+/** Camera keyframe: at `t` seconds into the clip (output time) the camera is at zoom/x/y. */
+export const CameraKeyframeSchema = z.object({
+  t: z.number().min(0),
+  zoom: z.number().min(1).max(4),
+  x: unit,
+  y: unit,
+  /** Easing used to travel FROM this keyframe to the next one. */
+  ease: easing.default('ease_in_out'),
+});
+export type CameraKeyframe = z.infer<typeof CameraKeyframeSchema>;
+
+export const TRANSITION_KINDS = ['none', 'crossfade', 'fade_black', 'slide_left', 'slide_up', 'zoom', 'wipe'] as const;
+export const TransitionSchema = z.object({
+  kind: z.enum(TRANSITION_KINDS).default('none'),
+  duration: z.number().min(0.1).max(2).default(0.5),
+});
+export type VoiceoverTransition = z.infer<typeof TransitionSchema>;
+
+/** Title card (intro / outro / chapter) rendered from scratch instead of from the recording. */
+export const CardSchema = z.object({
+  duration: z.number().min(0.5).max(30).default(3),
+  title: z.string().max(120).default(''),
+  subtitle: z.string().max(200).default(''),
+  bg: hex.default('#0B2E5C'),
+  color: hex.default('#FFFFFF'),
+  accent: hex.default('#1565C0'),
+  logo: z.boolean().default(true),
+  animation: z.enum(['fade', 'slide_up', 'pop']).default('slide_up'),
+});
+export type VoiceoverCard = z.infer<typeof CardSchema>;
+
 export const VoiceoverClipSchema = z
   .object({
     id,
-    src_in: z.number().min(0),
-    src_out: z.number().positive(),
+    kind: z.enum(['source', 'card']).default('source'),
+    src_in: z.number().min(0).default(0),
+    src_out: z.number().positive().default(1),
     speed: z.number().min(0.25).max(4).default(1),
     zoom: VoiceoverZoomSchema.default({}),
+    /** When present (≥1), the camera follows these keyframes and `zoom` is ignored. */
+    keyframes: z.array(CameraKeyframeSchema).max(60).default([]),
     /** Dip-from/to-black fades on this clip (seconds). */
     fade_in: z.number().min(0).max(3).default(0),
     fade_out: z.number().min(0).max(3).default(0),
+    /** Transition INTO this clip from the previous one (overlaps both). */
+    transition: TransitionSchema.default({}),
+    card: CardSchema.optional(),
   })
-  .refine((c) => c.src_out - c.src_in >= 0.1, { message: 'clip must be at least 0.1s long' });
+  .refine((c) => c.kind === 'card' || c.src_out - c.src_in >= 0.1, { message: 'clip must be at least 0.1s long' })
+  .refine((c) => c.kind !== 'card' || Boolean(c.card), { message: 'card clip needs card settings' });
 export type VoiceoverClip = z.infer<typeof VoiceoverClipSchema>;
 
 export const VoiceSettingsSchema = z.object({
@@ -77,7 +119,7 @@ export const VoiceBlockSchema = z.object({
   voice_id: z.string().max(64).default(''),
   voice_name: z.string().max(120).optional(),
   /** Which ElevenLabs account the voice lives on: ours, or the user's own key. */
-  voice_source: z.enum(['platform', 'user']).default('platform'),
+  voice_source: z.enum(['platform', 'user', 'workspace']).default('platform'),
   model_id: z.string().max(64).default('eleven_multilingual_v2'),
   settings: VoiceSettingsSchema.default({}),
   volume: z.number().min(0).max(2).default(1),
@@ -89,6 +131,19 @@ export const VoiceBlockSchema = z.object({
   words: z.array(VoiceoverWordSchema).max(2000).default([]),
   /** Text the current audio was generated from — lets the UI flag stale audio. */
   generated_text: z.string().max(5000).nullable().default(null),
+  /** Play only part of the take (seconds into the audio) — used by split / regenerate-selection. */
+  audio_in: z.number().min(0).default(0),
+  audio_out: z.number().min(0).nullable().default(null),
+  /** Previous generations, newest first, for A/B comparison. */
+  takes: z.array(z.object({
+    take_id: z.string().uuid(),
+    audio_url: z.string().url(),
+    audio_duration: z.number().min(0),
+    words: z.array(VoiceoverWordSchema).max(2000).default([]),
+    text: z.string().max(5000),
+    voice_name: z.string().max(120).optional(),
+    created_at: z.string().max(40),
+  })).max(10).default([]),
 });
 export type VoiceBlock = z.infer<typeof VoiceBlockSchema>;
 
@@ -105,23 +160,54 @@ export const TextOverlaySchema = z
     color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#FFFFFF'),
     box: z.boolean().default(true),
     box_color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#0B2E5C'),
-    animation: z.enum(['none', 'fade', 'slide_up', 'pop']).default('fade'),
+    animation: z.enum(['none', 'fade', 'slide_up', 'pop', 'slide_left', 'typewriter']).default('fade'),
+    /** text = plain label · lower_third = title + subtitle bar · callout = label with an arrow to (tx,ty). */
+    kind: z.enum(['text', 'lower_third', 'callout']).default('text'),
+    subtitle: z.string().max(200).default(''),
+    tx: unit.default(0.5),
+    ty: unit.default(0.5),
+    /** Built-in family name or a custom font asset id. */
+    font: z.string().max(80).default('Liberation Sans'),
   })
   .refine((o) => o.end > o.start, { message: 'overlay end must be after start' });
 export type TextOverlay = z.infer<typeof TextOverlaySchema>;
 
+export const ASPECTS = ['source', '16:9', '9:16', '1:1'] as const;
+export type VoiceoverAspect = (typeof ASPECTS)[number];
+
+export const CaptionStyleSchema = z.object({
+  enabled: z.boolean().default(true),
+  style: z.enum(['hormozi', 'tiktok', 'minimal']).default('minimal'),
+  /** false = use the preset; true = use the fields below. */
+  custom: z.boolean().default(false),
+  font: z.string().max(80).default('Liberation Sans'),
+  size: z.number().min(16).max(160).default(52),
+  color: hex.default('#FFFFFF'),
+  highlight_color: hex.default('#FFE500'),
+  words_per_line: z.number().int().min(1).max(12).default(6),
+  position: z.enum(['bottom', 'middle', 'top']).default('bottom'),
+  /** Distance from the top/bottom edge, as a fraction of the frame height. */
+  margin: z.number().min(0).max(0.45).default(0.08),
+  box: z.boolean().default(false),
+  box_color: hex.default('#000000'),
+  box_opacity: unit.default(0.55),
+  uppercase: z.boolean().default(false),
+  bold: z.boolean().default(true),
+  animation: z.enum(['none', 'karaoke', 'pop', 'fade']).default('none'),
+});
+export type VoiceoverCaptionStyle = z.infer<typeof CaptionStyleSchema>;
+
 export const VoiceoverOutputSchema = z.object({
-  aspect: z.enum(['source', '16:9', '9:16', '1:1']).default('source'),
+  aspect: z.enum(ASPECTS).default('source'),
   /** How the recording sits in a canvas of a different shape. */
   fit: z.enum(['blur', 'black', 'cover']).default('blur'),
   /** Filmora captures are usually silent; 0 drops the original track. */
   original_volume: z.number().min(0).max(2).default(0),
-  captions: z
-    .object({
-      enabled: z.boolean().default(true),
-      style: z.enum(['hormozi', 'tiktok', 'minimal']).default('minimal'),
-    })
-    .default({}),
+  captions: CaptionStyleSchema.default({}),
+  /** draft = 720p fast · standard = 1080p · high = up to 4K, slower encode. */
+  quality: z.enum(['draft', 'standard', 'high']).default('standard'),
+  /** Extra shapes rendered in the same job (batch export). */
+  extra_aspects: z.array(z.enum(ASPECTS)).max(3).default([]),
 });
 export type VoiceoverOutput = z.infer<typeof VoiceoverOutputSchema>;
 
@@ -141,42 +227,152 @@ export const VOICEOVER_LIMITS = {
   maxOutputSeconds: 30 * 60,
 } as const;
 
+export const EFFECT_KINDS = ['click', 'spotlight', 'highlight', 'arrow', 'blur'] as const;
+/**
+ * Screen-recording effects, positioned in OUTPUT-frame coordinates (0..1):
+ * click     — ripple ring at (x,y)
+ * spotlight — dims everything except the w×h box centred on (x,y)
+ * highlight — outlined (optionally tinted) box around w×h at (x,y)
+ * arrow     — arrow from (from_x,from_y) to (x,y)
+ * blur      — pixelates/blurs w×h at (x,y) (redact emails, keys, names)
+ */
+export const EffectSchema = z
+  .object({
+    id,
+    kind: z.enum(EFFECT_KINDS),
+    start: z.number().min(0),
+    end: z.number().positive(),
+    x: unit.default(0.5),
+    y: unit.default(0.5),
+    w: z.number().min(0.01).max(1).default(0.2),
+    h: z.number().min(0.01).max(1).default(0.12),
+    from_x: unit.default(0.3),
+    from_y: unit.default(0.3),
+    color: hex.default('#FFD400'),
+    /** spotlight dim / blur strength / ripple size. */
+    intensity: unit.default(0.6),
+  })
+  .refine((e) => e.end > e.start, { message: 'effect end must be after start' });
+export type VoiceoverEffect = z.infer<typeof EffectSchema>;
+
+export const LOUDNESS_TARGETS = { youtube: -14, podcast: -16, broadcast: -23 } as const;
+
+export const VoiceoverAudioSchema = z.object({
+  music: z
+    .object({
+      url: z.string().url(),
+      name: z.string().max(200).default('Music'),
+      volume: z.number().min(0).max(1.5).default(0.25),
+      /** Sidechain-duck the music under narration. */
+      duck: z.boolean().default(true),
+      /** 0 = no ducking, 1 = music nearly silent under voice. */
+      duck_amount: unit.default(0.7),
+      fade_in: z.number().min(0).max(10).default(1.5),
+      fade_out: z.number().min(0).max(10).default(2.5),
+      loop: z.boolean().default(true),
+    })
+    .nullable()
+    .default(null),
+  loudness: z.enum(['youtube', 'podcast', 'broadcast', 'off']).default('youtube'),
+  /** Short fades on every voice block head/tail so cuts never click. */
+  voice_fades: z.boolean().default(true),
+});
+export type VoiceoverAudio = z.infer<typeof VoiceoverAudioSchema>;
+
+export const VoiceoverBrandingSchema = z.object({
+  logo_url: z.string().url().nullable().default(null),
+  logo_position: z.enum(['tl', 'tr', 'bl', 'br']).default('tr'),
+  /** Logo width as a fraction of the frame width. */
+  logo_size: z.number().min(0.03).max(0.4).default(0.1),
+  logo_opacity: unit.default(0.85),
+  /** Visible "AI-generated voice" badge (disclosure). */
+  disclosure_badge: z.boolean().default(false),
+  palette: z.array(hex).max(8).default([]),
+});
+export type VoiceoverBranding = z.infer<typeof VoiceoverBrandingSchema>;
+
+export const FontAssetSchema = z.object({ id, url: z.string().url(), name: z.string().max(120) });
+export type FontAsset = z.infer<typeof FontAssetSchema>;
+
+export const PronunciationSchema = z.object({
+  word: z.string().min(1).max(80),
+  /** Spoken as this text … */
+  alias: z.string().max(120).default(''),
+  /** … or this IPA (wins when both are set; supported by fewer models). */
+  phoneme: z.string().max(120).default(''),
+});
+export type VoiceoverPronunciation = z.infer<typeof PronunciationSchema>;
+
 export const VoiceoverTimelineSchema = z.object({
-  version: z.literal(1).default(1),
+  version: z.union([z.literal(1), z.literal(2)]).default(2),
   clips: z.array(VoiceoverClipSchema).max(VOICEOVER_LIMITS.maxClips).default([]),
   blocks: z.array(VoiceBlockSchema).max(VOICEOVER_LIMITS.maxBlocks).default([]),
   overlays: z.array(TextOverlaySchema).max(VOICEOVER_LIMITS.maxOverlays).default([]),
+  effects: z.array(EffectSchema).max(VOICEOVER_LIMITS.maxOverlays).default([]),
   output: VoiceoverOutputSchema.default({}),
+  audio: VoiceoverAudioSchema.default({}),
+  branding: VoiceoverBrandingSchema.default({}),
+  fonts: z.array(FontAssetSchema).max(10).default([]),
+  pronunciations: z.array(PronunciationSchema).max(300).default([]),
 });
 export type VoiceoverTimeline = z.infer<typeof VoiceoverTimelineSchema>;
 
 // ── Timeline math (shared by preview, quote and render) ────────────────────
 
-export function clipOutputDuration(c: Pick<VoiceoverClip, 'src_in' | 'src_out' | 'speed'>): number {
+export function clipOutputDuration(c: Pick<VoiceoverClip, 'src_in' | 'src_out' | 'speed'> & { kind?: string; card?: { duration: number } }): number {
+  if (c.kind === 'card') return c.card?.duration ?? 3;
   return Math.max(0, c.src_out - c.src_in) / (c.speed || 1);
 }
 
-export function timelineDuration(t: Pick<VoiceoverTimeline, 'clips'>): number {
-  return t.clips.reduce((s, c) => s + clipOutputDuration(c), 0);
+type TimelineClips = { clips: Array<Parameters<typeof clipOutputDuration>[0] & { transition?: VoiceoverTransition }> };
+
+/** Seconds clip i overlaps clip i-1 because of its transition. */
+export function transitionOverlap(t: TimelineClips, i: number): number {
+  if (i <= 0) return 0;
+  const tr = t.clips[i].transition;
+  if (!tr || tr.kind === 'none') return 0;
+  const a = clipOutputDuration(t.clips[i - 1]);
+  const b = clipOutputDuration(t.clips[i]);
+  return Math.max(0, Math.min(tr.duration, a / 2, b / 2));
 }
 
-/** Output time → { clip index, source time }. Null past the end. */
+/** Output-time start of every clip (transitions pull clips earlier). */
+export function clipStarts(t: TimelineClips): number[] {
+  const out: number[] = [];
+  let acc = 0;
+  t.clips.forEach((c, i) => {
+    acc -= transitionOverlap(t, i);
+    out.push(acc);
+    acc += clipOutputDuration(c);
+  });
+  return out;
+}
+
+export function timelineDuration(t: TimelineClips): number {
+  if (!t.clips.length) return 0;
+  const starts = clipStarts(t);
+  const last = t.clips.length - 1;
+  return starts[last] + clipOutputDuration(t.clips[last]);
+}
+
+/**
+ * Output time → { clip index, source time }. Inside a transition the incoming
+ * clip wins (that is what the preview shows). Null past the end. Card clips
+ * report srcT = 0.
+ */
 export function locateOutputTime(
-  t: Pick<VoiceoverTimeline, 'clips'>,
+  t: TimelineClips,
   outT: number,
 ): { index: number; clipStart: number; srcT: number } | null {
-  let acc = 0;
-  for (let i = 0; i < t.clips.length; i++) {
-    const c = t.clips[i];
-    const d = clipOutputDuration(c);
-    if (outT < acc + d || i === t.clips.length - 1) {
-      const local = Math.min(Math.max(0, outT - acc), d);
-      if (outT > acc + d + 1e-6) return null;
-      return { index: i, clipStart: acc, srcT: c.src_in + local * (c.speed || 1) };
-    }
-    acc += d;
-  }
-  return null;
+  if (!t.clips.length) return null;
+  const starts = clipStarts(t);
+  const total = timelineDuration(t);
+  if (outT > total + 1e-6 || outT < 0) return null;
+  let i = t.clips.length - 1;
+  while (i > 0 && outT < starts[i]) i--;
+  const c = t.clips[i];
+  const local = Math.min(Math.max(0, outT - starts[i]), clipOutputDuration(c));
+  return { index: i, clipStart: starts[i], srcT: c.kind === 'card' ? 0 : c.src_in + local * (c.speed || 1) };
 }
 
 /** Captions source: every generated block's words placed on the output timeline. */
@@ -184,7 +380,12 @@ export function timelineWords(t: Pick<VoiceoverTimeline, 'blocks'>): VoiceoverWo
   const out: VoiceoverWord[] = [];
   for (const b of t.blocks) {
     if (!b.audio_url) continue;
-    for (const w of b.words) out.push({ word: w.word, start: b.start + w.start, end: b.start + w.end });
+    const a0 = b.audio_in ?? 0;
+    const a1 = b.audio_out ?? Infinity;
+    for (const w of b.words) {
+      if (w.start < a0 - 0.01 || w.start >= a1) continue;
+      out.push({ word: w.word, start: b.start + w.start - a0, end: b.start + Math.min(w.end, a1) - a0 });
+    }
   }
   return out.sort((a, b) => a.start - b.start);
 }
@@ -202,11 +403,46 @@ export function quoteVoiceoverTtsCredits(chars: number): number {
   return Math.max(VOICEOVER_TTS_MIN_CREDITS, Math.ceil((chars / 1000) * VOICEOVER_TTS_CREDITS_PER_1K_CHARS));
 }
 
-export function quoteVoiceoverRenderCredits(outputSeconds: number): number {
-  return Math.max(
+export const VOICEOVER_QUALITY_MULTIPLIER = { draft: 0.5, standard: 1, high: 2 } as const;
+
+export function quoteVoiceoverRenderCredits(
+  outputSeconds: number,
+  opts?: { quality?: keyof typeof VOICEOVER_QUALITY_MULTIPLIER; formats?: number },
+): number {
+  const perFormat = Math.max(
     VOICEOVER_RENDER_MIN_CREDITS,
-    Math.ceil(outputSeconds / 60) * VOICEOVER_RENDER_CREDITS_PER_MINUTE,
+    Math.ceil(Math.ceil(outputSeconds / 60) * VOICEOVER_RENDER_CREDITS_PER_MINUTE * VOICEOVER_QUALITY_MULTIPLIER[opts?.quality ?? 'standard']),
   );
+  return perFormat * Math.max(1, opts?.formats ?? 1);
+}
+
+/** Every shape a render produces (primary first, de-duplicated). */
+export function renderAspects(o: Pick<VoiceoverOutput, 'aspect' | 'extra_aspects'>): VoiceoverAspect[] {
+  return [...new Set([o.aspect, ...(o.extra_aspects ?? [])])];
+}
+
+/** Caption parameters after applying the preset (when custom = false). */
+export function resolveCaptionStyle(c: VoiceoverCaptionStyle): Omit<VoiceoverCaptionStyle, 'enabled' | 'style' | 'custom'> {
+  if (c.custom) return c;
+  const base = { ...c };
+  if (c.style === 'hormozi') return { ...base, size: 80, color: '#FFFFFF', highlight_color: '#FFFF00', words_per_line: 3, position: 'top', margin: 0.1, box: false, uppercase: true, bold: true, animation: 'karaoke' };
+  if (c.style === 'tiktok') return { ...base, size: 64, color: '#FFFFFF', words_per_line: 5, position: 'bottom', margin: 0.11, box: true, box_color: '#000000', box_opacity: 0.55, uppercase: false, bold: true, animation: 'none' };
+  return { ...base, size: 52, color: '#FFFFFF', words_per_line: 6, position: 'bottom', margin: 0.07, box: false, uppercase: false, bold: false, animation: 'none' };
+}
+
+/** Group caption words into on-screen lines (shared by preview and render). */
+export function captionLines(words: VoiceoverWord[], perLine: number): { start: number; end: number; words: VoiceoverWord[] }[] {
+  const lines: { start: number; end: number; words: VoiceoverWord[] }[] = [];
+  let cur: VoiceoverWord[] = [];
+  const flush = () => { if (cur.length) lines.push({ start: cur[0].start, end: cur[cur.length - 1].end, words: cur }); cur = []; };
+  for (const w of words) {
+    // New line on the word budget, on a pause > 0.6s, or after sentence punctuation.
+    if (cur.length && (cur.length >= perLine || w.start - cur[cur.length - 1].end > 0.6)) flush();
+    cur.push(w);
+    if (/[.!?]$/.test(w.word)) flush();
+  }
+  flush();
+  return lines;
 }
 
 // ── API payloads ───────────────────────────────────────────────────────────
@@ -216,7 +452,7 @@ export const StudioTtsRequestSchema = z.object({
   block_id: id,
   text: z.string().trim().min(1).max(5000),
   voice_id: z.string().min(1).max(64),
-  voice_source: z.enum(['platform', 'user']).default('platform'),
+  voice_source: z.enum(['platform', 'user', 'workspace']).default('platform'),
   model_id: z.string().min(1).max(64).default('eleven_multilingual_v2'),
   settings: VoiceSettingsSchema.default({}),
   /** Neighbouring block text so consecutive blocks keep the same prosody. */
@@ -230,6 +466,20 @@ export const VoiceoverRenderInputSchema = z.object({
   project_id: z.string().uuid(),
   source: VoiceoverSourceSchema,
   timeline: VoiceoverTimelineSchema,
+  /** Provenance written into the MP4 + manifest (AI disclosure). */
+  provenance: z
+    .object({
+      title: z.string().max(200).default(''),
+      voices: z.array(z.object({ voice_id: z.string(), name: z.string().optional(), source: z.string(), consent_id: z.string().nullable().optional() })).max(50).default([]),
+      workspace_id: z.string().uuid().nullable().default(null),
+      approved_by: z.string().nullable().default(null),
+    })
+    .default({}),
+  /** Data-residency region key (STUDIO_STORAGE_REGIONS); null = default bucket. */
+  storage_region: z.string().max(20).nullable().default(null),
+  /** Where to POST a JSON notification when the render finishes. */
+  webhook_url: z.string().url().nullable().default(null),
+  notify_email: z.string().email().nullable().default(null),
 });
 export type VoiceoverRenderInput = z.infer<typeof VoiceoverRenderInputSchema>;
 
@@ -239,12 +489,13 @@ export function validateVoiceoverForRender(input: VoiceoverRenderInput): string[
   const { source, timeline } = input;
   if (timeline.clips.length === 0) errs.push('timeline has no clips');
   timeline.clips.forEach((c, i) => {
-    if (c.src_out > source.duration + 0.05) errs.push(`clip ${i + 1} ends after the source video`);
+    if (c.kind !== 'card' && c.src_out > source.duration + 0.05) errs.push(`clip ${i + 1} ends after the source video`);
   });
   const dur = timelineDuration(timeline);
   if (dur > VOICEOVER_LIMITS.maxOutputSeconds) errs.push('output is longer than 30 minutes');
   timeline.blocks.forEach((b, i) => {
     if (b.text.trim() && !b.audio_url) errs.push(`voice block ${i + 1} has text but no generated audio`);
+    if (b.audio_out !== null && b.audio_out <= b.audio_in) errs.push(`voice block ${i + 1} is trimmed to nothing`);
   });
   return errs;
 }
@@ -254,7 +505,41 @@ export function validateVoiceoverForRender(input: VoiceoverRenderInput): string[
 const smoothstep = (p: number) => p * p * (3 - 2 * p);
 
 /** Zoom factor at `localT` seconds (output time) into a clip. */
-export function zoomAt(clip: Pick<VoiceoverClip, 'src_in' | 'src_out' | 'speed' | 'zoom'>, localT: number): number {
+export function easeValue(e: VoiceoverEasing, p: number): number {
+  const q = Math.min(1, Math.max(0, p));
+  switch (e) {
+    case 'linear': return q;
+    case 'ease_in': return q * q;
+    case 'ease_out': return 1 - (1 - q) * (1 - q);
+    case 'hold': return 0;
+    default: return smoothstep(q);
+  }
+}
+
+/** Camera (zoom + focus point) at `localT`, from keyframes. */
+export function cameraAt(keyframes: CameraKeyframe[], localT: number): { zoom: number; x: number; y: number } {
+  const kf = [...keyframes].sort((a, b) => a.t - b.t);
+  if (!kf.length) return { zoom: 1, x: 0.5, y: 0.5 };
+  if (localT <= kf[0].t) return { zoom: kf[0].zoom, x: kf[0].x, y: kf[0].y };
+  for (let i = 0; i < kf.length - 1; i++) {
+    const a = kf[i];
+    const b = kf[i + 1];
+    if (localT < b.t) {
+      const e = easeValue(a.ease, (localT - a.t) / Math.max(1e-6, b.t - a.t));
+      return { zoom: a.zoom + (b.zoom - a.zoom) * e, x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e };
+    }
+  }
+  const l = kf[kf.length - 1];
+  return { zoom: l.zoom, x: l.x, y: l.y };
+}
+
+/** Full camera state for a clip: keyframes win over the simple zoom mode. */
+export function clipCameraAt(clip: Pick<VoiceoverClip, 'src_in' | 'src_out' | 'speed' | 'zoom' | 'keyframes'> & { kind?: string; card?: { duration: number } }, localT: number): { zoom: number; x: number; y: number } {
+  if (clip.keyframes?.length) return cameraAt(clip.keyframes, localT);
+  return { zoom: zoomAt(clip, localT), x: clip.zoom.x, y: clip.zoom.y };
+}
+
+export function zoomAt(clip: Pick<VoiceoverClip, 'src_in' | 'src_out' | 'speed' | 'zoom'> & { kind?: string; card?: { duration: number } }, localT: number): number {
   const z = clip.zoom;
   if (!z || z.mode === 'none' || z.scale <= 1.001) return 1;
   const d = clipOutputDuration(clip);
@@ -271,4 +556,213 @@ export function zoomWindow(zoom: number, fx: number, fy: number): { x: number; y
   const size = 1 / zoom;
   const clamp = (v: number) => Math.max(0, Math.min(1 - size, v));
   return { x: clamp(fx - size / 2), y: clamp(fy - size / 2), size };
+}
+
+/** Seconds of audio a block actually plays (after audio_in/audio_out trims). */
+export function blockAudioLength(b: Pick<VoiceBlock, 'audio_duration' | 'audio_in' | 'audio_out'>): number {
+  const full = b.audio_duration ?? 0;
+  const end = b.audio_out === null || b.audio_out === undefined ? full : Math.min(b.audio_out, full);
+  return Math.max(0, end - (b.audio_in ?? 0));
+}
+
+// ── Smart-edit suggestions (shared by the editor and automation) ────────────
+
+export interface EditSuggestionLike {
+  id: string;
+  kind: 'focus' | 'speed' | 'cut' | 'split' | 'click';
+  /** Source-recording seconds. */
+  start: number;
+  end: number;
+  x?: number;
+  y?: number;
+  zoom?: number;
+  speed?: number;
+}
+
+const sid = (p: string) => `${p}_${Math.random().toString(36).slice(2, 10)}`;
+
+/** Source time → output time (first source clip that contains it), or null if cut. */
+export function sourceToOutput(t: Pick<VoiceoverTimeline, 'clips'>, srcT: number): { index: number; out: number; local: number } | null {
+  const starts = clipStarts(t);
+  for (let i = 0; i < t.clips.length; i++) {
+    const c = t.clips[i];
+    if (c.kind === 'card') continue;
+    if (srcT >= c.src_in - 1e-6 && srcT < c.src_out) {
+      const local = (srcT - c.src_in) / c.speed;
+      return { index: i, out: starts[i] + local, local };
+    }
+  }
+  return null;
+}
+
+/** Split camera keyframes at a clip-local time; both halves keep the camera continuous. */
+export function splitKeyframes(kf: CameraKeyframe[], at: number): [CameraKeyframe[], CameraKeyframe[]] {
+  if (!kf.length) return [[], []];
+  const sorted = [...kf].sort((a, b) => a.t - b.t);
+  const mid = cameraAt(sorted, at);
+  const easeAt = [...sorted].reverse().find((k) => k.t <= at)?.ease ?? 'ease_in_out';
+  const left = [...sorted.filter((k) => k.t < at - 1e-6), { t: at, ...mid, ease: easeAt }];
+  const right = [{ t: 0, ...mid, ease: easeAt }, ...sorted.filter((k) => k.t > at + 1e-6).map((k) => ({ ...k, t: k.t - at }))];
+  return [left, right];
+}
+
+/** Split the source clip containing srcT at srcT. Returns the new timeline. */
+export function splitAtSource(t: VoiceoverTimeline, srcT: number): VoiceoverTimeline {
+  const hit = sourceToOutput(t, srcT);
+  if (!hit) return t;
+  const c = t.clips[hit.index];
+  if (srcT - c.src_in < 0.1 || c.src_out - srcT < 0.1) return t;
+  const [kl, kr] = splitKeyframes(c.keyframes, hit.local);
+  const left = { ...c, src_out: srcT, fade_out: 0, keyframes: kl };
+  const right = { ...c, id: sid('c'), src_in: srcT, fade_in: 0, keyframes: kr, transition: { kind: 'none' as const, duration: 0.5 } };
+  const clips = [...t.clips];
+  clips.splice(hit.index, 1, left, right);
+  return { ...t, clips };
+}
+
+/** Shift everything on the output timeline after `from` by `delta` seconds. */
+function shiftAfter(t: VoiceoverTimeline, from: number, delta: number): VoiceoverTimeline {
+  const sh = (x: number) => (x >= from ? Math.max(from, x + delta) : x);
+  return {
+    ...t,
+    blocks: t.blocks.map((b) => ({ ...b, start: sh(b.start) })),
+    overlays: t.overlays.map((o) => ({ ...o, start: sh(o.start), end: sh(o.end) })).filter((o) => o.end - o.start > 0.1),
+    effects: t.effects.map((e) => ({ ...e, start: sh(e.start), end: sh(e.end) })).filter((e) => e.end - e.start > 0.05),
+  };
+}
+
+export function applySuggestion(t: VoiceoverTimeline, s: EditSuggestionLike): VoiceoverTimeline {
+  if (s.kind === 'split') return splitAtSource(t, s.start);
+  if (s.kind === 'cut' || s.kind === 'speed') {
+    let next = splitAtSource(splitAtSource(t, s.start), s.end);
+    const a = sourceToOutput(next, s.start + 1e-3);
+    if (!a) return t;
+    const c = next.clips[a.index];
+    if (Math.abs(c.src_in - s.start) > 0.11 && s.start > c.src_in) return t;
+    const before = clipOutputDuration(c);
+    if (s.kind === 'cut') {
+      if (next.clips.length <= 1) return t;
+      const start = clipStarts(next)[a.index];
+      next = { ...next, clips: next.clips.filter((_, i) => i !== a.index) };
+      return shiftAfter(next, start + before, -before);
+    }
+    const speed = Math.max(0.25, Math.min(4, s.speed ?? 2));
+    const after = (c.src_out - c.src_in) / speed;
+    const start = clipStarts(next)[a.index];
+    next = { ...next, clips: next.clips.map((x, i) => (i === a.index ? { ...x, speed } : x)) };
+    return shiftAfter(next, start + before, after - before);
+  }
+  if (s.kind === 'focus') {
+    const a = sourceToOutput(t, s.start);
+    if (!a) return t;
+    const c = t.clips[a.index];
+    const d = clipOutputDuration(c);
+    const t0 = Math.max(0, a.local);
+    const t1 = Math.min(d, (Math.min(s.end, c.src_out) - c.src_in) / c.speed);
+    if (t1 - t0 < 0.5) return t;
+    const z = Math.max(1.1, Math.min(4, s.zoom ?? 1.8));
+    const x = s.x ?? 0.5;
+    const y = s.y ?? 0.5;
+    const ramp = Math.min(0.6, (t1 - t0) / 3);
+    const base = c.keyframes.length ? c.keyframes : [{ t: 0, zoom: 1, x: 0.5, y: 0.5, ease: 'ease_in_out' as const }];
+    const prev = cameraAt(base, t0);
+    const added: CameraKeyframe[] = [
+      { t: t0, ...prev, ease: 'ease_in_out' },
+      { t: t0 + ramp, zoom: z, x, y, ease: 'hold' },
+      { t: Math.max(t0 + ramp, t1 - ramp), zoom: z, x, y, ease: 'ease_in_out' },
+      { t: Math.min(d, t1 + ramp), zoom: 1, x: 0.5, y: 0.5, ease: 'ease_in_out' },
+    ];
+    const kept = base.filter((k) => k.t < t0 - 0.05 || k.t > t1 + ramp + 0.05);
+    const keyframes = [...kept, ...added].sort((p, q) => p.t - q.t).slice(0, 60);
+    return { ...t, clips: t.clips.map((x2, i) => (i === a.index ? { ...x2, keyframes } : x2)) };
+  }
+  if (s.kind === 'click') {
+    const a = sourceToOutput(t, s.start);
+    if (!a || s.x === undefined || s.y === undefined) return t;
+    const cam = clipCameraAt(t.clips[a.index], a.local);
+    const win = zoomWindow(cam.zoom, cam.x, cam.y);
+    const x = (s.x - win.x) / win.size;
+    const y = (s.y - win.y) / win.size;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return t;
+    const effect = EffectSchema.parse({ id: sid('fx'), kind: 'click', start: a.out, end: a.out + 0.7, x, y, color: '#FF3B30', intensity: 0.5 });
+    return { ...t, effects: [...t.effects, effect] };
+  }
+  return t;
+}
+
+/** Apply many suggestions safely: structure (cuts/speed) last-to-first, then camera, then clicks. */
+export function applySuggestions(t: VoiceoverTimeline, suggestions: EditSuggestionLike[], kinds: Array<EditSuggestionLike['kind']>): VoiceoverTimeline {
+  const want = new Set(kinds);
+  let next = t;
+  const structural = suggestions.filter((s) => (s.kind === 'cut' || s.kind === 'speed') && want.has(s.kind)).sort((a, b) => b.start - a.start);
+  for (const s of structural) next = applySuggestion(next, s);
+  for (const s of suggestions.filter((x) => x.kind === 'focus' && want.has('focus'))) next = applySuggestion(next, s);
+  for (const s of suggestions.filter((x) => x.kind === 'click' && want.has('click'))) next = applySuggestion(next, s);
+  return next;
+}
+
+// ── Narration scripts (cue sheet / SRT / plain), shared by editor + automation ──
+
+/** ~150 words/min ≈ 14 characters/s of narration (same pace as the cue sheets). */
+export const NARRATION_CHARS_PER_SECOND = 14;
+
+export interface NarrationCue { start: number | null; text: string }
+
+function parseClockValue(s: string): number | null {
+  const v = s.trim().replace(',', '.');
+  if (!/^(\d+:){1,2}\d+(\.\d+)?$/.test(v)) return null;
+  return v.split(':').map(Number).reduce((acc, p) => acc * 60 + p, 0);
+}
+
+/**
+ * Accepts three shapes:
+ *   1. ElevenLabs cue sheet — "CUE 3  |  start 0:28.5  |  max 9.4s" + text lines
+ *   2. SRT                   — numbered blocks with "00:00:01,000 --> …"
+ *   3. Plain script          — paragraphs separated by blank lines
+ */
+export function parseNarrationScript(raw: string): NarrationCue[] {
+  const text = raw.replace(/\r\n/g, '\n').trim();
+  if (!text) return [];
+  if (/^CUE\s+\d+\s*\|/im.test(text)) {
+    const cues: NarrationCue[] = [];
+    const chunks = text.split(/^(?=CUE\s+\d+\s*\|)/im);
+    for (const ch of chunks) {
+      const m = /^CUE\s+\d+\s*\|\s*start\s+([\d:.,]+)[^\n]*\n([\s\S]*)$/i.exec(ch.trim());
+      if (m && m[2].trim()) cues.push({ start: parseClockValue(m[1]), text: m[2].trim().replace(/\s*\n\s*/g, ' ') });
+    }
+    if (cues.length) return cues;
+  }
+  if (/\d{2}:\d{2}:\d{2}[,.]\d{3}\s*-->/.test(text)) {
+    return text
+      .split(/\n\s*\n/)
+      .map((chunk) => {
+        const lines = chunk.split('\n').map((l) => l.trim()).filter(Boolean);
+        const ti = lines.findIndex((l) => l.includes('-->'));
+        if (ti < 0) return null;
+        return { start: parseClockValue(lines[ti].split('-->')[0]), text: lines.slice(ti + 1).join(' ') };
+      })
+      .filter((c): c is NarrationCue => Boolean(c && c.text));
+  }
+  return text
+    .split(/\n\s*\n/)
+    .map((p) => ({ start: null, text: p.replace(/\s*\n\s*/g, ' ').trim() }))
+    .filter((c) => c.text);
+}
+
+/** Seconds a block occupies: real audio once generated, otherwise an estimate from its text. */
+export function blockPlayLength(b: Pick<VoiceBlock, 'audio_url' | 'audio_duration' | 'audio_in' | 'audio_out' | 'text'>): number {
+  if (b.audio_url && b.audio_duration) return blockAudioLength(b);
+  return Math.max(0.8, b.text.replace(/<[^>]*>/g, '').trim().length / NARRATION_CHARS_PER_SECOND);
+}
+
+/** Push blocks right so none overlaps the one before it (keeps a small breath). */
+export function autoSpaceTimelineBlocks<T extends Pick<VoiceoverTimeline, 'blocks'>>(t: T, gap = 0.25): T {
+  const blocks = [...t.blocks].sort((a, b) => a.start - b.start);
+  let end = 0;
+  const out = blocks.map((b, i) => {
+    const start = i === 0 ? b.start : Math.max(b.start, end + gap);
+    end = start + blockPlayLength(b);
+    return { ...b, start };
+  });
+  return { ...t, blocks: out };
 }

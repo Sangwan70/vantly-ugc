@@ -220,6 +220,29 @@ function LoginForm() {
     window.location.href = `/api/auth/vantly?redirect=${encodeURIComponent(redirectTo)}`;
   }
 
+  // Enterprise SSO (SAML via Supabase Auth). The IdP is looked up from the
+  // email's domain; workspaces can require it (Voiceover Studio → Policies).
+  async function handleSsoLogin() {
+    setError(null);
+    const domain = email.trim().split('@')[1]?.toLowerCase();
+    if (!domain) { setError('Enter your work email first, then choose “Sign in with SSO”.'); return; }
+    setOauthLoading(true);
+    analytics.trackEvent('login_completed', { method: 'sso' });
+    try {
+      const supabase = createClient();
+      const { data, error: ssoError } = await supabase.auth.signInWithSSO({ domain, options: { redirectTo: getOAuthRedirectTo(redirectTo) } });
+      if (ssoError || !data?.url) {
+        setError(ssoError?.message?.includes('No SSO provider') ? `SSO isn't set up for ${domain}. Ask your admin, or sign in with email.` : ssoError?.message ?? 'SSO sign-in failed.');
+        setOauthLoading(false);
+        return;
+      }
+      window.location.href = data.url;
+    } catch {
+      setError('An unexpected error occurred. Please try again.');
+      setOauthLoading(false);
+    }
+  }
+
   // ── OTP screen ───────────────────────────────────────────────────────────
   if (otpSent) {
     return (
@@ -368,6 +391,16 @@ function LoginForm() {
           </div>
         </div>
       </form>
+
+      <button
+        type="button"
+        onClick={handleSsoLogin}
+        disabled={oauthLoading}
+        className="mt-3 w-full text-center text-xs underline disabled:opacity-50"
+        style={{ color: 'var(--cryptix-text-muted)' }}
+      >
+        Sign in with company SSO
+      </button>
 
       <div className="my-7 flex items-center gap-3">
         <div className="h-px flex-1" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }} />

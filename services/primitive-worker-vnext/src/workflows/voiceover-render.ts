@@ -11,7 +11,7 @@ import type {
 const { voiceoverRender } = proxyActivities<PrimitiveActivities>({
   // Long screen recordings render for a while; the activity heartbeats per
   // segment and every few seconds of the final pass.
-  startToCloseTimeout: '60 minutes',
+  startToCloseTimeout: '120 minutes',
   heartbeatTimeout: '3 minutes',
   retry: {
     initialInterval: '10s',

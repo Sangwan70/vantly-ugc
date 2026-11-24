@@ -185,8 +185,12 @@ export function alignmentToWords(alignment: {
   let cur = '';
   let curStart = 0;
   let curEnd = 0;
+  let inTag = false;
   for (let i = 0; i < chars.length; i++) {
     const ch = chars[i];
+    // SSML-style tags (<break time="0.5s" />) are directions, not spoken words.
+    if (ch === '<') { inTag = true; continue; }
+    if (inTag) { if (ch === '>') inTag = false; continue; }
     if (/\s/.test(ch)) {
       if (cur) words.push({ word: cur, start: curStart, end: curEnd });
       cur = '';
@@ -224,6 +228,7 @@ export async function synthesizeElevenLabsWithTimestamps(
     previousText?: string;
     nextText?: string;
     languageCode?: string;
+    dictionaries?: Array<{ pronunciation_dictionary_id: string; version_id: string }>;
   },
 ): Promise<TimedSpeech> {
   const body: Record<string, unknown> = {
@@ -234,6 +239,7 @@ export async function synthesizeElevenLabsWithTimestamps(
   if (args.previousText) body.previous_text = args.previousText;
   if (args.nextText) body.next_text = args.nextText;
   if (args.languageCode) body.language_code = args.languageCode;
+  if (args.dictionaries?.length) body.pronunciation_dictionary_locators = args.dictionaries;
 
   const url = `${ELEVENLABS_API_BASE}/text-to-speech/${encodeURIComponent(args.voiceId)}/with-timestamps?output_format=mp3_44100_128`;
   const resp = await fetch(url, {
@@ -268,4 +274,71 @@ export async function synthesizeElevenLabsWithTimestamps(
 /** CBR fallback when alignment is missing: 128 kbps → 16 000 bytes/s. */
 function estimateMp3Duration(buf: Buffer): number {
   return buf.byteLength / 16_000;
+}
+
+// ── Voice lookup + pronunciation dictionaries ──────────────────────────────
+
+const voiceCache = new Map<string, { at: number; voice: ElevenLabsVoice }>();
+
+export async function getElevenLabsVoice(key: string, voiceId: string): Promise<ElevenLabsVoice> {
+  const ck = `${key.slice(-8)}:${voiceId}`;
+  const hit = voiceCache.get(ck);
+  if (hit && Date.now() - hit.at < 10 * 60_000) return hit.voice;
+  const resp = await fetch(`${ELEVENLABS_API_BASE}/voices/${encodeURIComponent(voiceId)}`, {
+    headers: { 'xi-api-key': key },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!resp.ok) throw new ElevenLabsHttpError(resp.status, `elevenlabs: get voice failed (${resp.status})`);
+  const v = (await resp.json()) as Record<string, unknown>;
+  const voice: ElevenLabsVoice = {
+    voice_id: String(v.voice_id ?? voiceId),
+    name: String(v.name ?? voiceId),
+    preview_url: typeof v.preview_url === 'string' ? v.preview_url : null,
+    category: typeof v.category === 'string' ? v.category : undefined,
+  };
+  voiceCache.set(ck, { at: Date.now(), voice });
+  return voice;
+}
+
+/**
+ * Get (or create once) an ElevenLabs pronunciation dictionary for a rule set,
+ * cached in voiceover_pron_dicts per ElevenLabs account (key fingerprint).
+ */
+export async function ensurePronunciationDictionary(
+  key: string,
+  fingerprint: string,
+  rules: Array<{ word: string; alias: string; phoneme: string }>,
+): Promise<{ pronunciation_dictionary_id: string; version_id: string }> {
+  const { createHash } = await import('node:crypto');
+  const { supabase } = await import('../server.js');
+  const normalized = rules
+    .map((r) => ({ word: r.word.trim(), alias: r.alias.trim(), phoneme: r.phoneme.trim() }))
+    .sort((a, b) => a.word.localeCompare(b.word));
+  const hash = createHash('sha256').update(JSON.stringify(normalized)).digest('hex').slice(0, 32);
+  const { data: cached } = await supabase
+    .from('voiceover_pron_dicts')
+    .select('dictionary_id, version_id')
+    .eq('key_fingerprint', fingerprint)
+    .eq('rules_hash', hash)
+    .maybeSingle();
+  if (cached) return { pronunciation_dictionary_id: cached.dictionary_id as string, version_id: cached.version_id as string };
+
+  const body = {
+    name: `vantly-studio-${hash.slice(0, 12)}`,
+    rules: normalized.map((r) =>
+      r.phoneme
+        ? { type: 'phoneme', string_to_replace: r.word, phoneme: r.phoneme, alphabet: 'ipa' }
+        : { type: 'alias', string_to_replace: r.word, alias: r.alias },
+    ),
+  };
+  const resp = await fetch(`${ELEVENLABS_API_BASE}/pronunciation-dictionaries/add-from-rules`, {
+    method: 'POST',
+    headers: { 'xi-api-key': key, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!resp.ok) throw new ElevenLabsHttpError(resp.status, `elevenlabs: create dictionary failed (${resp.status}) ${(await resp.text().catch(() => '')).slice(0, 200)}`);
+  const j = (await resp.json()) as { id: string; version_id: string };
+  await supabase.from('voiceover_pron_dicts').upsert({ key_fingerprint: fingerprint, rules_hash: hash, dictionary_id: j.id, version_id: j.version_id }, { onConflict: 'key_fingerprint,rules_hash' });
+  return { pronunciation_dictionary_id: j.id, version_id: j.version_id };
 }

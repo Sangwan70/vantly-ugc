@@ -6,13 +6,20 @@
  */
 
 import {
+  EffectSchema,
   VoiceBlockSchema,
   TextOverlaySchema,
+  autoSpaceTimelineBlocks,
+  blockPlayLength,
   clipOutputDuration,
+  clipStarts as schemaClipStarts,
   locateOutputTime,
+  parseNarrationScript,
+  splitKeyframes,
   timelineDuration,
   type VoiceBlock,
   type VoiceoverClip,
+  type VoiceoverEffect,
   type VoiceoverTimeline,
   type TextOverlay,
 } from '@vantly-ugc/schema';
@@ -23,28 +30,28 @@ export const uid = (p: string) => `${p}_${Math.random().toString(36).slice(2, 10
 export const CHARS_PER_SECOND = 14;
 
 export function blockDuration(b: VoiceBlock): number {
-  if (b.audio_url && b.audio_duration) return b.audio_duration;
-  return Math.max(0.8, b.text.trim().length / CHARS_PER_SECOND);
+  return blockPlayLength(b);
 }
 
 export function blockIsStale(b: VoiceBlock): boolean {
   return Boolean(b.audio_url) && b.generated_text !== null && b.generated_text !== b.text;
 }
 
+/** Output-time start of every clip (transitions overlap neighbours). */
 export function clipStarts(t: VoiceoverTimeline): number[] {
-  const out: number[] = [];
-  let acc = 0;
-  for (const c of t.clips) { out.push(acc); acc += clipOutputDuration(c); }
-  return out;
+  return schemaClipStarts(t);
 }
 
 export function splitAt(t: VoiceoverTimeline, outT: number): { timeline: VoiceoverTimeline; newId: string | null } {
   const loc = locateOutputTime(t, outT);
   if (!loc) return { timeline: t, newId: null };
   const c = t.clips[loc.index];
+  if (c.kind === 'card') return { timeline: t, newId: null };
   if (loc.srcT - c.src_in < 0.1 || c.src_out - loc.srcT < 0.1) return { timeline: t, newId: null };
-  const left: VoiceoverClip = { ...c, src_out: loc.srcT, fade_out: 0 };
-  const right: VoiceoverClip = { ...c, id: uid('c'), src_in: loc.srcT, fade_in: 0 };
+  // Keep the camera continuous across the cut.
+  const [kl, kr] = splitKeyframes(c.keyframes, outT - loc.clipStart);
+  const left: VoiceoverClip = { ...c, src_out: loc.srcT, fade_out: 0, keyframes: kl };
+  const right: VoiceoverClip = { ...c, id: uid('c'), src_in: loc.srcT, fade_in: 0, keyframes: kr, transition: { kind: 'none', duration: 0.5 } };
   const clips = [...t.clips];
   clips.splice(loc.index, 1, left, right);
   return { timeline: { ...t, clips }, newId: right.id };
@@ -104,14 +111,7 @@ export function deleteBlock(t: VoiceoverTimeline, id: string): VoiceoverTimeline
 
 /** Push blocks right so none overlaps the one before it (keeps a small breath). */
 export function autoSpaceBlocks(t: VoiceoverTimeline, gap = 0.25): VoiceoverTimeline {
-  const blocks = [...t.blocks].sort((a, b) => a.start - b.start);
-  let end = 0;
-  const out = blocks.map((b, i) => {
-    const start = i === 0 ? b.start : Math.max(b.start, end + gap);
-    end = start + blockDuration(b);
-    return { ...b, start };
-  });
-  return { ...t, blocks: out };
+  return autoSpaceTimelineBlocks(t, gap);
 }
 
 /** Room until the next block (or the end of the video), like the cue sheet's "max". */
@@ -119,6 +119,69 @@ export function blockRoom(t: VoiceoverTimeline, b: VoiceBlock): number {
   const next = t.blocks.filter((x) => x.start > b.start + 1e-6).sort((a, z) => a.start - z.start)[0];
   const limit = next ? next.start : timelineDuration(t);
   return Math.max(0, limit - b.start);
+}
+
+export function newEffect(kind: VoiceoverEffect['kind'], start: number, total: number, at?: { x: number; y: number }): VoiceoverEffect {
+  const s = Math.max(0, Math.min(start, Math.max(0, total - 0.5)));
+  const len = kind === 'click' ? 0.8 : 3;
+  return EffectSchema.parse({ id: uid('fx'), kind, start: s, end: Math.min(total || s + len, s + len), ...(at ?? {}) });
+}
+
+export function updateEffect(t: VoiceoverTimeline, id: string, patch: Partial<VoiceoverEffect>): VoiceoverTimeline {
+  return { ...t, effects: t.effects.map((e) => (e.id === id ? { ...e, ...patch } : e)) };
+}
+
+export function deleteEffect(t: VoiceoverTimeline, id: string): VoiceoverTimeline {
+  return { ...t, effects: t.effects.filter((e) => e.id !== id) };
+}
+
+/**
+ * Split a generated block at a word boundary WITHOUT regenerating: both halves
+ * reference the same take, trimmed with audio_in/audio_out.
+ */
+export function splitBlockAtChar(t: VoiceoverTimeline, id: string, charIndex: number): { timeline: VoiceoverTimeline; rightId: string | null } {
+  const b = t.blocks.find((x) => x.id === id);
+  if (!b) return { timeline: t, rightId: null };
+  const leftText = b.text.slice(0, charIndex).trimEnd();
+  const rightText = b.text.slice(charIndex).trimStart();
+  if (!leftText || !rightText) return { timeline: t, rightId: null };
+  const right: VoiceBlock = { ...b, id: uid('v'), text: rightText, takes: [] };
+  const left: VoiceBlock = { ...b, text: leftText };
+  if (b.audio_url && b.words.length && b.generated_text === b.text) {
+    // Word index where the right half begins (count words in the left text).
+    const nLeft = leftText.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(Boolean).length;
+    const a0 = b.audio_in ?? 0;
+    const visible = b.words.filter((w) => w.start >= a0 - 0.01 && (b.audio_out === null || w.start < b.audio_out));
+    const cut = visible[nLeft];
+    if (cut) {
+      const cutT = Math.max(a0, (visible[nLeft - 1]?.end ?? cut.start) + (cut.start - (visible[nLeft - 1]?.end ?? cut.start)) / 2);
+      left.audio_out = cutT;
+      left.generated_text = leftText;
+      right.audio_in = cutT;
+      right.audio_out = b.audio_out;
+      right.generated_text = rightText;
+      right.start = b.start + (cutT - a0);
+    } else {
+      right.audio_url = null; right.audio_duration = null; right.words = []; right.generated_text = null; right.audio_in = 0; right.audio_out = null;
+      right.start = b.start + blockPlayLength(left) + 0.2;
+    }
+  } else {
+    right.audio_url = null; right.audio_duration = null; right.words = []; right.generated_text = null; right.take_id = null; right.audio_in = 0; right.audio_out = null;
+    left.audio_url = null; left.audio_duration = null; left.words = []; left.generated_text = null; left.take_id = null; left.audio_in = 0; left.audio_out = null;
+    right.start = b.start + blockPlayLength(left) + 0.2;
+  }
+  return { timeline: { ...t, blocks: t.blocks.map((x) => (x.id === id ? left : x)).concat(right).sort((p, q) => p.start - q.start) }, rightId: right.id };
+}
+
+/** Slow down the clips under [start, end) so the video lasts `extra` seconds longer there. */
+export function stretchVideoUnder(t: VoiceoverTimeline, start: number, extra: number): VoiceoverTimeline {
+  const loc = locateOutputTime(t, start);
+  if (!loc || extra <= 0) return t;
+  const c = t.clips[loc.index];
+  if (c.kind === 'card') return t;
+  const d = clipOutputDuration(c);
+  const speed = Math.max(0.25, (c.src_out - c.src_in) / (d + extra));
+  return { ...t, clips: t.clips.map((x, i) => (i === loc.index ? { ...x, speed: Math.round(speed * 100) / 100 } : x)) };
 }
 
 export function newOverlay(start: number, total: number, text = 'Your text'): TextOverlay {
@@ -139,50 +202,14 @@ export function deleteOverlay(t: VoiceoverTimeline, id: string): VoiceoverTimeli
 export interface ImportedCue { start: number | null; text: string }
 
 function parseClock(s: string): number | null {
-  const m = /^(?:(\d+):)?(\d+):(\d+(?:[.,]\d+)?)$/.exec(s.trim()) ?? /^(\d+):(\d+(?:[.,]\d+)?)$/.exec(s.trim());
-  if (!m) return null;
-  const parts = s.trim().replace(',', '.').split(':').map(Number);
-  return parts.reduce((acc, p) => acc * 60 + p, 0);
+  const v = s.trim().replace(',', '.');
+  if (!/^(\d+:){1,2}\d+(\.\d+)?$/.test(v)) return null;
+  return v.split(':').map(Number).reduce((acc, p) => acc * 60 + p, 0);
 }
 
-/**
- * Accepts three shapes:
- *   1. ElevenLabs cue sheet  — "CUE 3  |  start 0:28.5  |  max 9.4s" + text lines
- *   2. SRT                    — numbered blocks with "00:00:01,000 --> ..."
- *   3. Plain script           — paragraphs separated by blank lines
- */
+/** Plain script, ElevenLabs cue sheet or SRT → cues (shared parser with automation). */
 export function parseScript(raw: string): ImportedCue[] {
-  const text = raw.replace(/\r\n/g, '\n').trim();
-  if (!text) return [];
-
-  if (/^CUE\s+\d+\s*\|/im.test(text)) {
-    const cues: ImportedCue[] = [];
-    const re = /^CUE\s+\d+\s*\|\s*start\s+([\d:.,]+)[^\n]*\n([\s\S]*?)(?=^CUE\s+\d+\s*\||$(?![\s\S]))/gim;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(text))) {
-      const body = m[2].trim();
-      if (body) cues.push({ start: parseClock(m[1]), text: body.replace(/\s*\n\s*/g, ' ') });
-    }
-    if (cues.length) return cues;
-  }
-
-  if (/\d{2}:\d{2}:\d{2}[,.]\d{3}\s*-->/.test(text)) {
-    return text
-      .split(/\n\s*\n/)
-      .map((chunk) => {
-        const lines = chunk.split('\n').map((l) => l.trim()).filter(Boolean);
-        const ti = lines.findIndex((l) => l.includes('-->'));
-        if (ti < 0) return null;
-        const start = parseClock(lines[ti].split('-->')[0].trim());
-        return { start, text: lines.slice(ti + 1).join(' ') };
-      })
-      .filter((c): c is ImportedCue => Boolean(c && c.text));
-  }
-
-  return text
-    .split(/\n\s*\n/)
-    .map((p) => ({ start: null, text: p.replace(/\s*\n\s*/g, ' ').trim() }))
-    .filter((c) => c.text);
+  return parseNarrationScript(raw);
 }
 
 /** Lay imported cues on the timeline: explicit starts win, the rest follow back-to-back. */

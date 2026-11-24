@@ -110,3 +110,40 @@ export async function deleteUserProviderKey(userId: string, provider: ProviderKe
     .eq('provider', provider);
   if (error) throw new Error(`user_provider_keys delete failed: ${error.message}`);
 }
+
+// ── Workspace-shared keys (one ElevenLabs account for a whole team) ─────────
+
+export async function getWorkspaceProviderKey(workspaceId: string, provider: ProviderKeyProvider): Promise<{ key: string; last4: string } | null> {
+  if (!providerKeysConfigured()) return null;
+  const { data } = await supabase
+    .from('workspace_provider_keys')
+    .select('ciphertext, last4')
+    .eq('workspace_id', workspaceId)
+    .eq('provider', provider)
+    .maybeSingle();
+  if (!data) return null;
+  try {
+    return { key: decryptSecret(data.ciphertext as string), last4: data.last4 as string };
+  } catch {
+    return null;
+  }
+}
+
+export async function getWorkspaceProviderKeyMeta(workspaceId: string, provider: ProviderKeyProvider): Promise<{ last4: string; updated_at: string } | null> {
+  const { data } = await supabase.from('workspace_provider_keys').select('last4, updated_at').eq('workspace_id', workspaceId).eq('provider', provider).maybeSingle();
+  return data ? { last4: data.last4 as string, updated_at: data.updated_at as string } : null;
+}
+
+export async function saveWorkspaceProviderKey(workspaceId: string, provider: ProviderKeyProvider, key: string, userId: string): Promise<{ last4: string }> {
+  const last4 = key.slice(-4);
+  const { error } = await supabase.from('workspace_provider_keys').upsert(
+    { workspace_id: workspaceId, provider, ciphertext: encryptSecret(key), last4, updated_by: userId, updated_at: new Date().toISOString() },
+    { onConflict: 'workspace_id,provider' },
+  );
+  if (error) throw new Error(`workspace_provider_keys save failed: ${error.message}`);
+  return { last4 };
+}
+
+export async function deleteWorkspaceProviderKey(workspaceId: string, provider: ProviderKeyProvider): Promise<void> {
+  await supabase.from('workspace_provider_keys').delete().eq('workspace_id', workspaceId).eq('provider', provider);
+}

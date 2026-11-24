@@ -409,7 +409,7 @@ function httpsGetPinned(
 /** SSRF-safe fetch of a user URL → Buffer. Validates scheme/port, DNS-resolves +
  *  IP-validates + pins every hop, follows <=5 redirects manually, streams under a
  *  hard byte cap. */
-async function safeFetchToBuffer(
+export async function safeFetchToBuffer(
   rawUrl: string,
   maxBytes: number,
   timeoutMs: number,

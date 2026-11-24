@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { VoiceoverTimeline } from '@vantly-ugc/schema';
-import { studioApi, type StudioProject } from './api';
+import { studioApi, type Role, type StudioProject } from './api';
 
 const HISTORY_LIMIT = 100;
 const SAVE_DEBOUNCE_MS = 1200;
@@ -18,6 +18,8 @@ export type SaveState = 'saved' | 'dirty' | 'saving' | 'error';
 
 export function useStudioProject(id: string) {
   const [project, setProject] = useState<StudioProject | null>(null);
+  const [role, setRole] = useState<Role>('owner');
+  const [workspace, setWorkspace] = useState<{ id: string; name: string; settings: { require_approval: boolean; require_voice_consent: boolean } } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [timeline, setTimelineState] = useState<VoiceoverTimeline | null>(null);
   const [title, setTitleState] = useState('');
@@ -31,9 +33,11 @@ export function useStudioProject(id: string) {
     let cancelled = false;
     studioApi
       .getProject(id)
-      .then(({ project }) => {
+      .then(({ project, role, workspace }) => {
         if (cancelled) return;
         setProject(project);
+        setRole(role);
+        setWorkspace(workspace);
         setTimelineState(project.timeline);
         setTitleState(project.title);
         latest.current = { timeline: project.timeline, title: project.title };
@@ -122,8 +126,27 @@ export function useStudioProject(id: string) {
     scheduleSave();
   }, [scheduleSave]);
 
+  // While the recording is being prepared (proxy, filmstrip, smart-edit analysis), poll for it.
+  const prepareStatus = project?.prepare_status;
+  useEffect(() => {
+    if (prepareStatus !== 'pending' && prepareStatus !== 'running') return;
+    const iv = setInterval(() => {
+      studioApi.getProject(id).then(({ project: fresh }) => {
+        setProject((p) => (p ? { ...p, source: fresh.source, analysis: fresh.analysis, prepare_status: fresh.prepare_status } : p));
+      }).catch(() => {});
+    }, 5000);
+    return () => clearInterval(iv);
+  }, [id, prepareStatus]);
+
+  const patchProject = useCallback((patch: Partial<StudioProject>) => setProject((p) => (p ? { ...p, ...patch } : p)), []);
+  const canEdit = role === 'owner' || role === 'admin' || role === 'editor';
+
   return {
     project,
+    role,
+    workspace,
+    canEdit,
+    patchProject,
     loadError,
     timeline,
     title,

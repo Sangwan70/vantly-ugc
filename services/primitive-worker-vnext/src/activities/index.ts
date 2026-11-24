@@ -21,6 +21,8 @@ import { makeRefundCreditsActivity } from './refund-credits.js';
 import { makeMarkPrimitiveRunFailedActivity } from './mark-run-failed.js';
 import { makeWatermarkActivity } from './watermark.js';
 import { makeVoiceoverRenderActivity } from './voiceover-render.js';
+import { makeVoiceoverPrepareActivity } from './voiceover-prepare.js';
+import { makeVoiceoverAutomateStepActivity } from './voiceover-automate.js';
 
 export function createActivities(cfg: WorkerConfig) {
   return {
@@ -44,6 +46,8 @@ export function createActivities(cfg: WorkerConfig) {
     storybookTake: makeStorybookTakeActivity(cfg),
     applyWatermark: makeWatermarkActivity(cfg),
     voiceoverRender: makeVoiceoverRenderActivity(cfg),
+    voiceoverPrepare: makeVoiceoverPrepareActivity(cfg),
+    voiceoverAutomateStep: makeVoiceoverAutomateStepActivity(cfg),
   };
 }
 

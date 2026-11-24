@@ -34,9 +34,15 @@ export function blockDuration(b: VoiceBlock): number {
 }
 
 export function blockIsStale(b: VoiceBlock): boolean {
-  if (!b.audio_url) return false;
-  if (b.generated_text !== null && b.generated_text !== b.text) return true;
-  return b.generated_voice_id !== null && b.generated_voice_id !== b.voice_id;
+  return blockStaleReason(b) !== null;
+}
+
+/** Why a block's audio no longer matches it. Older blocks have no generated_voice_id (unknown → not stale). */
+export function blockStaleReason(b: VoiceBlock): 'text' | 'voice' | null {
+  if (!b.audio_url) return null;
+  if (b.generated_text != null && b.generated_text !== b.text) return 'text';
+  if (b.generated_voice_id != null && b.generated_voice_id !== b.voice_id) return 'voice';
+  return null;
 }
 
 /** Output-time start of every clip (transitions overlap neighbours). */

@@ -16,7 +16,7 @@ import { AlertTriangle, BookA, Check, ChevronDown, ChevronLeft, ChevronRight, Fi
 import { VoiceSettingsSchema, quoteVoiceoverTtsCredits, type VoiceBlock, type VoiceSettings, type VoiceoverTimeline } from '@vantly-ugc/schema';
 import { studioApi, StudioApiError, uploadDirect, type VoicesResponse, type Voice, type VoiceSource } from '../_lib/api';
 import {
-  autoSpaceBlocks, blockDuration, blockIsStale, blockRoom, deleteBlock, fmtTime, newBlock, parseScript, parseTimeInput, placeCues, splitBlockAtChar, stretchVideoUnder, updateBlock, upsertBlock,
+  autoSpaceBlocks, blockDuration, blockIsStale, blockRoom, blockStaleReason, deleteBlock, fmtTime, newBlock, parseScript, parseTimeInput, placeCues, splitBlockAtChar, stretchVideoUnder, updateBlock, upsertBlock,
 } from '../_lib/ops';
 import { C, Btn, Field, Input, Select, Slider } from './ui';
 
@@ -280,7 +280,8 @@ function BlockCard(p: {
   const dur = blockDuration(b);
   const fits = dur <= p.room + 0.05;
   const over = dur - p.room;
-  const stale = blockIsStale(b);
+  const staleReason = blockStaleReason(b);
+  const stale = staleReason !== null;
   const chars = b.text.trim().length;
   const cost = p.charges && b.voice_source === 'platform' ? quoteVoiceoverTtsCredits(chars) : 0;
   const ratio = p.room > 0 ? dur / p.room : 99;
@@ -310,7 +311,7 @@ function BlockCard(p: {
         <span className="ml-1 inline-flex items-center gap-1" style={{ color: fits ? '#6EE7B7' : '#FCA5A5' }} title="Narration length vs. room before the next block">
           {fits ? <Check className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}{b.audio_url ? '' : '~'}{dur.toFixed(1)}s / {p.room.toFixed(1)}s
         </span>
-        <span className="ml-auto">{!b.audio_url ? 'not generated' : stale ? <span style={{ color: '#FCD34D' }}>text changed</span> : <span style={{ color: '#6EE7B7' }}>generated</span>}</span>
+        <span className="ml-auto">{!b.audio_url ? 'not generated' : stale ? <span style={{ color: '#FCD34D' }}>{staleReason === 'voice' ? 'voice changed' : 'text changed'}</span> : <span style={{ color: '#6EE7B7' }}>generated</span>}</span>
       </div>
 
       <textarea ref={taRef} value={b.text} readOnly={!p.canEdit}

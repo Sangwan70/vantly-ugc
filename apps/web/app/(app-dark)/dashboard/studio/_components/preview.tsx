@@ -31,7 +31,7 @@ import {
   type VoiceoverTimeline,
 } from '@vantly-ugc/schema';
 import { clipStarts } from '../_lib/ops';
-import type { StudioSource } from '../_lib/api';
+import type { Filmstrip, StudioSource } from '../_lib/api';
 
 export interface PickMode {
   /** content = coordinates inside the recording (zoom focus); frame = output frame (effects, text). */
@@ -383,7 +383,7 @@ export function Preview(p: Props) {
           />
         </div>
 
-        {clip?.kind === 'card' && clip.card ? <CardView card={clip.card} t={local} k={k} logo={branding.logo_url} opacity={fade} font={fontCss(timeline.overlays[0]?.font ?? '')} /> : null}
+        {clip?.kind === 'card' && clip.card ? <CardView card={clip.card} t={local} k={k} logo={branding.logo_url} opacity={fade} font={fontCss(timeline.overlays[0]?.font ?? '')} filmstrip={source.filmstrip} /> : null}
 
         {p.pick?.space === 'content' ? (
           <div className="pointer-events-none absolute" style={{ left: content.x, top: content.y, width: content.w, height: content.h, background: 'rgba(167,139,250,0.12)', outline: '2px dashed #A78BFA', outlineOffset: -2 }} />
@@ -416,7 +416,21 @@ export function Preview(p: Props) {
   );
 }
 
-function CardView({ card, t, k, logo, opacity, font }: { card: VoiceoverCard; t: number; k: number; logo: string | null; opacity: number; font: string }) {
+/** Mirrors buildCardSegmentArgs / buildCardAss: solid, gradient or a blurred backdrop still, plus label, shapes and button. */
+function CardView({ card, t, k, logo, opacity, font, filmstrip }: { card: VoiceoverCard; t: number; k: number; logo: string | null; opacity: number; font: string; filmstrip?: Filmstrip }) {
+  const look = card.look ?? 'solid';
+  const wash = `linear-gradient(120deg, ${card.bg} 0%, ${card.bg2 ?? card.bg} 100%)`;
+  const still = (() => {
+    if (look !== 'backdrop' || !filmstrip) return null;
+    const rows = Math.ceil(filmstrip.count / filmstrip.cols);
+    const i = Math.max(0, Math.min(filmstrip.count - 1, Math.floor((card.backdrop_t ?? 0) / filmstrip.interval)));
+    const col = i % filmstrip.cols, row = Math.floor(i / filmstrip.cols);
+    return {
+      backgroundImage: `url(${filmstrip.url})`,
+      backgroundSize: `${filmstrip.cols * 100}% ${rows * 100}%`,
+      backgroundPosition: `${filmstrip.cols > 1 ? (col / (filmstrip.cols - 1)) * 100 : 0}% ${rows > 1 ? (row / (rows - 1)) * 100 : 0}%`,
+    };
+  })();
   const anim = (delay: number) => {
     const p = Math.max(0, Math.min(1, (t - delay) / 0.45));
     if (card.animation === 'pop') return { opacity: Math.min(1, p * 4), transform: `scale(${p < 0.5 ? 0.4 + 1.36 * p : 1.08 - 0.16 * (p - 0.5)})` };
@@ -424,14 +438,24 @@ function CardView({ card, t, k, logo, opacity, font }: { card: VoiceoverCard; t:
     return { opacity: p, transform: `translateY(${(1 - p) * 40 * k}px)` };
   };
   return (
-    <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center" style={{ background: card.bg, opacity, fontFamily: font }}>
+    <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center overflow-hidden text-center" style={{ background: look === 'gradient' ? wash : card.bg, opacity, fontFamily: font }}>
+      {still ? <div className="absolute inset-0" style={{ ...still, filter: 'blur(6px)', transform: 'scale(1.15)' }} /> : null}
+      {still ? <div className="absolute inset-0" style={{ background: wash, opacity: 0.84 }} /> : null}
+      {look !== 'solid' ? (
+        <>
+          <div className="absolute rounded-full" style={{ width: '42vmin', height: '42vmin', right: '-13%', top: '-9%', background: card.accent, opacity: 0.2 }} />
+          <div className="absolute rounded-full" style={{ width: '24vmin', height: '24vmin', left: '-4%', bottom: '-8%', border: `${Math.max(1, 3 * k)}px solid ${card.color}`, opacity: 0.3 }} />
+        </>
+      ) : null}
       {card.logo && logo ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={logo} alt="" style={{ width: '14%', position: 'absolute', top: '16%' }} />
       ) : null}
+      {card.eyebrow ? <div style={{ fontSize: 26 * k, fontWeight: 700, letterSpacing: '0.18em', color: card.accent, marginBottom: 12 * k, ...anim(0) }}>{card.eyebrow.toUpperCase()}</div> : null}
       <div style={{ width: '12%', height: Math.max(2, 8 * k), background: card.accent, marginBottom: 24 * k, ...anim(0) }} />
       {card.title ? <div style={{ fontSize: 84 * k, fontWeight: 700, color: card.color, lineHeight: 1.1, ...anim(0.12) }}>{card.title}</div> : null}
       {card.subtitle ? <div style={{ fontSize: 40 * k, color: card.color, marginTop: 14 * k, ...anim(0.3), opacity: 0.85 * anim(0.3).opacity }}>{card.subtitle}</div> : null}
+      {card.pill ? <div style={{ marginTop: 28 * k, padding: `${10 * k}px ${26 * k}px`, borderRadius: 999, background: card.accent, color: '#FFFFFF', fontSize: 32 * k, fontWeight: 700, ...anim(0.45) }}>{card.pill}</div> : null}
     </div>
   );
 }

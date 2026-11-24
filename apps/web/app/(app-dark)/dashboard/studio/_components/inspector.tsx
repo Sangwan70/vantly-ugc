@@ -179,6 +179,17 @@ function CardEditor({ card, onChange }: { card: VoiceoverCard; onChange: (p: Par
         <Field label="Text"><input type="color" value={card.color} onChange={(e) => onChange({ color: e.target.value.toUpperCase() }, 'cc')} className="h-8 w-full rounded-lg" /></Field>
         <Field label="Accent"><input type="color" value={card.accent} onChange={(e) => onChange({ accent: e.target.value.toUpperCase() }, 'ca')} className="h-8 w-full rounded-lg" /></Field>
       </div>
+      <Field label="Look"><Seg value={card.look ?? 'solid'} onChange={(look) => onChange({ look })} options={[{ value: 'solid', label: 'Solid' }, { value: 'gradient', label: 'Gradient' }, { value: 'backdrop', label: 'Backdrop' }]} /></Field>
+      {card.look && card.look !== 'solid' ? (
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Second colour"><input type="color" value={card.bg2 ?? card.bg} onChange={(e) => onChange({ bg2: e.target.value.toUpperCase() }, 'cb2')} className="h-8 w-full rounded-lg" /></Field>
+          {card.look === 'backdrop' ? (
+            <Field label="Backdrop from (s)"><Input type="number" min={0} step={0.5} value={card.backdrop_t ?? 0} onChange={(e) => onChange({ backdrop_t: Math.max(0, Number(e.target.value) || 0) }, 'cbt')} /></Field>
+          ) : null}
+        </div>
+      ) : null}
+      <Field label="Label above title"><Input value={card.eyebrow ?? ''} maxLength={60} placeholder="e.g. Episode 2" onChange={(e) => onChange({ eyebrow: e.target.value }, 'ce')} /></Field>
+      <Field label="Button"><Input value={card.pill ?? ''} maxLength={80} placeholder="e.g. theskillpedia.com/courses" onChange={(e) => onChange({ pill: e.target.value }, 'cp')} /></Field>
       <Field label="Animation"><Seg value={card.animation} onChange={(animation) => onChange({ animation })} options={[{ value: 'slide_up', label: 'Slide up' }, { value: 'fade', label: 'Fade' }, { value: 'pop', label: 'Pop' }]} /></Field>
       <label className="flex items-center gap-2 text-[11px]" style={{ color: C.muted }}><input type="checkbox" checked={card.logo} onChange={(e) => onChange({ logo: e.target.checked })} /> Show brand logo</label>
     </div>

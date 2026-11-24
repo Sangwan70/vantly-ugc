@@ -71,6 +71,19 @@ export const CardSchema = z.object({
   accent: hex.default('#1565C0'),
   logo: z.boolean().default(true),
   animation: z.enum(['fade', 'slide_up', 'pop']).default('slide_up'),
+  /**
+   * solid = flat bg (as before) · gradient = bg → bg2 diagonal with soft accent
+   * shapes · backdrop = a blurred, slowly panning still of the recording at
+   * `backdrop_t`, tinted bg → bg2.
+   */
+  look: z.enum(['solid', 'gradient', 'backdrop']).default('solid'),
+  bg2: hex.default('#1565C0'),
+  /** Source-recording second the backdrop still is taken from. */
+  backdrop_t: z.number().min(0).default(0),
+  /** Small label above the title, e.g. "EPISODE 2". */
+  eyebrow: z.string().max(60).default(''),
+  /** Call-to-action pill under the subtitle, e.g. "theskillpedia.com/courses". */
+  pill: z.string().max(80).default(''),
 });
 export type VoiceoverCard = z.infer<typeof CardSchema>;
 

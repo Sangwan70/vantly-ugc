@@ -344,15 +344,51 @@ export function buildCardSegmentArgs(p: {
   assPath: string;
   fontsDir?: string;
   logoPath?: string | null;
+  /** The recording — the backdrop look takes a still from it. */
+  srcPath?: string;
   withAudio: boolean;
   outPath: string;
 }): string[] {
   const { canvas, card } = p;
+  const { W, H } = canvas;
+  const D = num(card.duration);
   const useLogo = Boolean(p.logoPath && card.logo);
-  const args = ['-y', '-hide_banner', '-nostdin', '-f', 'lavfi', '-i', `color=c=0x${card.bg.slice(1)}:s=${canvas.W}x${canvas.H}:r=${RENDER_FPS}:d=${num(card.duration)}`];
+  const look = card.look === 'backdrop' && !p.srcPath ? 'gradient' : (card.look ?? 'solid');
+  const args = ['-y', '-hide_banner', '-nostdin', '-f', 'lavfi', '-i', `color=c=0x${card.bg.slice(1)}:s=${W}x${H}:r=${RENDER_FPS}:d=${D}`];
+  let idx = 1;
+  const graph: string[] = [];
+  let bgv = '[0:v]';
+  if (look !== 'solid') {
+    // bg → bg2 diagonal wash, built small and scaled up (smooth, cheap).
+    // Over a backdrop it is a translucent tint; on its own it is opaque.
+    const [r1, g1, b1] = hexRgb(card.bg);
+    const [r2, g2, b2] = hexRgb(card.bg2 ?? card.bg);
+    const mix = (a: number, b: number) => `${a}+(${b - a})*(X/63*0.65+Y/35*0.35)`;
+    const alpha = look === 'backdrop' ? `200+30*(1-X/63)` : '255';
+    args.push('-f', 'lavfi', '-i', `color=c=black:s=64x36:r=${RENDER_FPS}:d=${D}`);
+    const gi = idx++;
+    graph.push(`[${gi}:v]format=rgba,geq=r='${mix(r1, r2)}':g='${mix(g1, g2)}':b='${mix(b1, b2)}':a='${alpha}',scale=${W}:${H}:flags=bicubic[wash]`);
+    if (look === 'backdrop') {
+      args.push('-ss', num(card.backdrop_t ?? 0), '-i', p.srcPath!);
+      const si = idx++;
+      // One still, blurred, panning slowly across the card's length.
+      graph.push(
+        `[${si}:v]trim=end_frame=1,loop=loop=-1:size=1:start=0,setpts=N/(${RENDER_FPS}*TB),fps=${RENDER_FPS},` +
+          `scale=${even(W * 1.15)}:${even(H * 1.15)}:force_original_aspect_ratio=increase,` +
+          `crop=${W}:${H}:x='(iw-ow)*(0.2+0.6*min(t/${D},1))':y='(ih-oh)/2',boxblur=18:2,setsar=1[still]`,
+        `[0:v][still]overlay=shortest=1[base]`,
+        `[base][wash]overlay=format=auto[bgv]`,
+      );
+    } else {
+      graph.push(`[0:v][wash]overlay=format=auto[bgv]`);
+    }
+    bgv = '[bgv]';
+  }
+  const logoIdx = useLogo ? idx++ : -1;
   if (useLogo) args.push('-i', p.logoPath!);
+  const audioIdx = p.withAudio ? idx++ : -1;
   if (p.withAudio) args.push('-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo');
-  const graph: string[] = [`[0:v]ass=filename=${escapeFilterPath(p.assPath)}${p.fontsDir ? `:fontsdir=${escapeFilterPath(p.fontsDir)}` : ''}[t]`];
+  graph.push(`${bgv}ass=filename=${escapeFilterPath(p.assPath)}${p.fontsDir ? `:fontsdir=${escapeFilterPath(p.fontsDir)}` : ''}[t]`);
   let v = '[t]';
   if (useLogo) {
     // On a white plate: most logos are dark artwork that vanishes on a dark card.
@@ -360,14 +396,14 @@ export function buildCardSegmentArgs(p: {
     const pad = even(lw * 0.08);
     const top = canvas.H > canvas.W ? 0.24 : 0.14;
     graph.push(
-      `[1:v]scale=${lw}:-2,format=rgba,pad=iw+${pad * 2}:ih+${pad * 2}:${pad}:${pad}:color=white@0.96[lg]`,
+      `[${logoIdx}:v]scale=${lw}:-2,format=rgba,pad=iw+${pad * 2}:ih+${pad * 2}:${pad}:${pad}:color=white@0.96[lg]`,
       `[t][lg]overlay=(W-w)/2:H*${top}[c]`,
     );
     v = '[c]';
   }
   graph.push(`${v}fade=t=in:st=0:d=0.3,fade=t=out:st=${num(Math.max(0, card.duration - 0.3))}:d=0.3,format=yuv420p[v]`);
   args.push('-filter_complex', graph.join(';'), '-map', '[v]');
-  if (p.withAudio) args.push('-map', `${useLogo ? 2 : 1}:a`, '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2');
+  if (p.withAudio) args.push('-map', `${audioIdx}:a`, '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2');
   args.push('-t', num(card.duration), ...encoderArgs(p.quality, true), '-pix_fmt', 'yuv420p', '-r', String(RENDER_FPS), '-video_track_timescale', '15360', p.outPath);
   return args;
 }
@@ -418,10 +454,36 @@ export function buildCardAss(card: VoiceoverCard, W: number, H: number, fontFami
     return `\\move(${x},${y + dy},${x},${y},${t0},${t0 + 450})\\alpha&HFF&\\t(${t0},${t0 + 350},\\alpha&H00&)`;
   };
   const end = assTime(card.duration);
+  const durMs = Math.round(card.duration * 1000);
   const bar = `m 0 0 l ${barW} 0 l ${barW} ${Math.max(2, Math.round(8 * k))} l 0 ${Math.max(2, Math.round(8 * k))}`;
-  const lines = [`Dialogue: 0,0:00:00.00,${end},Card,,0,0,0,,{\\an5\\p1\\bord0\\shad0\\1c${assColor(card.accent)}&${anim(cx, barY, 0)}}${bar}{\\p0}`];
-  if (card.title) lines.push(`Dialogue: 1,0:00:00.00,${end},Card,,0,0,0,,{\\an5\\fs${ts}\\b1\\1c${assColor(card.color)}&${anim(cx, ty, 120)}}${assText(titleLines.join('\n'))}`);
-  if (card.subtitle) lines.push(`Dialogue: 1,0:00:00.00,${end},Card,,0,0,0,,{\\an5\\fs${ss}\\b0\\1c${assColor(card.color)}&${anim(cx, sy, 300)}}${assText(subLines.join('\n'))}`);
+  const lines: string[] = [];
+  // Soft accent shapes drifting behind the text (gradient / backdrop looks).
+  if (card.look && card.look !== 'solid') {
+    const big = Math.round(Math.min(W, H) * 0.42);
+    const small = Math.round(Math.min(W, H) * 0.22);
+    const drift = Math.round(Math.min(W, H) * 0.05);
+    lines.push(`Dialogue: 0,0:00:00.00,${end},Card,,0,0,0,,{\\an7\\p1\\bord0\\shad0\\1c${assColor(card.accent)}&\\1a&HCC&\\move(${Math.round(W * 0.92)},${Math.round(H * 0.12)},${Math.round(W * 0.92) - drift},${Math.round(H * 0.12) + drift},0,${durMs})}${circlePath(big)}{\\p0}`);
+    lines.push(`Dialogue: 0,0:00:00.00,${end},Card,,0,0,0,,{\\an7\\p1\\bord${Math.max(2, Math.round(3 * k))}\\3c${assColor(card.color)}&\\3a&HB0&\\1a&HFF&\\shad0\\move(${Math.round(W * 0.08)},${Math.round(H * 0.86)},${Math.round(W * 0.08) + drift},${Math.round(H * 0.86) - drift},0,${durMs})}${circlePath(small)}{\\p0}`);
+  }
+  lines.push(`Dialogue: 1,0:00:00.00,${end},Card,,0,0,0,,{\\an5\\p1\\bord0\\shad0\\1c${assColor(card.accent)}&${anim(cx, barY, 0)}}${bar}{\\p0}`);
+  if (card.eyebrow) {
+    const es = Math.round(26 * k * (W < H ? 0.9 : 1));
+    lines.push(`Dialogue: 2,0:00:00.00,${end},Card,,0,0,0,,{\\an5\\fs${es}\\b1\\fsp${Math.round(es * 0.18)}\\1c${assColor(card.accent)}&${anim(cx, barY - Math.round(es * 1.5), 0)}}${assText(card.eyebrow.toUpperCase())}`);
+  }
+  if (card.title) lines.push(`Dialogue: 2,0:00:00.00,${end},Card,,0,0,0,,{\\an5\\fs${ts}\\b1\\1c${assColor(card.color)}&${anim(cx, ty, 120)}}${assText(titleLines.join('\n'))}`);
+  if (card.subtitle) lines.push(`Dialogue: 2,0:00:00.00,${end},Card,,0,0,0,,{\\an5\\fs${ss}\\b0\\1c${assColor(card.color)}&${anim(cx, sy, 300)}}${assText(subLines.join('\n'))}`);
+  if (card.pill) {
+    // A call-to-action button under the subtitle.
+    const ps = Math.round(32 * k * (W < H ? 0.9 : 1));
+    const pw = Math.min(W - 80, Math.round(card.pill.length * ps * 0.56 + ps * 1.6));
+    const ph = Math.round(ps * 2.1);
+    const subH = card.subtitle ? (Math.max(1, subLines.length) * ss * 1.2) / 2 : 0;
+    const py = Math.round((card.subtitle ? sy + subH : ty + titleHalf + ts * 0.6) + ph * 0.5 + 28 * k);
+    const r = Math.round(ph / 2);
+    const shape = `m ${r} 0 l ${pw - r} 0 b ${pw} 0 ${pw} 0 ${pw} ${r} b ${pw} ${ph} ${pw} ${ph} ${pw - r} ${ph} l ${r} ${ph} b 0 ${ph} 0 ${ph} 0 ${r} b 0 0 0 0 ${r} 0`;
+    lines.push(`Dialogue: 3,0:00:00.00,${end},Card,,0,0,0,,{\\an5\\p1\\bord0\\shad0\\1c${assColor(card.accent)}&${anim(cx, py, 450)}}${shape}{\\p0}`);
+    lines.push(`Dialogue: 4,0:00:00.00,${end},Card,,0,0,0,,{\\an5\\fs${ps}\\b1\\1c&HFFFFFF&${anim(cx, py, 450)}}${assText(card.pill)}`);
+  }
   return assHeader(W, H, [`Style: Card,${fontFamily},${ts},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,40,40,40,1`]) + lines.join('\n') + '\n';
 }
 
@@ -676,6 +738,11 @@ export function assTime(t: number): string {
 }
 
 /** #RRGGBB → ASS &HAABBGGRR (AA=00 opaque). */
+function hexRgb(hex: string): [number, number, number] {
+  const h = hex.replace('#', '');
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
 export function assColor(hex: string, alpha = 0): string {
   const h = hex.replace('#', '');
   return `&H${alpha.toString(16).padStart(2, '0')}${h.slice(4, 6)}${h.slice(2, 4)}${h.slice(0, 2)}`.toUpperCase();

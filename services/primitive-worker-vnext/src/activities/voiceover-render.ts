@@ -362,7 +362,7 @@ export function makeVoiceoverRenderActivity(cfg: WorkerConfig) {
           if (raw.kind === 'card' && raw.card) {
             const assPath = join(dir, `card-${i}.ass`);
             await writeFile(assPath, buildCardAss(raw.card, canvas.W, canvas.H, fonts(tl.overlays[0]?.font ?? '')));
-            await runFfmpeg(buildCardSegmentArgs({ card: raw.card, canvas, quality: out.quality, assPath, fontsDir, logoPath, withAudio, outPath: segPaths[i] }), 0);
+            await runFfmpeg(buildCardSegmentArgs({ card: raw.card, canvas, quality: out.quality, assPath, fontsDir, logoPath, srcPath, withAudio, outPath: segPaths[i] }), 0);
           } else {
             const clip = { ...raw, src_out: Math.min(raw.src_out, meta.duration || raw.src_out) };
             await runFfmpeg(buildSegmentArgs({ srcPath, outPath: segPaths[i], clip, canvas, quality: out.quality, withAudio }), 0);

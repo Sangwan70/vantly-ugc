@@ -28,6 +28,7 @@ import {
   buildAudioNormalizeArgs,
   buildCaptionsAss,
   buildCardAss,
+  buildCardSegmentArgs,
   buildFinalArgs,
   buildJoinArgs,
   buildOverlayAss,
@@ -173,6 +174,31 @@ describe('final pass', () => {
   it('emits silence when there is no audio at all', () => {
     const g = fg(buildFinalArgs({ video: { kind: 'concat', path: 'l' }, canvas, quality: 'draft', total: 5, outPath: 'o', voices: [] }));
     expect(g).toContain('anullsrc');
+  });
+});
+
+describe('card looks', () => {
+  const canvas = computeCanvas({ width: 1920, height: 1080 }, { aspect: 'source', fit: 'blur', quality: 'standard' });
+  it('keeps the plain card as before', () => {
+    const g = fg(buildCardSegmentArgs({ card: CardSchema.parse({ title: 'Hi' }), canvas, quality: 'standard', assPath: 'c.ass', withAudio: false, outPath: 'o' }));
+    expect(g).not.toContain('geq');
+    expect(g).toMatch(/^\[0:v\]ass=/);
+  });
+  it('washes bg → bg2 for gradient and blurs a still of the recording for backdrop', () => {
+    const grad = buildCardSegmentArgs({ card: CardSchema.parse({ title: 'Hi', look: 'gradient', bg: '#000000', bg2: '#FFFFFF' }), canvas, quality: 'standard', assPath: 'c.ass', withAudio: true, outPath: 'o' });
+    expect(fg(grad)).toContain("geq=r='0+(255)*");
+    expect(grad).toContain('2:a'); // audio index after the wash input
+    const back = buildCardSegmentArgs({ card: CardSchema.parse({ title: 'Hi', look: 'backdrop', backdrop_t: 45 }), canvas, quality: 'standard', assPath: 'c.ass', srcPath: 'src.mp4', logoPath: 'l.png', withAudio: false, outPath: 'o' });
+    expect(back.join(' ')).toContain('-ss 45 -i src.mp4');
+    expect(fg(back)).toContain('boxblur=18:2');
+    expect(fg(back)).toContain('[3:v]scale='); // logo after color, wash and still
+  });
+  it('draws the label, the button and the drifting shapes', () => {
+    const ass = buildCardAss(CardSchema.parse({ title: 'Open any course', subtitle: 'Next: EP 3', eyebrow: 'Your turn', pill: 'theskillpedia.com/courses', look: 'gradient' }), 1920, 1080);
+    expect(ass).toContain('YOUR TURN');
+    expect(ass).toContain('theskillpedia.com/courses');
+    expect(ass).toContain('\\1a&HCC&'); // the soft accent disc
+    expect(buildCardAss(CardSchema.parse({ title: 'x' }), 1920, 1080)).not.toContain('&HCC&'); // none on solid cards
   });
 });
 

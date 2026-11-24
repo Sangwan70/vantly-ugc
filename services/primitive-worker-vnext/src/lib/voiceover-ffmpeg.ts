@@ -280,15 +280,45 @@ export function buildCardSegmentArgs(p: {
   return args;
 }
 
+/**
+ * Greedy word wrap against an estimated text width. Liberation Sans measured
+ * ~0.43em per char bold and ~0.38em regular on rendered cards (mixed-case
+ * titles incl. spaces); 0.46 / 0.42 leaves a margin so libass never has to
+ * re-wrap on its own.
+ */
+export function wrapForWidth(text: string, fontPx: number, maxWidth: number, bold: boolean): string[] {
+  const per = fontPx * (bold ? 0.46 : 0.42);
+  const maxChars = Math.max(1, Math.floor(maxWidth / per));
+  const out: string[] = [];
+  for (const para of text.split('\n')) {
+    if (para.length <= maxChars) { out.push(para); continue; } // fits: keep it verbatim
+    let line = '';
+    for (const word of para.split(/\s+/).filter(Boolean)) {
+      const next = line ? `${line} ${word}` : word;
+      if (line && next.length > maxChars) { out.push(line); line = word; } else line = next;
+    }
+    out.push(line);
+  }
+  return out;
+}
+
 export function buildCardAss(card: VoiceoverCard, W: number, H: number, fontFamily = 'Liberation Sans'): string {
   const k = H / 1080;
   const ts = Math.round(84 * k * (W < H ? 0.8 : 1));
   const ss = Math.round(40 * k * (W < H ? 0.85 : 1));
   const cx = Math.round(W / 2);
   const ty = Math.round(H * 0.5);
-  const sy = Math.round(H * 0.5 + ts * 0.95);
+  // Wrap explicitly and lay out from the real line counts. libass centres a
+  // multi-line \an5 block on its anchor, so a title that wrapped on its own
+  // (any long title in 9:16) grew down into the subtitle.
+  const maxW = W - 80;
+  const titleLines = card.title ? wrapForWidth(card.title, ts, maxW, true) : [];
+  const subLines = card.subtitle ? wrapForWidth(card.subtitle, ss, maxW, false) : [];
+  const titleHalf = (Math.max(1, titleLines.length) - 1) * ts * 1.1 / 2;
+  // One-line title + one-line subtitle reproduces the original 16:9 layout exactly.
+  const sy = Math.round(ty + titleHalf + ts * 0.95 + (Math.max(1, subLines.length) - 1) * ss * 1.2 / 2);
   const barW = Math.round(W * 0.12);
-  const barY = Math.round(ty - ts * 0.85);
+  const barY = Math.round(ty - titleHalf - ts * 0.85);
   const anim = (x: number, y: number, t0: number) => {
     if (card.animation === 'pop') return `\\pos(${x},${y})\\fscx40\\fscy40\\alpha&HFF&\\t(${t0},${t0 + 1},\\alpha&H00&)\\t(${t0},${t0 + 220},\\fscx108\\fscy108)\\t(${t0 + 220},${t0 + 340},\\fscx100\\fscy100)`;
     if (card.animation === 'fade') return `\\pos(${x},${y})\\alpha&HFF&\\t(${t0},${t0 + 400},\\alpha&H00&)`;
@@ -298,8 +328,8 @@ export function buildCardAss(card: VoiceoverCard, W: number, H: number, fontFami
   const end = assTime(card.duration);
   const bar = `m 0 0 l ${barW} 0 l ${barW} ${Math.max(2, Math.round(8 * k))} l 0 ${Math.max(2, Math.round(8 * k))}`;
   const lines = [`Dialogue: 0,0:00:00.00,${end},Card,,0,0,0,,{\\an5\\p1\\bord0\\shad0\\1c${assColor(card.accent)}&${anim(cx, barY, 0)}}${bar}{\\p0}`];
-  if (card.title) lines.push(`Dialogue: 1,0:00:00.00,${end},Card,,0,0,0,,{\\an5\\fs${ts}\\b1\\1c${assColor(card.color)}&${anim(cx, ty, 120)}}${assText(card.title)}`);
-  if (card.subtitle) lines.push(`Dialogue: 1,0:00:00.00,${end},Card,,0,0,0,,{\\an5\\fs${ss}\\b0\\1c${assColor(card.color)}&${anim(cx, sy, 300)}}${assText(card.subtitle)}`);
+  if (card.title) lines.push(`Dialogue: 1,0:00:00.00,${end},Card,,0,0,0,,{\\an5\\fs${ts}\\b1\\1c${assColor(card.color)}&${anim(cx, ty, 120)}}${assText(titleLines.join('\n'))}`);
+  if (card.subtitle) lines.push(`Dialogue: 1,0:00:00.00,${end},Card,,0,0,0,,{\\an5\\fs${ss}\\b0\\1c${assColor(card.color)}&${anim(cx, sy, 300)}}${assText(subLines.join('\n'))}`);
   return assHeader(W, H, [`Style: Card,${fontFamily},${ts},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,40,40,40,1`]) + lines.join('\n') + '\n';
 }
 

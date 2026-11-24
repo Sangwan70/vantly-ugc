@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CaptionStyleSchema,
+  CardSchema,
   VoiceoverClipSchema,
   VoiceoverTimelineSchema,
   applySuggestions,
@@ -190,6 +191,20 @@ describe('ASS: overlays, effects, captions', () => {
     expect(ass).toContain('m 0 0 l 1920 0 l 1920 1080 l 0 1080 m 768 432');
     expect(ass).toContain('AI-generated voice');
     expect(arrowPath(0, 0, 100, 0, 10).startsWith('m 0 5')).toBe(true);
+  });
+  it('wraps long card titles in narrow frames and moves the subtitle below them', () => {
+    // Regression: "Take the free 1-minute quiz" wrapped by itself in 9:16 and
+    // its second line printed on top of the subtitle.
+    const card = CardSchema.parse({ title: 'Take the free 1-minute quiz', subtitle: 'theskillpedia.com  ·  your personal learning path', animation: 'pop' });
+    const tall = buildCardAss(card, 1080, 1920);
+    expect(tall).toContain('Take the free\\N1-minute quiz');
+    expect(tall).toContain('theskillpedia.com · your personal\\Nlearning path');
+    expect(tall).toContain('\\pos(540,1175)'); // subtitle pushed below the 2-line title
+    // 16:9: both fit on one line, so the layout (and the double spaces) are unchanged.
+    const wide = buildCardAss(card, 1920, 1080);
+    expect(wide).toContain('}Take the free 1-minute quiz');
+    expect(wide).toContain('theskillpedia.com  ·  your personal learning path');
+    expect(wide).toContain('\\pos(960,620)'); // 540 + 0.95 * 84, as before
   });
   it('places effects and overlays inside the recording box, not the whole frame', () => {
     // Regression: in a 9:16 / 1:1 export, clicks and highlights authored on the

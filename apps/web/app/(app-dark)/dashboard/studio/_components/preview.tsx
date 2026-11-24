@@ -296,7 +296,8 @@ export function Preview(p: Props) {
     const style = resolveCaptionStyle(timeline.output.captions);
     return { lines: captionLines(timelineWords(timeline), style.words_per_line), style };
   }, [timeline]);
-  const capLine = captions.lines.find((l) => p.time >= l.start && p.time < l.end + 0.12);
+  // No captions over title cards (the render drops them there too).
+  const capLine = clip?.kind === 'card' ? undefined : captions.lines.find((l) => p.time >= l.start && p.time < l.end + 0.12);
 
   // ── Pointer: pick mode + drag overlays/effects ───────────────────────────
   const drag = useRef<{ kind: 'overlay' | 'effect'; id: string; dx: number; dy: number } | null>(null);

@@ -364,7 +364,7 @@ export function buildCardSegmentArgs(p: {
     const [r1, g1, b1] = hexRgb(card.bg);
     const [r2, g2, b2] = hexRgb(card.bg2 ?? card.bg);
     const mix = (a: number, b: number) => `${a}+(${b - a})*(X/63*0.65+Y/35*0.35)`;
-    const alpha = look === 'backdrop' ? `200+30*(1-X/63)` : '255';
+    const alpha = look === 'backdrop' ? `150+45*(1-X/63)` : '255'; // backdrop: the page must read through
     args.push('-f', 'lavfi', '-i', `color=c=black:s=64x36:r=${RENDER_FPS}:d=${D}`);
     const gi = idx++;
     graph.push(`[${gi}:v]format=rgba,geq=r='${mix(r1, r2)}':g='${mix(g1, g2)}':b='${mix(b1, b2)}':a='${alpha}',scale=${W}:${H}:flags=bicubic[wash]`);

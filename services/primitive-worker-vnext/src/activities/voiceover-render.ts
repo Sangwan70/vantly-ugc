@@ -343,9 +343,11 @@ export function makeVoiceoverRenderActivity(cfg: WorkerConfig) {
       const concurrency = Math.max(1, Math.min(4, Math.floor(cpus().length / 2)));
       const videos: VoiceoverRenderActivityResult['videos'] = [];
       const manifestOutputs: Array<Record<string, unknown>> = [];
-      const words = timelineWords(tl).filter((w) => w.start < total);
       const starts = clipStarts(tl);
       const cardRanges: Array<[number, number]> = tl.clips.flatMap((c, i) => (c.kind === 'card' ? [[starts[i], starts[i] + clipOutputDuration(c)] as [number, number]] : []));
+      // Title cards carry their own text: no captions over them.
+      const onCard = (t: number) => cardRanges.some(([a, b]) => t >= a && t < b);
+      const words = timelineWords(tl).filter((w) => w.start < total && !onCard(w.start));
 
       for (const [ai, aspect] of aspects.entries()) {
         const base = ai / aspects.length;

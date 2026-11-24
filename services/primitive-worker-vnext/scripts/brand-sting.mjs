@@ -65,7 +65,8 @@ if (!firstUrl) {
   const rawPath = join(dir, 'first-raw.png');
   const firstPath = join(dir, 'first.png');
   writeFileSync(rawPath, img.bytes);
-  ff(['-i', rawPath, '-vf', `scale=${W}:-2,crop=${W}:${H}`, '-frames:v', '1', firstPath]);
+  // Fit the whole 3:2 picture inside 16:9 on white (cropping cut off raised hands and feet).
+  ff(['-i', rawPath, '-vf', `scale=-2:${H},pad=${W}:${H}:(ow-iw)/2:0:white`, '-frames:v', '1', firstPath]);
   firstUrl = (await r2UploadVnext(cfg.r2, runId, 'first-frame.png', readFileSync(firstPath), 'image/png')).publicUrl;
 }
 log('first frame', firstUrl);

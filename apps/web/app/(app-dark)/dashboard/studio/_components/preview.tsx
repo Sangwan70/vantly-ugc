@@ -256,6 +256,27 @@ export function Preview(p: Props) {
   const win = zoomWindow(cam.zoom, cam.x, cam.y);
   const k = box.h / 1080;
 
+  // Cover (9:16 / 1:1 from a wider recording): mirror the render — a canvas-shaped
+  // window follows the camera's focus, and the camera only zooms past what that
+  // window already shows. See coverChain() in the worker.
+  const cover = (() => {
+    if (!content.cover) return null;
+    const srcAspect = source.width / source.height;
+    const fw = srcAspect >= box.w / box.h ? box.h * srcAspect : box.w;
+    const fh = fw / srcAspect;
+    const c = Math.max(fw / box.w, fh / box.h);
+    const ox = Math.max(0, Math.min(fw - box.w, cam.x * fw - box.w / 2));
+    const oy = Math.max(0, Math.min(fh - box.h, cam.y * fh - box.h / 2));
+    const zp = Math.max(1, cam.zoom / c);
+    const zx = Math.max(0, Math.min(box.w - box.w / zp, ((cam.x * fw - ox) / box.w) * box.w - box.w / zp / 2));
+    const zy = Math.max(0, Math.min(box.h - box.h / zp, ((cam.y * fh - oy) / box.h) * box.h - box.h / zp / 2));
+    return { fw, fh, ox, oy, zp, zx, zy };
+  })();
+  // Where effects (authored on the recording as the 16:9 cut frames it) land on screen.
+  const fxRect = cover
+    ? { x: (win.x * cover.fw - cover.ox - cover.zx) * cover.zp, y: (win.y * cover.fh - cover.oy - cover.zy) * cover.zp, w: (cover.fw / Math.max(1, cam.zoom)) * cover.zp, h: (cover.fh / Math.max(1, cam.zoom)) * cover.zp }
+    : { x: content.x, y: content.y, w: content.w, h: content.h };
+
   const fade = (() => {
     if (!clip || !loc) return 1;
     const d = clipOutputDuration(clip);
@@ -279,6 +300,12 @@ export function Preview(p: Props) {
 
   // ── Pointer: pick mode + drag overlays/effects ───────────────────────────
   const drag = useRef<{ kind: 'overlay' | 'effect'; id: string; dx: number; dy: number } | null>(null);
+  // Overlays live in frame space (0..1 of the preview); effects in the recording's space.
+  const toSpace = (kind: 'overlay' | 'effect', px: number, py: number, r: DOMRect) => {
+    const sx = px * (box.w / r.width);
+    const sy = py * (box.h / r.height);
+    return kind === 'effect' ? { x: (sx - fxRect.x) / fxRect.w, y: (sy - fxRect.y) / fxRect.h } : { x: sx / box.w, y: sy / box.h };
+  };
   const onPointer = (e: React.PointerEvent) => {
     const r = frameRef.current?.getBoundingClientRect();
     if (!r) return;
@@ -293,8 +320,9 @@ export function Preview(p: Props) {
       return;
     }
     if (drag.current && e.type === 'pointermove') {
-      const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width - drag.current.dx));
-      const y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height - drag.current.dy));
+      const pt = toSpace(drag.current.kind, e.clientX - r.left, e.clientY - r.top, r);
+      const x = Math.max(0, Math.min(1, pt.x - drag.current.dx));
+      const y = Math.max(0, Math.min(1, pt.y - drag.current.dy));
       if (drag.current.kind === 'overlay') p.onOverlayMove(drag.current.id, x, y);
       else p.onEffectMove(drag.current.id, x, y);
     }
@@ -304,7 +332,8 @@ export function Preview(p: Props) {
     e.stopPropagation();
     p.onSelect(kind, id);
     const r = frameRef.current!.getBoundingClientRect();
-    drag.current = { kind, id, dx: (e.clientX - r.left) / r.width - x, dy: (e.clientY - r.top) / r.height - y };
+    const pt = toSpace(kind, e.clientX - r.left, e.clientY - r.top, r);
+    drag.current = { kind, id, dx: pt.x - x, dy: pt.y - y };
   };
 
   const branding = timeline.branding;
@@ -340,11 +369,13 @@ export function Preview(p: Props) {
             onLoadedData={() => { setLoaded(true); drawBg(); }}
             onSeeked={drawBg}
             style={{
-              width: content.w,
-              height: content.h,
-              objectFit: content.cover ? 'cover' : 'fill',
+              width: cover ? cover.fw : content.w,
+              height: cover ? cover.fh : content.h,
+              objectFit: 'fill',
               transformOrigin: '0 0',
-              transform: cam.zoom > 1.0005 ? `scale(${cam.zoom}) translate(${-win.x * content.w}px, ${-win.y * content.h}px)` : undefined,
+              transform: cover
+                ? `scale(${cover.zp}) translate(${-(cover.ox + cover.zx)}px, ${-(cover.oy + cover.zy)}px)`
+                : cam.zoom > 1.0005 ? `scale(${cam.zoom}) translate(${-win.x * content.w}px, ${-win.y * content.h}px)` : undefined,
               display: 'block',
             }}
           />
@@ -356,7 +387,7 @@ export function Preview(p: Props) {
           <div className="pointer-events-none absolute" style={{ left: content.x, top: content.y, width: content.w, height: content.h, background: 'rgba(167,139,250,0.12)', outline: '2px dashed #A78BFA', outlineOffset: -2 }} />
         ) : null}
 
-        <EffectsLayer effects={timeline.effects} t={p.time} w={box.w} h={box.h} selectedId={p.selectedId} onDrag={(e, fx) => startDrag(e, 'effect', fx.id, fx.x, fx.y)} />
+        <EffectsLayer effects={timeline.effects} t={p.time} w={box.w} h={box.h} rect={fxRect} scale={cover ? Math.min(box.w, box.h) / 1080 : undefined} selectedId={p.selectedId} onDrag={(e, fx) => startDrag(e, 'effect', fx.id, fx.x, fx.y)} />
 
         {timeline.overlays.map((o) => (
           <OverlayView key={o.id} o={o} t={p.time} k={k} w={box.w} h={box.h} font={fontCss(o.font)} selected={o.id === p.selectedId} onPointerDown={(e) => startDrag(e, 'overlay', o.id, o.x, o.y)} />
@@ -414,15 +445,15 @@ function arrowPoints(x0: number, y0: number, x1: number, y1: number, width: numb
     .map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
 }
 
-function EffectsLayer({ effects, t, w, h, selectedId, onDrag }: { effects: VoiceoverEffect[]; t: number; w: number; h: number; selectedId: string | null; onDrag: (e: React.PointerEvent, fx: VoiceoverEffect) => void }) {
-  const k = h / 1080;
+function EffectsLayer({ effects, t, w, h, rect, scale, selectedId, onDrag }: { effects: VoiceoverEffect[]; t: number; w: number; h: number; rect: { x: number; y: number; w: number; h: number }; scale?: number; selectedId: string | null; onDrag: (e: React.PointerEvent, fx: VoiceoverEffect) => void }) {
+  const k = scale ?? rect.h / 1080;
   const live = effects.filter((e) => t >= e.start && t < e.end);
   if (!live.length) return null;
   return (
     <>
       {live.filter((e) => e.kind === 'blur').map((e) => (
         <div key={e.id} onPointerDown={(ev) => onDrag(ev, e)} className="absolute"
-          style={{ left: (e.x - e.w / 2) * w, top: (e.y - e.h / 2) * h, width: e.w * w, height: e.h * h, backdropFilter: `blur(${6 + 10 * e.intensity}px)`, WebkitBackdropFilter: `blur(${6 + 10 * e.intensity}px)`, outline: e.id === selectedId ? '1.5px dashed #A78BFA' : undefined, cursor: 'move' }} />
+          style={{ left: rect.x + (e.x - e.w / 2) * rect.w, top: rect.y + (e.y - e.h / 2) * rect.h, width: e.w * rect.w, height: e.h * rect.h, backdropFilter: `blur(${6 + 10 * e.intensity}px)`, WebkitBackdropFilter: `blur(${6 + 10 * e.intensity}px)`, outline: e.id === selectedId ? '1.5px dashed #A78BFA' : undefined, cursor: 'move' }} />
       ))}
       <svg className="absolute inset-0" width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
         {live.map((e) => {
@@ -430,7 +461,7 @@ function EffectsLayer({ effects, t, w, h, selectedId, onDrag }: { effects: Voice
           const dur = e.end - e.start;
           const f = Math.min(0.2, dur / 3);
           const op = Math.max(0, Math.min(1, lt / f, (dur - lt) / f));
-          const x = e.x * w, y = e.y * h, bw = e.w * w, bh = e.h * h;
+          const x = rect.x + e.x * rect.w, y = rect.y + e.y * rect.h, bw = e.w * rect.w, bh = e.h * rect.h;
           const sel = e.id === selectedId;
           if (e.kind === 'click') {
             const p = Math.min(1, lt / 0.6);
@@ -455,7 +486,7 @@ function EffectsLayer({ effects, t, w, h, selectedId, onDrag }: { effects: Voice
             return <rect key={e.id} onPointerDown={(ev) => onDrag(ev, e)} x={x - bw / 2} y={y - bh / 2} width={bw} height={bh} fill={e.color} fillOpacity={0.18 * e.intensity * op} stroke={sel ? '#A78BFA' : e.color} strokeOpacity={op} strokeWidth={Math.max(2, 5 * k)} style={{ cursor: 'move' }} />;
           }
           if (e.kind === 'arrow') {
-            return <polygon key={e.id} onPointerDown={(ev) => onDrag(ev, e)} points={arrowPoints(e.from_x * w, e.from_y * h, x, y, Math.max(6, 12 * k))} fill={e.color} fillOpacity={op} stroke={sel ? '#A78BFA' : '#000'} strokeWidth={Math.max(1, 3 * k)} style={{ cursor: 'move' }} />;
+            return <polygon key={e.id} onPointerDown={(ev) => onDrag(ev, e)} points={arrowPoints(rect.x + e.from_x * rect.w, rect.y + e.from_y * rect.h, x, y, Math.max(6, 12 * k))} fill={e.color} fillOpacity={op} stroke={sel ? '#A78BFA' : '#000'} strokeWidth={Math.max(1, 3 * k)} style={{ cursor: 'move' }} />;
           }
           return null;
         })}

@@ -17,11 +17,13 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
 COPY apps/web/package.json apps/web/
 COPY packages/types/package.json packages/types/
 COPY packages/ui/package.json packages/ui/
+COPY packages/schema/package.json packages/schema/
 
 RUN pnpm install --frozen-lockfile
 
 COPY packages/types/ packages/types/
 COPY packages/ui/ packages/ui/
+COPY packages/schema/ packages/schema/
 COPY apps/web/ apps/web/
 
 # Next bakes the image-optimizer allowlist at build time — everything else is
@@ -31,6 +33,9 @@ ARG NEXT_PUBLIC_IMAGE_HOSTS=""
 ENV NEXT_PUBLIC_IMAGE_HOSTS=$NEXT_PUBLIC_IMAGE_HOSTS
 # Never upload source maps from a downstream build.
 ENV SENTRY_AUTH_TOKEN=""
+
+# Voiceover Studio imports @vantly-ugc/schema at runtime; its dist/ is not committed.
+RUN pnpm --filter @vantly-ugc/schema build
 
 WORKDIR /app/apps/web
 RUN pnpm build

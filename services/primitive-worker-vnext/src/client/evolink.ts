@@ -207,7 +207,8 @@ export async function generatePresenterEvolink(
       ? '@image2 shows the same person talking to camera: use it only for the speaking style and, unless told otherwise, the setting behind them. Never take clothing, accessories, earphones or glasses from @image2 — the presenter always wears exactly what they wear in @image1.'
       : '',
     scene ? `Setting: ${scene}.` : params.styleUrl ? '' : 'Keep the setting and light of @image1, softly blurred behind the presenter.',
-    'The presenter speaks directly to the camera like a warm, confident teacher, mouth lip-synced precisely to the speech in @audio1 from the first word to the last, with small natural nods and eyebrow movement; when the speech ends the mouth closes and the presenter holds a gentle smile.',
+    'The presenter speaks directly to the camera like a warm, confident teacher, mouth lip-synced precisely to the speech in @audio1 from the first word to the last, with small natural nods and eyebrow movement.',
+    "Whenever there is no speech in @audio1 — before the first word, in pauses and after the last word — the lips are fully closed with a gentle closed-mouth smile and no teeth showing. Do not copy the open-mouthed expression of any reference photo; only the speech opens the mouth.",
     aspect === '1:1'
       ? 'Head and shoulders, centred, steady camera, soft even light, natural matte skin. No text, no captions, no logos.'
       : 'Medium close-up, presenter centred with the setting visible around them, steady camera, soft even light, natural matte skin. No text, no captions, no logos.',

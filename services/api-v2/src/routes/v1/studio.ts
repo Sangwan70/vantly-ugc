@@ -253,6 +253,7 @@ export const patchStudioProjectRoute = studioRoute(async (req, res) => {
       ...tl.fonts.map((f) => f.url),
       ...tl.clips.map((c) => (c.kind === 'card' ? c.card?.sting_url : null)),
       tl.presenter.photo_url,
+      tl.presenter.source_url,
       tl.presenter.style_url,
       ...tl.blocks.map((b) => b.presenter?.clip_url),
     ].filter((u): u is string => Boolean(u));

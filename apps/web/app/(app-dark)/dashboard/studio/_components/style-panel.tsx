@@ -99,15 +99,31 @@ function FreeMusicPicker({ projectId, onPicked }: { projectId: string; onPicked:
 }
 
 /** You, lip-synced to your own voice, in a corner circle — the look shared by every presenter take. */
-function PresenterSection({ workspaceId, presenter: pr, update }: { workspaceId: string | null; presenter: VoiceoverPresenter; update: Update }) {
-  const [busy, setBusy] = useState<'photo' | 'style' | null>(null);
+const OUTFIT_POLL_MS = 4000;
+
+function PresenterSection({ projectId, workspaceId, presenter: pr, update }: { projectId: string; workspaceId: string | null; presenter: VoiceoverPresenter; update: Update }) {
+  const [busy, setBusy] = useState<'photo' | 'style' | 'outfit' | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [outfit, setOutfit] = useState(pr.outfit);
+  const dress = async () => {
+    setBusy('outfit'); setErr(null);
+    try {
+      const { run_id, source_url } = await studioApi.dressPresenter(projectId, outfit.trim());
+      for (;;) {
+        await new Promise((r) => setTimeout(r, OUTFIT_POLL_MS));
+        const st = await studioApi.presenterStatus(run_id);
+        if (st.status === 'succeeded' && st.image_url) { set({ photo_url: st.image_url, source_url, outfit: outfit.trim() }); break; }
+        if (st.status === 'failed') { setErr(st.error?.message ?? 'Could not dress the photo.'); break; }
+      }
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
+  };
   const set = (patch: Partial<VoiceoverPresenter>, coalesce?: string) => update((t) => ({ ...t, presenter: { ...t.presenter, ...patch } }), coalesce ? { coalesce } : undefined);
   const upload = async (which: 'photo' | 'style', file: File) => {
     setBusy(which); setErr(null);
     try {
       const url = await uploadDirect(file, { workspaceId });
-      set(which === 'photo' ? { photo_url: url } : { style_url: url });
+      // A new upload is the new original; any outfit starts again from it.
+      set(which === 'photo' ? { photo_url: url, source_url: url, outfit: '' } : { style_url: url });
     } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
   };
   const Thumb = ({ url, label }: { url: string | null; label: string }) => (url
@@ -121,8 +137,21 @@ function PresenterSection({ workspaceId, presenter: pr, update }: { workspaceId:
         <Thumb url={pr.photo_url} label="Your photo" />
         <div className="min-w-0 flex-1 text-[11px]" style={{ color: C.muted }}>Your photo<span className="block text-[10px]" style={{ color: C.faint }}>Front-facing, well lit, head and shoulders</span></div>
         <FilePick accept="image/png,image/jpeg,image/webp" label={pr.photo_url ? 'Replace' : 'Upload'} busy={busy === 'photo'} onFile={(f) => void upload('photo', f)} />
-        {pr.photo_url ? <button type="button" title="Remove" style={{ color: '#FCA5A5' }} onClick={() => set({ photo_url: null })}><Trash2 className="h-3.5 w-3.5" /></button> : null}
+        {pr.photo_url ? <button type="button" title="Remove" style={{ color: '#FCA5A5' }} onClick={() => set({ photo_url: null, source_url: null, outfit: '' })}><Trash2 className="h-3.5 w-3.5" /></button> : null}
       </div>
+      {pr.photo_url ? (
+        <Field label="Outfit" hint={pr.outfit ? `Wearing: ${pr.outfit}. Every take uses this photo, so the outfit stays the same in every episode.` : 'Dress your photo once (free); every take then wears the same outfit.'}>
+          <div className="flex gap-1.5">
+            <Input value={outfit} maxLength={200} placeholder="e.g. a navy blue suit, white shirt and tie" onChange={(e) => setOutfit(e.target.value)} />
+            <Btn small disabled={busy === 'outfit' || outfit.trim().length < 3 || !pr.consent} onClick={() => void dress()}>
+              {busy === 'outfit' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Dress me
+            </Btn>
+          </div>
+          {pr.outfit && pr.source_url && pr.photo_url !== pr.source_url ? (
+            <button type="button" className="mt-1 text-[10px] underline" style={{ color: C.faint }} onClick={() => set({ photo_url: pr.source_url, outfit: '' })}>Back to my original photo</button>
+          ) : null}
+        </Field>
+      ) : null}
       <div className="flex items-center gap-2">
         <Thumb url={pr.style_url} label="Talking frame" />
         <div className="min-w-0 flex-1 text-[11px]" style={{ color: C.muted }}>Talking frame <span style={{ color: C.faint }}>(optional)</span><span className="block text-[10px]" style={{ color: C.faint }}>A still of you speaking to camera: style and setting</span></div>
@@ -253,7 +282,7 @@ export function StylePanel({ projectId, workspaceId, timeline, update, onTimelin
         </label>
       </Section>
 
-      <PresenterSection workspaceId={workspaceId} presenter={timeline.presenter} update={update} />
+      <PresenterSection projectId={projectId} workspaceId={workspaceId} presenter={timeline.presenter} update={update} />
 
       <Section title="Intro & outro">
         <div className="flex gap-1.5">

@@ -52,7 +52,7 @@ const VIDEO_RE = /\.(mp4|webm|mov)(\?|$|#)/i;
 const IMAGE_RE = /\.(png|jpe?g|webp|gif)(\?|$|#)/i;
 
 // Building blocks, not finished work (Studio presenter takes live on their project's voice blocks).
-const HIDDEN_OPS = ['character_create', 'character_sheet', 'character_storyboard', 'voiceover_presenter'];
+const HIDDEN_OPS = ['character_create', 'character_sheet', 'character_storyboard', 'voiceover_presenter', 'voiceover_presenter_look'];
 
 export function GenerationsTab() {
   const [filter, setFilter] = useState<GalleryFilter>('all');

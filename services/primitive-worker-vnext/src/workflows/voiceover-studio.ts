@@ -7,6 +7,7 @@ import type { VoiceoverPrepareActivityInput } from '../activities/voiceover-prep
 import type { VoiceoverAutomateStepInput } from '../activities/voiceover-automate.js';
 import type { VoiceoverRenderActivityResult } from '../activities/voiceover-render.js';
 import type { VoiceoverPresenterActivityInput, VoiceoverPresenterActivityResult } from '../activities/voiceover-presenter.js';
+import type { VoiceoverPresenterLookActivityInput, VoiceoverPresenterLookActivityResult } from '../activities/voiceover-presenter-look.js';
 
 const { voiceoverPrepare } = proxyActivities<PrimitiveActivities>({
   startToCloseTimeout: '60 minutes',
@@ -54,6 +55,12 @@ const { voiceoverPresenter } = proxyActivities<PrimitiveActivities>({
   },
 });
 
+const { voiceoverPresenterLook } = proxyActivities<PrimitiveActivities>({
+  startToCloseTimeout: '10 minutes',
+  heartbeatTimeout: '3 minutes',
+  retry: { initialInterval: '10s', maximumInterval: '60s', backoffCoefficient: 2, maximumAttempts: 3, nonRetryableErrorTypes: ['INVALID_INPUT', 'REFERENCE_URL_NOT_ALLOWED', 'CONTENT_MODERATION'] },
+});
+
 const { refundCredits, markPrimitiveRunFailed } = proxyActivities<PrimitiveActivities>({
   startToCloseTimeout: '30 seconds',
   retry: { initialInterval: '2s', maximumInterval: '20s', backoffCoefficient: 2, maximumAttempts: 5 },
@@ -88,6 +95,17 @@ export async function voiceoverPresenterWorkflow(input: VoiceoverPresenterActivi
     return await voiceoverPresenter(input);
   } catch (err) {
     await refundCredits({ primitive_run_id: input.primitive_run_id });
+    const f = failureInfo(err);
+    await markPrimitiveRunFailed({ primitive_run_id: input.primitive_run_id, error_code: f.code, error_message: f.message });
+    throw err;
+  }
+}
+
+/** Dress the presenter: the user's photo redrawn in an outfit (free). */
+export async function voiceoverPresenterLookWorkflow(input: VoiceoverPresenterLookActivityInput): Promise<VoiceoverPresenterLookActivityResult> {
+  try {
+    return await voiceoverPresenterLook(input);
+  } catch (err) {
     const f = failureInfo(err);
     await markPrimitiveRunFailed({ primitive_run_id: input.primitive_run_id, error_code: f.code, error_message: f.message });
     throw err;

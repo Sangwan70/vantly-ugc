@@ -66,7 +66,8 @@ export type PrimitiveCreditableId =
   | 'lip_sync'
   | 'storybook_take'
   | 'voiceover_render'
-  | 'voiceover_presenter';
+  | 'voiceover_presenter'
+  | 'voiceover_presenter_look';
 
 // Portraits are not charged (free identity prep). Character sheets are charged
 // ONLY when generated standalone (make_character_sheet); inside a video flow the
@@ -112,6 +113,9 @@ export function quotePrimitiveCredits(
     case 'voiceover_presenter':
       // Priced per second — callers pass creditsOverride from quotePresenterCredits().
       return quotePresenterCredits(PRESENTER_MIN_SECONDS);
+    case 'voiceover_presenter_look':
+      // Free identity prep, like portraits.
+      return PORTRAIT_CREDITS;
   }
 }
 

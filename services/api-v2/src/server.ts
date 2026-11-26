@@ -58,7 +58,7 @@ import {
   acceptInviteRoute, patchMemberRoute, deleteMemberRoute, putWorkspaceKeyRoute, deleteWorkspaceKeyRoute, workspaceUsageRoute,
   workspaceAuditRoute, retentionSweepRoute,
 } from './routes/v1/studio-workspaces.js';
-import { startPresenterRoute, getPresenterRoute } from './routes/v1/studio-presenter.js';
+import { startPresenterRoute, startPresenterLookRoute, getPresenterRoute } from './routes/v1/studio-presenter.js';
 import { subtitleRoute } from './routes/v2/subtitle.js';
 import { jobStreamRoute } from './routes/v2/job-stream.js';
 import { generateRoute as looseGenerateRoute, quoteGenerateRoute } from './routes/v2/generate.js';
@@ -1013,6 +1013,7 @@ app.patch('/v1/studio/comments/:comment_id', readLimiter, authMiddleware, patchC
 app.delete('/v1/studio/comments/:comment_id', readLimiter, authMiddleware, deleteCommentRoute);
 app.get('/v1/studio/renders/:run_id', readLimiter, authMiddleware, getStudioRenderRoute);
 app.post('/v1/studio/projects/:id/presenter', generateLimiter, authMiddleware, startPresenterRoute);
+app.post('/v1/studio/projects/:id/presenter/look', generateLimiter, authMiddleware, startPresenterLookRoute);
 app.get('/v1/studio/presenter/:run_id', readLimiter, authMiddleware, getPresenterRoute);
 app.post('/v1/studio/uploads', generateLimiter, authMiddleware, startStudioUploadRoute);
 app.post('/v1/studio/uploads/complete', generateLimiter, authMiddleware, completeStudioUploadRoute);

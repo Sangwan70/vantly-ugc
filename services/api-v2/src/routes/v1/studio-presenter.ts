@@ -6,7 +6,8 @@
  *
  *   POST /v1/studio/projects/:id/presenter   start takes for blocks (already-made clips are reused, not re-bought,
  *                                            unless `remake` asks for a fresh take)
- *   GET  /v1/studio/presenter/:run_id        status + clip of one take
+ *   POST /v1/studio/projects/:id/presenter/look   dress the presenter photo in an outfit (free)
+ *   GET  /v1/studio/presenter/:run_id        status + clip of one take (or the dressed photo)
  *
  * The editor writes the returned run_id onto the block, polls, and fills
  * block.presenter.clip_url / clip_key when the take finishes, so a take is only
@@ -22,6 +23,7 @@ import {
   presenterFrame,
   presenterTakeKey,
   quotePresenterCredits,
+  type VoiceoverPresenterLookInput,
   type VoiceoverPresenterTakeInput,
 } from '@vantly-ugc/schema';
 import { supabase } from '../../server.js';
@@ -111,6 +113,37 @@ export const startPresenterRoute = studioRoute(async (req, res) => {
   res.status(202).json({ takes, cached, credits });
 });
 
+const LookBodySchema = z.object({ outfit: z.string().trim().min(3).max(200) });
+
+export const startPresenterLookRoute = studioRoute(async (req, res) => {
+  const body = LookBodySchema.safeParse(req.body);
+  if (!body.success) throw new StudioError(400, 'INVALID_INPUT', 'Describe the outfit, e.g. "a navy blue suit, white shirt and tie"');
+  const { project, ws } = await requireProject(req, String(req.params.id), 'edit');
+  const look = VoiceoverTimelineSchema.parse(project.timeline ?? {}).presenter;
+  const source = look.source_url ?? look.photo_url;
+  if (!source) throw new StudioError(400, 'NO_PHOTO', 'Upload your photo first.');
+  if (!look.consent) throw new StudioError(400, 'CONSENT_REQUIRED', 'Confirm the presenter consent first.');
+  if (!isStudioHosted(source)) throw new StudioError(400, 'INVALID_INPUT', 'Presenter photos must be uploaded through Studio');
+  const input: VoiceoverPresenterLookInput = {
+    project_id: project.id,
+    source_url: source,
+    outfit: body.data.outfit,
+    scene: look.scene,
+    storage_region: project.storage_region ?? null,
+    workspace_id: ws?.id ?? null,
+  };
+  const runId = randomUUID();
+  const { error: insErr } = await supabase.from('primitive_runs').insert({ id: runId, user_id: uid(req), primitive_id: 'voiceover_presenter_look', status: 'submitted', input });
+  if (insErr) throw new StudioError(500, 'DATABASE_ERROR', insErr.message);
+  try {
+    await startStudioWorkflow('voiceoverPresenterLookWorkflow', `voiceover_presenter_look-${runId}`, [{ primitive_run_id: runId, user_id: uid(req), input }]);
+  } catch (err) {
+    await supabase.from('primitive_runs').update({ status: 'failed', error_code: 'DISPATCH_FAILED', error_message: (err as Error).message, finished_at: new Date().toISOString() }).eq('id', runId);
+    throw new StudioError(502, 'DISPATCH_FAILED', 'Could not start. Try again.');
+  }
+  res.status(202).json({ run_id: runId, source_url: source });
+});
+
 export const getPresenterRoute = studioRoute(async (req, res) => {
   const runId = String(req.params.run_id ?? '');
   if (!isUuid(runId)) throw new StudioError(400, 'INVALID_INPUT', 'invalid run id');
@@ -118,7 +151,7 @@ export const getPresenterRoute = studioRoute(async (req, res) => {
     .from('primitive_runs')
     .select('id, user_id, status, error_code, error_message, input, primitive_artifacts(url, kind)')
     .eq('id', runId)
-    .eq('primitive_id', 'voiceover_presenter')
+    .in('primitive_id', ['voiceover_presenter', 'voiceover_presenter_look'])
     .maybeSingle();
   if (error) throw new StudioError(500, 'DATABASE_ERROR', error.message);
   if (!run) throw new StudioError(404, 'NOT_FOUND', 'Presenter take not found');
@@ -127,13 +160,16 @@ export const getPresenterRoute = studioRoute(async (req, res) => {
     if (!input.project_id) throw new StudioError(404, 'NOT_FOUND', 'Presenter take not found');
     await requireProject(req, input.project_id, 'view');
   }
-  const clip = ((run.primitive_artifacts as Array<{ url: string; kind: string }> | null) ?? []).find((a) => a.kind === 'voiceover_presenter');
+  const arts = (run.primitive_artifacts as Array<{ url: string; kind: string }> | null) ?? [];
+  const clip = arts.find((a) => a.kind === 'voiceover_presenter');
+  const image = arts.find((a) => a.kind === 'voiceover_presenter_look');
   res.json({
     run_id: run.id,
     status: run.status,
     block_id: input.block_id ?? null,
     clip_key: input.clip_key ?? null,
     clip_url: run.status === 'succeeded' ? clip?.url ?? null : null,
+    image_url: run.status === 'succeeded' ? image?.url ?? null : null,
     error: run.status === 'failed' ? { code: run.error_code, message: run.error_message } : null,
   });
 });

@@ -324,8 +324,12 @@ export type VoiceoverBranding = z.infer<typeof VoiceoverBrandingSchema>;
 
 export const PRESENTER_CORNERS = ['auto', 'tl', 'tr', 'bl', 'br'] as const;
 export const VoiceoverPresenterSchema = z.object({
-  /** Your photo: face, glasses, clothes. Uploaded through Studio. */
+  /** The presenter photo every take is made from: your upload, or your upload dressed in `outfit`. */
   photo_url: z.string().url().nullable().default(null),
+  /** Your original upload, kept so a new outfit always starts from the real photo. */
+  source_url: z.string().url().nullable().default(null),
+  /** What you're wearing in photo_url when it was dressed ("a navy blue suit, white shirt and tie"). */
+  outfit: z.string().max(200).default(''),
   /** Optional second reference — a frame of you talking (speaking style, setting). */
   style_url: z.string().url().nullable().default(null),
   /** Where you are, for the take ("a bright home office"). Empty = the photo's own setting. */
@@ -702,6 +706,18 @@ export const VoiceoverPresenterTakeInputSchema = z.object({
   workspace_id: z.string().uuid().nullable().default(null),
 });
 export type VoiceoverPresenterTakeInput = z.infer<typeof VoiceoverPresenterTakeInputSchema>;
+
+/** Worker input for dressing the presenter photo (api-v2 → voiceoverPresenterLookWorkflow). */
+export const VoiceoverPresenterLookInputSchema = z.object({
+  project_id: z.string().uuid(),
+  /** The original upload (never a previous outfit, so the face doesn't drift). */
+  source_url: z.string().url(),
+  outfit: z.string().trim().min(3).max(200),
+  scene: z.string().max(200).default(''),
+  storage_region: z.string().max(20).nullable().default(null),
+  workspace_id: z.string().uuid().nullable().default(null),
+});
+export type VoiceoverPresenterLookInput = z.infer<typeof VoiceoverPresenterLookInputSchema>;
 
 // ── Smart-edit suggestions (shared by the editor and automation) ────────────
 

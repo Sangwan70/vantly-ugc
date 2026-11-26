@@ -136,7 +136,9 @@ export const studioApi = {
   startPresenter: (id: string, block_ids: string[], remake = false) =>
     call<{ takes: Array<{ block_id: string; run_id: string; clip_key: string; credits: number }>; cached: Array<{ block_id: string; clip_url: string; clip_key: string }>; credits: number }>(`projects/${id}/presenter`, { method: 'POST', body: { block_ids, remake } }),
   presenterStatus: (runId: string) =>
-    call<{ run_id: string; status: string; block_id: string | null; clip_key: string | null; clip_url: string | null; error: { code: string; message: string } | null }>(`presenter/${runId}`),
+    call<{ run_id: string; status: string; block_id: string | null; clip_key: string | null; clip_url: string | null; image_url: string | null; error: { code: string; message: string } | null }>(`presenter/${runId}`),
+  /** Redraw the presenter photo in an outfit; poll presenterStatus for image_url. */
+  dressPresenter: (id: string, outfit: string) => call<{ run_id: string; source_url: string }>(`projects/${id}/presenter/look`, { method: 'POST', body: { outfit } }),
   shorten: (body: { text: string; target_seconds: number; language?: string }) => call<{ text: string }>('assist/shorten', { method: 'POST', body }),
   localize: (id: string, body: { language: string; language_name: string; voice_id?: string; voice_name?: string; voice_source?: VoiceSource; translate_overlays?: boolean }) =>
     call<{ project: { id: string; title: string } }>(`projects/${id}/localize`, { method: 'POST', body }),

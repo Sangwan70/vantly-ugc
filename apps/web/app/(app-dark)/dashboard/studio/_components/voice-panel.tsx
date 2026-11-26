@@ -140,13 +140,13 @@ export function VoicePanel(p: Props) {
   const presenterTodoCredits = presenterTodo.reduce((s, b) => s + quotePresenterCredits(blockAudioLength(b)), 0);
   const making = blocks.filter((b) => b.presenter?.run_id).map((b) => `${b.id}:${b.presenter!.run_id}`).join(',');
 
-  async function makePresenter(ids: string[]) {
+  async function makePresenter(ids: string[], remake = false) {
     if (!ids.length) return;
     setPresenterBusy(true);
     setPresenterErr((e) => { const n = { ...e }; ids.forEach((i) => delete n[i]); return n; });
     try {
       await p.beforePresenter?.();
-      const r = await studioApi.startPresenter(p.projectId, ids);
+      const r = await studioApi.startPresenter(p.projectId, ids, remake);
       const run = new Map(r.takes.map((t) => [t.block_id, t.run_id]));
       const done = new Map(r.cached.map((c) => [c.block_id, c]));
       p.update((t) => ({
@@ -292,7 +292,7 @@ export function VoicePanel(p: Props) {
             presenterError={presenterErr[b.id] ?? null}
             presenterBusy={presenterBusy}
             onPresenterToggle={(on) => p.update((t) => updateBlock(t, b.id, { presenter: { clip_url: null, clip_key: null, run_id: null, ...b.presenter, on } }))}
-            onMakePresenter={() => void makePresenter([b.id])}
+            onMakePresenter={(remake) => void makePresenter([b.id], remake)}
           />
         ))}
       </div>
@@ -352,7 +352,7 @@ function BlockCard(p: {
   onGenerate: (override?: VoiceBlock) => void; onSeek: () => void; onPlay: () => void; onSplit: (at: number) => void;
   onRegenerateSelection: (s: number, e: number) => void; onStretchVideo: (extra: number) => void; onApplyVoiceToAll: () => void;
   presenter: { state: PresenterState; problem: string | null }; presenterError: string | null; presenterBusy: boolean;
-  onPresenterToggle: (on: boolean) => void; onMakePresenter: () => void;
+  onPresenterToggle: (on: boolean) => void; onMakePresenter: (remake?: boolean) => void;
 }) {
   const { b } = p;
   const [showSettings, setShowSettings] = useState(false);
@@ -462,7 +462,13 @@ function BlockCard(p: {
           </label>
           {p.presenter.state === 'blocked' ? <span style={{ color: '#FCD34D' }}>{p.presenter.problem}</span> : null}
           {p.presenter.state === 'making' ? <span className="inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> making (2–6 min)</span> : null}
-          {p.presenter.state === 'ready' ? <span style={{ color: '#6EE7B7' }}>ready</span> : null}
+          {p.presenter.state === 'ready' ? (
+            <>
+              <span style={{ color: '#6EE7B7' }}>ready</span>
+              <button type="button" disabled={p.presenterBusy} className="ml-auto underline disabled:opacity-40" title={`Not happy with this take? Make a new one${p.charges ? ` (${quotePresenterCredits(blockAudioLength(b))} cr)` : ''}`}
+                onClick={(e) => { e.stopPropagation(); p.onMakePresenter(true); }}>Remake</button>
+            </>
+          ) : null}
           {p.presenter.state === 'todo' ? (
             <span className="ml-auto">
               <Btn small primary disabled={p.presenterBusy} onClick={(e) => { e.stopPropagation(); p.onMakePresenter(); }}>

@@ -203,7 +203,9 @@ export async function generatePresenterEvolink(
   const scene = params.scene?.trim();
   const prompt = [
     "@image1 is the presenter's face and current look: keep his or her exact identity, hair, glasses, facial hair and clothing in every frame.",
-    params.styleUrl ? '@image2 shows the same person talking to camera: copy that natural speaking style and, unless told otherwise, that setting.' : '',
+    params.styleUrl
+      ? '@image2 shows the same person talking to camera: use it only for the speaking style and, unless told otherwise, the setting behind them. Never take clothing, accessories, earphones or glasses from @image2 — the presenter always wears exactly what they wear in @image1.'
+      : '',
     scene ? `Setting: ${scene}.` : params.styleUrl ? '' : 'Keep the setting and light of @image1, softly blurred behind the presenter.',
     'The presenter speaks directly to the camera like a warm, confident teacher, mouth lip-synced precisely to the speech in @audio1 from the first word to the last, with small natural nods and eyebrow movement; when the speech ends the mouth closes and the presenter holds a gentle smile.',
     aspect === '1:1'

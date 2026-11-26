@@ -133,8 +133,8 @@ export const studioApi = {
   render: (id: string, body: { notify_email?: string | null } = {}) => call<{ run_id: string; credits: number }>(`projects/${id}/render`, { method: 'POST', body }),
   renderStatus: (runId: string) => call<RenderStatus>(`renders/${runId}`),
   /** Start presenter takes for blocks; blocks whose clip is already made come back in `cached`. */
-  startPresenter: (id: string, block_ids: string[]) =>
-    call<{ takes: Array<{ block_id: string; run_id: string; clip_key: string; credits: number }>; cached: Array<{ block_id: string; clip_url: string; clip_key: string }>; credits: number }>(`projects/${id}/presenter`, { method: 'POST', body: { block_ids } }),
+  startPresenter: (id: string, block_ids: string[], remake = false) =>
+    call<{ takes: Array<{ block_id: string; run_id: string; clip_key: string; credits: number }>; cached: Array<{ block_id: string; clip_url: string; clip_key: string }>; credits: number }>(`projects/${id}/presenter`, { method: 'POST', body: { block_ids, remake } }),
   presenterStatus: (runId: string) =>
     call<{ run_id: string; status: string; block_id: string | null; clip_key: string | null; clip_url: string | null; error: { code: string; message: string } | null }>(`presenter/${runId}`),
   shorten: (body: { text: string; target_seconds: number; language?: string }) => call<{ text: string }>('assist/shorten', { method: 'POST', body }),

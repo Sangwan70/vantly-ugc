@@ -4,7 +4,8 @@
  * Voiceover Studio — presenter takes: the user, from their own photo, lip-synced
  * to a voice block and shown in a corner circle by the render.
  *
- *   POST /v1/studio/projects/:id/presenter   start takes for blocks (already-made clips are reused, not re-bought)
+ *   POST /v1/studio/projects/:id/presenter   start takes for blocks (already-made clips are reused, not re-bought,
+ *                                            unless `remake` asks for a fresh take)
  *   GET  /v1/studio/presenter/:run_id        status + clip of one take
  *
  * The editor writes the returned run_id onto the block, polls, and fills
@@ -30,7 +31,11 @@ import { assertBalance, chargesUser, startStudioWorkflow } from './studio.js';
 
 const uid = (req: unknown) => (req as { userId: string }).userId;
 
-const StartBodySchema = z.object({ block_ids: z.array(z.string().min(1).max(64)).min(1).max(40) });
+const StartBodySchema = z.object({
+  block_ids: z.array(z.string().min(1).max(64)).min(1).max(40),
+  /** Make a fresh take even when this block already has one (e.g. the last take came out wrong). */
+  remake: z.boolean().default(false),
+});
 
 export const startPresenterRoute = studioRoute(async (req, res) => {
   const body = StartBodySchema.safeParse(req.body);
@@ -52,7 +57,7 @@ export const startPresenterRoute = studioRoute(async (req, res) => {
     if (!isStudioHosted(b.audio_url!)) throw new StudioError(400, 'INVALID_INPUT', 'voice audio is not hosted');
     const frame = presenterFrame(tl, b);
     const key = presenterTakeKey(b, look, frame)!;
-    if (b.presenter?.clip_url && b.presenter.clip_key === key) {
+    if (!body.data.remake && b.presenter?.clip_url && b.presenter.clip_key === key) {
       cached.push({ block_id: b.id, clip_url: b.presenter.clip_url, clip_key: key });
       continue;
     }

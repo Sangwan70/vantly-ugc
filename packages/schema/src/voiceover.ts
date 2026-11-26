@@ -638,13 +638,26 @@ export function blockAudioLength(b: Pick<VoiceBlock, 'audio_duration' | 'audio_i
 
 // ── Presenter (shared by the editor, api-v2 and the render) ─────────────────
 
-type PresenterBlock = Pick<VoiceBlock, 'take_id' | 'audio_url' | 'audio_duration' | 'audio_in' | 'audio_out' | 'presenter'>;
+type PresenterBlock = Pick<VoiceBlock, 'start' | 'take_id' | 'audio_url' | 'audio_duration' | 'audio_in' | 'audio_out' | 'presenter'>;
 type PresenterLook = Pick<VoiceoverPresenter, 'photo_url' | 'style_url' | 'scene'>;
 
-/** Cache key of a take: same voice take, trim, photo and setting → the same clip, never paid twice. */
-export function presenterTakeKey(b: Omit<PresenterBlock, 'presenter' | 'audio_url' | 'audio_duration'>, p: PresenterLook): string | null {
+/** Shape of a take: a 1:1 corner circle over the recording, or the whole frame over a title card. */
+export const PRESENTER_FRAMES = ['1:1', '16:9', '9:16'] as const;
+export type PresenterFrame = (typeof PRESENTER_FRAMES)[number];
+
+/** Full frame (in the primary shape) when the block starts on a title card; the corner circle otherwise. */
+export function presenterFrame(t: Pick<VoiceoverTimeline, 'clips' | 'output'>, b: Pick<VoiceBlock, 'start'>): PresenterFrame {
+  const starts = clipStarts(t);
+  const onCard = t.clips.some((c, i) => c.kind === 'card' && b.start >= starts[i] - 0.05 && b.start < starts[i] + clipOutputDuration(c));
+  if (!onCard) return '1:1';
+  return t.output.aspect === '9:16' ? '9:16' : t.output.aspect === '1:1' ? '1:1' : '16:9';
+}
+
+/** Cache key of a take: same voice take, trim, photo, setting and frame → the same clip, never paid twice. */
+export function presenterTakeKey(b: Pick<VoiceBlock, 'take_id' | 'audio_in' | 'audio_out'>, p: PresenterLook, frame: PresenterFrame = '1:1'): string | null {
   if (!b.take_id || !p.photo_url) return null;
-  return [b.take_id, b.audio_in.toFixed(2), b.audio_out === null ? '' : b.audio_out.toFixed(2), p.photo_url, p.style_url ?? '', p.scene.trim()].join('|');
+  const key = [b.take_id, b.audio_in.toFixed(2), b.audio_out === null ? '' : b.audio_out.toFixed(2), p.photo_url, p.style_url ?? '', p.scene.trim()];
+  return (frame === '1:1' ? key : [...key, frame]).join('|');
 }
 
 /** Why this block can't get a presenter take yet (null = it can). */
@@ -658,10 +671,10 @@ export function presenterBlockProblem(b: PresenterBlock, p: VoiceoverPresenter):
   return null;
 }
 
-/** The clip to show over a block: only when it's on and was made from the block's current take. */
-export function presenterClipFor(b: PresenterBlock, p: PresenterLook): string | null {
+/** The clip to show over a block: only when it's on and was made from the block's current take, in this frame. */
+export function presenterClipFor(b: PresenterBlock, p: PresenterLook, frame: PresenterFrame = '1:1'): string | null {
   if (!b.presenter?.on || !b.presenter.clip_url) return null;
-  return b.presenter.clip_key === presenterTakeKey(b, p) ? b.presenter.clip_url : null;
+  return b.presenter.clip_key === presenterTakeKey(b, p, frame) ? b.presenter.clip_url : null;
 }
 
 /** Resolved corner: 'auto' sits bottom-right, or bottom-left when the logo is there. */
@@ -682,6 +695,8 @@ export const VoiceoverPresenterTakeInputSchema = z.object({
   audio_in: z.number().min(0).default(0),
   audio_length: z.number().min(0.5).max(PRESENTER_MAX_SECONDS),
   clip_key: z.string().max(1200),
+  /** 1:1 for the corner circle; the output shape for a full-frame take over a title card. */
+  frame: z.enum(PRESENTER_FRAMES).default('1:1'),
   storage_region: z.string().max(20).nullable().default(null),
   /** Counts toward this workspace's Studio budget. */
   workspace_id: z.string().uuid().nullable().default(null),

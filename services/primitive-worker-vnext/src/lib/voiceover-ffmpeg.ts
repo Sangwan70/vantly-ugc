@@ -628,7 +628,8 @@ export interface FinalPlan {
 }
 
 export interface PresenterPlan {
-  clips: Array<{ path: string; start: number; length: number }>;
+  /** full = a take made for a title card, shown over the whole frame instead of in the circle. */
+  clips: Array<{ path: string; start: number; length: number; full?: boolean }>;
   corner: 'tl' | 'tr' | 'bl' | 'br';
   /** Circle diameter as a fraction of the shorter side (larger over title cards). */
   size: number;
@@ -664,6 +665,14 @@ function presenterChain(i: number, input: number, clip: { start: number; length:
     `[${input}:v]trim=0:${num(clip.length)},setpts=PTS-STARTPTS,fps=${RENDER_FPS},crop='min(iw,ih)':'min(iw,ih)',scale=${d}:${d},format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':${disc(d)}[pc${i}]`,
     `color=c=0x${ringHex.replace('#', '')}:s=${outer}x${outer}:r=${RENDER_FPS}:d=${num(clip.length)},format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':${disc(outer)}[pr${i}]`,
     `[pr${i}][pc${i}]overlay=${ring}:${ring}:format=auto,fade=t=in:st=0:d=${PRESENTER_FADE}:alpha=1,fade=t=out:st=${num(fadeOut)}:d=${PRESENTER_FADE}:alpha=1,setpts=PTS+${num(clip.start)}/TB[pp${i}]`,
+  ];
+}
+
+/** A full-frame take: cover-fit to the canvas, faded, shifted to its block. */
+function presenterFullChain(i: number, input: number, clip: { start: number; length: number }, W: number, H: number): string[] {
+  const fadeOut = Math.max(0, clip.length - PRESENTER_FADE);
+  return [
+    `[${input}:v]trim=0:${num(clip.length)},setpts=PTS-STARTPTS,fps=${RENDER_FPS},scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},setsar=1,format=rgba,fade=t=in:st=0:d=${PRESENTER_FADE}:alpha=1,fade=t=out:st=${num(fadeOut)}:d=${PRESENTER_FADE}:alpha=1,setpts=PTS+${num(clip.start)}/TB[pp${i}]`,
   ];
 }
 
@@ -724,10 +733,17 @@ export function buildFinalArgs(p: FinalPlan): string[] {
   // Presenter circles go on top of everything; their own audio is never mapped.
   (p.presenter?.clips ?? []).forEach((clip, i) => {
     const plan = p.presenter!;
+    const enable = `enable='between(t,${num(clip.start)},${num(clip.start + clip.length)})'`;
+    if (clip.full) {
+      graph.push(...presenterFullChain(i, presenterIdx[i], clip, W, H));
+      graph.push(`${v}[pp${i}]overlay=0:0:format=auto:eof_action=pass:${enable}[vpr${i}]`);
+      v = `[vpr${i}]`;
+      return;
+    }
     const onCard = (plan.cards ?? []).some(([a, z]) => clip.start >= a && clip.start < z);
     const g = presenterGeometry(W, H, plan, onCard);
     graph.push(...presenterChain(i, presenterIdx[i], clip, g, plan.ring));
-    graph.push(`${v}[pp${i}]overlay=${g.x}:${g.y}:format=auto:eof_action=pass:enable='between(t,${num(clip.start)},${num(clip.start + clip.length)})'[vpr${i}]`);
+    graph.push(`${v}[pp${i}]overlay=${g.x}:${g.y}:format=auto:eof_action=pass:${enable}[vpr${i}]`);
     v = `[vpr${i}]`;
   });
   graph.push(`${v}format=yuv420p[vout]`);

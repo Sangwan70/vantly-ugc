@@ -18,6 +18,7 @@ import {
   VoiceoverTimelineSchema,
   blockAudioLength,
   presenterBlockProblem,
+  presenterFrame,
   presenterTakeKey,
   quotePresenterCredits,
   type VoiceoverPresenterTakeInput,
@@ -49,7 +50,8 @@ export const startPresenterRoute = studioRoute(async (req, res) => {
     const problem = presenterBlockProblem(b, look);
     if (problem) throw new StudioError(400, 'NOT_READY', problem, { block_id: b.id });
     if (!isStudioHosted(b.audio_url!)) throw new StudioError(400, 'INVALID_INPUT', 'voice audio is not hosted');
-    const key = presenterTakeKey(b, look)!;
+    const frame = presenterFrame(tl, b);
+    const key = presenterTakeKey(b, look, frame)!;
     if (b.presenter?.clip_url && b.presenter.clip_key === key) {
       cached.push({ block_id: b.id, clip_url: b.presenter.clip_url, clip_key: key });
       continue;
@@ -68,6 +70,7 @@ export const startPresenterRoute = studioRoute(async (req, res) => {
         audio_in: b.audio_in,
         audio_length: len,
         clip_key: key,
+        frame,
         storage_region: project.storage_region ?? null,
         workspace_id: ws?.id ?? null,
       },

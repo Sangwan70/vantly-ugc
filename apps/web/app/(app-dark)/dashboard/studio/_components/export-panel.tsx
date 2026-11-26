@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AlertTriangle, CalendarClock, Download, FileCheck2, Globe2, Loader2, Rocket, Send, ShieldAlert } from 'lucide-react';
-import { ASPECTS, presenterClipFor, renderAspects, validateVoiceoverForRender, type VoiceoverAspect, type VoiceoverOutput, type VoiceoverTimeline } from '@vantly-ugc/schema';
+import { ASPECTS, presenterClipFor, presenterFrame, renderAspects, validateVoiceoverForRender, type VoiceoverAspect, type VoiceoverOutput, type VoiceoverTimeline } from '@vantly-ugc/schema';
 import { NetworkLogo } from '@/components/brand-icons';
 import { studioApi, StudioApiError, type RenderStatus, type ReviewStatus, type StudioSource, type VoicesResponse } from '../_lib/api';
 import { Btn, C, Field, Input, Seg, Select, Slider } from './ui';
@@ -46,7 +46,7 @@ export function ExportPanel(p: {
   const [notify, setNotify] = useState(true);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Presenter lines that would render without you (switched on, take not made or out of date).
-  const presenterMissing = p.timeline.blocks.filter((b) => b.presenter?.on && !presenterClipFor(b, p.timeline.presenter)).length;
+  const presenterMissing = p.timeline.blocks.filter((b) => b.presenter?.on && !presenterClipFor(b, p.timeline.presenter, presenterFrame(p.timeline, b))).length;
   const problems = validateVoiceoverForRender({ project_id: p.projectId, source: p.source, timeline: p.timeline, provenance: { title: '', voices: [], workspace_id: null, approved_by: null }, storage_region: null, webhook_url: null, notify_email: null });
   const finalBlocked = p.requireApproval && p.reviewStatus !== 'approved' && out.quality !== 'draft';
   const aspects = renderAspects(out);

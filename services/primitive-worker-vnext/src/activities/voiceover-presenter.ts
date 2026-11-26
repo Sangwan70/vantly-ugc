@@ -5,8 +5,8 @@
  *
  * The user, from their own photo (+ an optional frame of them talking), speaking
  * one narration block, lip-synced to that block's ElevenLabs take. Seedance 2.0
- * reference-to-video via EvoLink, 1:1 720p, exactly as long as the audio that
- * plays (4–15 s). The output is SILENT: the render overlays it in a circle and
+ * reference-to-video via EvoLink, 720p — 1:1 for the corner circle, the video's
+ * own shape over a title card — exactly as long as the audio that plays (4–15 s). The output is SILENT: the render overlays it in a circle and
  * the block's own voice track stays the only sound.
  *
  * The editor caches the clip on the block under clip_key, so re-renders, other
@@ -139,6 +139,7 @@ export function makeVoiceoverPresenterActivity(cfg: WorkerConfig) {
             audioUrl: speech.publicUrl,
             duration: seconds,
             scene: input.scene,
+            aspect: input.frame,
           }));
           providerTaskId = result.taskId;
           videoBytes = await fetchToBuffer(result.videoUrl, 'presenter video');
@@ -170,7 +171,7 @@ export function makeVoiceoverPresenterActivity(cfg: WorkerConfig) {
           url: publicUrl,
           bytes: videoBytes.byteLength,
           mime: 'video/mp4',
-          metadata: { project_id: input.project_id, block_id: input.block_id, clip_key: input.clip_key, seconds, simulated: cfg.openai.simulate },
+          metadata: { project_id: input.project_id, block_id: input.block_id, clip_key: input.clip_key, frame: input.frame, seconds, simulated: cfg.openai.simulate },
         })
         .select('id')
         .single();

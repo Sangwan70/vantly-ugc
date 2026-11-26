@@ -20,6 +20,7 @@ import {
   clipStarts,
   presenterClipFor,
   presenterCorner,
+  presenterFrame,
   quoteVoiceoverRenderCredits,
   renderAspects,
   timelineDuration,
@@ -261,7 +262,7 @@ export function makeVoiceoverRenderActivity(cfg: WorkerConfig) {
       ...(tl.branding.logo_url ? [tl.branding.logo_url] : []),
       ...tl.fonts.map((f) => f.url),
       ...tl.clips.flatMap((c) => (c.kind === 'card' && c.card?.sting_url ? [c.card.sting_url] : [])),
-      ...tl.blocks.flatMap((b) => presenterClipFor(b, tl.presenter) ?? []),
+      ...tl.blocks.flatMap((b) => presenterClipFor(b, tl.presenter, presenterFrame(tl, b)) ?? []),
     ];
     if (urls.some((u) => !prefixes.some((p) => u.startsWith(p)))) {
       throw ApplicationFailure.nonRetryable('all media must be hosted on our storage', 'REFERENCE_URL_NOT_ALLOWED');
@@ -331,11 +332,12 @@ export function makeVoiceoverRenderActivity(cfg: WorkerConfig) {
       // Presenter takes (made earlier, cached on their blocks): one download per clip.
       const presenterClips: PresenterPlan['clips'] = [];
       for (const b of tl.blocks) {
-        const url = presenterClipFor(b, tl.presenter);
+        const frame = presenterFrame(tl, b);
+        const url = presenterClipFor(b, tl.presenter, frame);
         if (!url || !b.audio_url || b.start >= total) continue;
         const pth = join(workDir, `presenter-${presenterClips.length}.mp4`);
         await download(url, pth, 100 * 1024 * 1024);
-        presenterClips.push({ path: pth, start: b.start, length: Math.min(blockAudioLength(b), total - b.start) });
+        presenterClips.push({ path: pth, start: b.start, length: Math.min(blockAudioLength(b), total - b.start), full: frame !== '1:1' });
       }
       let logoPath: string | null = null;
       if (tl.branding.logo_url) {

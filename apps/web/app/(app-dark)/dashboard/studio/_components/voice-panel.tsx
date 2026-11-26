@@ -14,7 +14,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, BookA, Check, ChevronDown, ChevronLeft, ChevronRight, FileText, Loader2, Pause as PauseIcon, Play, Plus, Scissors, Settings2, ShieldCheck, Sparkles, Trash2, User, Volume2, Wand2, X } from 'lucide-react';
 import {
-  VoiceSettingsSchema, blockAudioLength, presenterBlockProblem, presenterClipFor, presenterTakeSeconds, quotePresenterCredits, quoteVoiceoverTtsCredits,
+  VoiceSettingsSchema, blockAudioLength, presenterBlockProblem, presenterClipFor, presenterFrame, presenterTakeSeconds, quotePresenterCredits, quoteVoiceoverTtsCredits,
   type VoiceBlock, type VoiceSettings, type VoiceoverPresenter, type VoiceoverTimeline,
 } from '@vantly-ugc/schema';
 import { studioApi, StudioApiError, uploadDirect, type VoicesResponse, type Voice, type VoiceSource } from '../_lib/api';
@@ -58,10 +58,10 @@ const PRESENTER_POLL_MS = 6000;
 type PresenterState = 'off' | 'blocked' | 'making' | 'ready' | 'todo';
 
 /** Where a block's presenter take stands (and why not, when it can't be made yet). */
-function presenterState(b: VoiceBlock, look: VoiceoverPresenter): { state: PresenterState; problem: string | null } {
+function presenterState(b: VoiceBlock, look: VoiceoverPresenter, t: Pick<VoiceoverTimeline, 'clips' | 'output'>): { state: PresenterState; problem: string | null } {
   if (!b.presenter?.on) return { state: 'off', problem: null };
   if (b.presenter.run_id) return { state: 'making', problem: null };
-  if (presenterClipFor(b, look)) return { state: 'ready', problem: null };
+  if (presenterClipFor(b, look, presenterFrame(t, b))) return { state: 'ready', problem: null };
   const problem = blockIsStale(b) ? 'Regenerate the voice first' : presenterBlockProblem(b, look);
   return problem ? { state: 'blocked', problem } : { state: 'todo', problem: null };
 }
@@ -136,7 +136,7 @@ export function VoicePanel(p: Props) {
   const look = timeline.presenter;
   const [presenterErr, setPresenterErr] = useState<Record<string, string>>({});
   const [presenterBusy, setPresenterBusy] = useState(false);
-  const presenterTodo = blocks.filter((b) => presenterState(b, look).state === 'todo');
+  const presenterTodo = blocks.filter((b) => presenterState(b, look, timeline).state === 'todo');
   const presenterTodoCredits = presenterTodo.reduce((s, b) => s + quotePresenterCredits(blockAudioLength(b)), 0);
   const making = blocks.filter((b) => b.presenter?.run_id).map((b) => `${b.id}:${b.presenter!.run_id}`).join(',');
 
@@ -288,7 +288,7 @@ export function VoicePanel(p: Props) {
             }}
             onStretchVideo={(extra) => p.update((t) => stretchVideoUnder(t, b.start, extra))}
             onApplyVoiceToAll={() => p.update((t) => ({ ...t, blocks: t.blocks.map((x) => ({ ...x, voice_id: b.voice_id, voice_name: b.voice_name, voice_source: b.voice_source, model_id: b.model_id, settings: b.settings })) }))}
-            presenter={presenterState(b, look)}
+            presenter={presenterState(b, look, timeline)}
             presenterError={presenterErr[b.id] ?? null}
             presenterBusy={presenterBusy}
             onPresenterToggle={(on) => p.update((t) => updateBlock(t, b.id, { presenter: { clip_url: null, clip_key: null, run_id: null, ...b.presenter, on } }))}

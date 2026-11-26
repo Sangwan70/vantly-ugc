@@ -193,17 +193,22 @@ export async function generatePresenterEvolink(
     audioUrl: string;
     duration: number;
     scene?: string;
+    /** 1:1 for the corner circle; the video's own shape for a full-frame take. */
+    aspect?: '1:1' | '16:9' | '9:16';
   },
 ): Promise<{ videoUrl: string; taskId: string; raw: Record<string, unknown> }> {
   const model = process.env.EVOLINK_SEEDANCE_MODEL || 'seedance-2.0-reference-to-video';
   const imageUrls = [params.photoUrl, ...(params.styleUrl ? [params.styleUrl] : [])];
+  const aspect = params.aspect ?? '1:1';
   const scene = params.scene?.trim();
   const prompt = [
     "@image1 is the presenter's face and current look: keep his or her exact identity, hair, glasses, facial hair and clothing in every frame.",
     params.styleUrl ? '@image2 shows the same person talking to camera: copy that natural speaking style and, unless told otherwise, that setting.' : '',
     scene ? `Setting: ${scene}.` : params.styleUrl ? '' : 'Keep the setting and light of @image1, softly blurred behind the presenter.',
     'The presenter speaks directly to the camera like a warm, confident teacher, mouth lip-synced precisely to the speech in @audio1 from the first word to the last, with small natural nods and eyebrow movement; when the speech ends the mouth closes and the presenter holds a gentle smile.',
-    'Head and shoulders, centred, steady camera, soft even light, natural matte skin. No text, no captions, no logos.',
+    aspect === '1:1'
+      ? 'Head and shoulders, centred, steady camera, soft even light, natural matte skin. No text, no captions, no logos.'
+      : 'Medium close-up, presenter centred with the setting visible around them, steady camera, soft even light, natural matte skin. No text, no captions, no logos.',
   ].filter(Boolean).join(' ');
   return withEvolinkSlot(async (apiKey) => {
     const submit = await submitEvolinkVideo(apiKey, model, {
@@ -211,7 +216,7 @@ export async function generatePresenterEvolink(
       imageUrls,
       audioUrls: [params.audioUrl],
       duration: params.duration,
-      aspectRatio: '1:1',
+      aspectRatio: aspect,
       generateAudio: false,
       quality: '720p',
       contentFilter: false,

@@ -210,6 +210,15 @@ describe('presenter circle', () => {
     expect(g).not.toContain('[3:a]');
     expect(g).not.toContain('[4:a]');
   });
+  it('fills the frame with a take made for a title card', () => {
+    const g = fg(buildFinalArgs({
+      video: { kind: 'file', path: 'j.mp4' }, canvas, quality: 'standard', total: 20, outPath: 'o.mp4', voices: [],
+      presenter: { clips: [{ path: 'q.mp4', start: 0.3, length: 5.5, full: true }], corner: 'br', size: 0.26, ring: '#FFFFFF', cards: [[0, 6]] },
+    }));
+    expect(g).toContain('scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080');
+    expect(g).toContain('[pp0]overlay=0:0');
+    expect(g).not.toContain('geq');
+  });
 });
 
 describe('card looks', () => {

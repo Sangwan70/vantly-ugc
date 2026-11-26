@@ -83,6 +83,9 @@ export const TemplateBodySchema = z.object({
   pronunciations: VoiceoverTimelineSchema.shape.pronunciations.optional(),
   intro: CardSchema.nullable().optional(),
   outro: CardSchema.nullable().optional(),
+  /** Narration on the outro card (start relative to the card), with its audio and presenter take:
+   *  the series' shared closing clip, reused by every episode at no cost. */
+  outro_blocks: z.array(VoiceBlockSchema).max(5).optional(),
   transition: z.object({ kind: z.string(), duration: z.number() }).nullable().optional(),
   overlay_style: z.record(z.unknown()).nullable().optional(),
   voice: z
@@ -98,6 +101,11 @@ export function extractTemplate(tl: VoiceoverTimeline): TemplateBody {
   const tr = tl.clips.find((c, i) => i > 0 && c.transition.kind !== 'none')?.transition ?? null;
   const o = tl.overlays[0];
   const b = tl.blocks.find((x) => x.voice_id);
+  const hasOutro = tl.clips.length > 1 && last?.kind === 'card';
+  const outroStart = hasOutro ? clipStarts(tl)[tl.clips.length - 1] : Infinity;
+  const outroBlocks = tl.blocks
+    .filter((x) => x.audio_url && x.start >= outroStart - 0.05)
+    .map((x) => ({ ...x, start: Math.max(0, Math.round((x.start - outroStart) * 1000) / 1000), takes: [] }));
   return {
     output: tl.output,
     audio: tl.audio,
@@ -107,7 +115,8 @@ export function extractTemplate(tl: VoiceoverTimeline): TemplateBody {
     fonts: tl.fonts,
     pronunciations: tl.pronunciations,
     intro: first?.kind === 'card' ? first.card ?? null : null,
-    outro: tl.clips.length > 1 && last?.kind === 'card' ? last.card ?? null : null,
+    outro: hasOutro ? last.card ?? null : null,
+    outro_blocks: outroBlocks,
     transition: tr,
     overlay_style: o ? { size: o.size, color: o.color, box: o.box, box_color: o.box_color, animation: o.animation, font: o.font, y: o.y } : null,
     voice: b ? { voice_id: b.voice_id, voice_name: b.voice_name, voice_source: b.voice_source, model_id: b.model_id, settings: b.settings } : null,
@@ -128,10 +137,18 @@ export function applyTemplateToTimeline(tl: VoiceoverTimeline, tpl: TemplateBody
   const introLen = tpl.intro ? tpl.intro.duration + cardStingLength(tpl.intro) : 0;
   const introShift = tpl.intro && tl.clips[0]?.kind !== 'card' ? introLen - (tr ? Math.min(tr.duration, introLen / 2) : 0) : 0;
   const voice = tpl.voice;
+  const blocks = tl.blocks.map((bk) => ({ ...bk, start: bk.start + introShift, ...(voice && !bk.voice_id ? { voice_id: voice.voice_id, voice_name: voice.voice_name, voice_source: voice.voice_source, model_id: voice.model_id, settings: voice.settings } : {}) }));
+  // The series' closing narration (+ presenter take) lands on the new outro card, unless it already has some.
+  if (tpl.outro && tpl.outro_blocks?.length) {
+    const outroStart = clipStarts({ clips })[clips.length - 1];
+    if (!blocks.some((bk) => bk.start >= outroStart - 0.05)) {
+      blocks.push(...tpl.outro_blocks.map((bk) => ({ ...bk, id: `v_${randomUUID().slice(0, 8)}`, start: outroStart + bk.start })));
+    }
+  }
   return VoiceoverTimelineSchema.parse({
     ...tl,
     clips,
-    blocks: tl.blocks.map((bk) => ({ ...bk, start: bk.start + introShift, ...(voice && !bk.voice_id ? { voice_id: voice.voice_id, voice_name: voice.voice_name, voice_source: voice.voice_source, model_id: voice.model_id, settings: voice.settings } : {}) })),
+    blocks,
     overlays: tl.overlays.map((o) => ({ ...o, start: o.start + introShift, end: o.end + introShift })),
     effects: tl.effects.map((e) => ({ ...e, start: e.start + introShift, end: e.end + introShift })),
     output: tpl.output ?? tl.output,

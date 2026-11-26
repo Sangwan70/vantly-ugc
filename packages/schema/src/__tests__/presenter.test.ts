@@ -11,6 +11,7 @@ import {
   presenterBlockProblem,
   presenterClipFor,
   presenterCorner,
+  presenterFrame,
   presenterTakeKey,
   presenterTakeSeconds,
   quotePresenterCredits,
@@ -61,5 +62,21 @@ describe('presenter cache', () => {
     expect(presenterCorner({ corner: 'auto' }, 'tr')).toBe('br');
     expect(presenterCorner({ corner: 'auto' }, 'br')).toBe('bl');
     expect(presenterCorner({ corner: 'tl' }, 'br')).toBe('tl');
+  });
+});
+
+describe('presenter frame', () => {
+  const tl = VoiceoverTimelineSchema.parse({
+    clips: [{ id: 'q', kind: 'card', card: { title: 'Question', duration: 6 } }, { id: 'c1', src_in: 0, src_out: 20 }],
+    output: { aspect: '16:9' },
+  });
+  it('is full frame on a title card and the circle over the recording', () => {
+    expect(presenterFrame(tl, { start: 0.3 })).toBe('16:9');
+    expect(presenterFrame(tl, { start: 8 })).toBe('1:1');
+  });
+  it('a full-frame take is cached separately from a circle take', () => {
+    const b = block();
+    expect(presenterTakeKey(b, look, '16:9')).not.toBe(presenterTakeKey(b, look));
+    expect(presenterTakeKey(b, look, '1:1')).toBe(presenterTakeKey(b, look));
   });
 });

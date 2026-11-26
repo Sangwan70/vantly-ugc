@@ -23,6 +23,7 @@ import {
   locateOutputTime,
   presenterClipFor,
   presenterCorner,
+  presenterFrame,
   resolveCaptionStyle,
   timelineDuration,
   timelineWords,
@@ -355,8 +356,9 @@ export function Preview(p: Props) {
       const len = blockAudioLength(b);
       const local = p.time - b.start;
       if (local < 0 || local >= len) continue;
-      const url = presenterClipFor(b, timeline.presenter);
-      if (url || timeline.presenter.photo_url) return { url, local, length: len };
+      const full = presenterFrame(timeline, b) !== '1:1';
+      const url = presenterClipFor(b, timeline.presenter, presenterFrame(timeline, b));
+      if (url || timeline.presenter.photo_url) return { url, local, length: len, full };
     }
     return null;
   })();
@@ -420,7 +422,7 @@ export function Preview(p: Props) {
           <img src={branding.logo_url} alt="" className="pointer-events-none absolute" style={{ ...corner(branding.logo_position), width: logoW, opacity: branding.logo_opacity }} />
         ) : null}
         {presenter ? (
-          <PresenterView url={presenter.url} photo={timeline.presenter.photo_url} local={presenter.local} length={presenter.length} playing={p.playing}
+          <PresenterView url={presenter.url} photo={timeline.presenter.photo_url} local={presenter.local} length={presenter.length} playing={p.playing} full={presenter.full}
             size={Math.min(box.w, box.h) * (clip?.kind === 'card' ? Math.min(0.5, timeline.presenter.size * 1.35) : timeline.presenter.size)}
             ring={timeline.presenter.ring_color} position={corner(presenterCorner(timeline.presenter, branding.logo_position))} />
         ) : null}
@@ -440,8 +442,8 @@ export function Preview(p: Props) {
 }
 
 /** Mirrors presenterGeometry/presenterChain in the render: a ringed circle fading in and out with its block. */
-function PresenterView({ url, photo, local, length, playing, size, ring, position }: {
-  url: string | null; photo: string | null; local: number; length: number; playing: boolean; size: number; ring: string; position: Record<string, number>;
+function PresenterView({ url, photo, local, length, playing, full, size, ring, position }: {
+  url: string | null; photo: string | null; local: number; length: number; playing: boolean; full: boolean; size: number; ring: string; position: Record<string, number>;
 }) {
   const ref = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
@@ -452,7 +454,10 @@ function PresenterView({ url, photo, local, length, playing, size, ring, positio
     if (!playing && !v.paused) v.pause();
   }, [local, playing]);
   const opacity = Math.max(0, Math.min(1, local / 0.3, (length - local) / 0.3));
-  const style: React.CSSProperties = { ...position, width: size, height: size, opacity, borderRadius: '50%', border: `${Math.max(1, size * 0.025)}px solid ${ring}`, objectFit: 'cover', maxWidth: 'none', background: '#000' };
+  // Over a title card the take fills the frame; elsewhere it's the ringed corner circle.
+  const style: React.CSSProperties = full
+    ? { inset: 0, width: '100%', height: '100%', opacity, objectFit: 'cover', maxWidth: 'none', background: '#000' }
+    : { ...position, width: size, height: size, opacity, borderRadius: '50%', border: `${Math.max(1, size * 0.025)}px solid ${ring}`, objectFit: 'cover', maxWidth: 'none', background: '#000' };
   return url
     ? <video ref={ref} src={url} muted playsInline preload="auto" className="pointer-events-none absolute" style={style} />
     // eslint-disable-next-line @next/next/no-img-element

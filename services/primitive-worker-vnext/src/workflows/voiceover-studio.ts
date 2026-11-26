@@ -6,6 +6,7 @@ import { failureInfo } from './failure-info.js';
 import type { VoiceoverPrepareActivityInput } from '../activities/voiceover-prepare.js';
 import type { VoiceoverAutomateStepInput } from '../activities/voiceover-automate.js';
 import type { VoiceoverRenderActivityResult } from '../activities/voiceover-render.js';
+import type { VoiceoverPresenterActivityInput, VoiceoverPresenterActivityResult } from '../activities/voiceover-presenter.js';
 
 const { voiceoverPrepare } = proxyActivities<PrimitiveActivities>({
   startToCloseTimeout: '60 minutes',
@@ -37,6 +38,22 @@ const { voiceoverRender } = proxyActivities<PrimitiveActivities>({
   },
 });
 
+const { voiceoverPresenter } = proxyActivities<PrimitiveActivities>({
+  // One Seedance take: typically 2–6 minutes in the EvoLink queue.
+  startToCloseTimeout: '25 minutes',
+  heartbeatTimeout: '5 minutes',
+  retry: {
+    initialInterval: '10s',
+    maximumInterval: '2m',
+    backoffCoefficient: 2,
+    maximumAttempts: 3,
+    nonRetryableErrorTypes: [
+      'INVALID_INPUT', 'REFERENCE_URL_NOT_ALLOWED', 'BUDGET_CAP_PRIMITIVE', 'PROVIDER_UNCONFIGURED', 'INSUFFICIENT_CREDITS', 'CONTENT_MODERATION',
+      'EVOLINK_400', 'EVOLINK_401', 'EVOLINK_403', 'EVOLINK_404', 'EVOLINK_413', 'EVOLINK_415', 'EVOLINK_422', 'EVOLINK_451',
+    ],
+  },
+});
+
 const { refundCredits, markPrimitiveRunFailed } = proxyActivities<PrimitiveActivities>({
   startToCloseTimeout: '30 seconds',
   retry: { initialInterval: '2s', maximumInterval: '20s', backoffCoefficient: 2, maximumAttempts: 5 },
@@ -57,6 +74,18 @@ export async function voiceoverAutomateWorkflow(input: VoiceoverAutomateStepInpu
     await voiceoverPrepare({ project_id: input.project_id, user_id: input.user_id, source_url: input.source_url, storage_region: input.storage_region });
     const renderInput = await voiceoverAutomateStep(input);
     return await voiceoverRender({ primitive_run_id: input.primitive_run_id, user_id: input.user_id, input: renderInput });
+  } catch (err) {
+    await refundCredits({ primitive_run_id: input.primitive_run_id });
+    const f = failureInfo(err);
+    await markPrimitiveRunFailed({ primitive_run_id: input.primitive_run_id, error_code: f.code, error_message: f.message });
+    throw err;
+  }
+}
+
+/** One presenter take (the user, lip-synced to a voice block). Refunds on terminal failure. */
+export async function voiceoverPresenterWorkflow(input: VoiceoverPresenterActivityInput): Promise<VoiceoverPresenterActivityResult> {
+  try {
+    return await voiceoverPresenter(input);
   } catch (err) {
     await refundCredits({ primitive_run_id: input.primitive_run_id });
     const f = failureInfo(err);

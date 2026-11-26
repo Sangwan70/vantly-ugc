@@ -39,6 +39,7 @@ import {
   coverContentAt,
   coverViewAt,
   keyframeExpr,
+  presenterGeometry,
   zoomFilter,
 } from '../lib/voiceover-ffmpeg.js';
 import { diffFrames, suggestEdits } from '../activities/voiceover-prepare.js';
@@ -175,6 +176,39 @@ describe('final pass', () => {
   it('emits silence when there is no audio at all', () => {
     const g = fg(buildFinalArgs({ video: { kind: 'concat', path: 'l' }, canvas, quality: 'draft', total: 5, outPath: 'o', voices: [] }));
     expect(g).toContain('anullsrc');
+  });
+});
+
+describe('presenter circle', () => {
+  const canvas = computeCanvas({ width: 1920, height: 1080 }, { aspect: 'source', fit: 'blur', quality: 'standard' });
+  it('sits in its corner, larger over title cards', () => {
+    const g = presenterGeometry(1920, 1080, { corner: 'br', size: 0.26 }, false);
+    expect(g.d).toBe(280);
+    expect(g.x + g.d + 2 * g.ring).toBe(1920 - 32);
+    expect(g.y + g.d + 2 * g.ring).toBe(1080 - 32);
+    const card = presenterGeometry(1920, 1080, { corner: 'tl', size: 0.26 }, true);
+    expect(card.d).toBeGreaterThan(g.d);
+    expect([card.x, card.y]).toEqual([32, 32]);
+  });
+  it('overlays each silent clip only while its block plays, after the logo', () => {
+    const args = buildFinalArgs({
+      video: { kind: 'file', path: 'j.mp4' }, canvas, quality: 'standard', total: 30, outPath: 'o.mp4',
+      voices: [{ path: 'a.mp3', start: 2, volume: 1 }],
+      logo: { path: 'l.png', branding: { logo_url: 'https://x/l.png', logo_position: 'tr', logo_size: 0.1, logo_opacity: 0.8, disclosure_badge: false, palette: [] } },
+      presenter: { clips: [{ path: 'p0.mp4', start: 2, length: 7.9 }, { path: 'p1.mp4', start: 25, length: 4 }], corner: 'br', size: 0.26, ring: '#FFFFFF', cards: [[24, 30]] },
+    });
+    const g = fg(args);
+    expect(args.filter((a) => a === '-i')).toHaveLength(5);
+    expect(g).toContain("[3:v]trim=0:7.9");
+    expect(g).toContain('setpts=PTS+2/TB[pp0]');
+    expect(g).toContain("enable='between(t,2,9.9)'");
+    expect(g).toContain('color=c=0xFFFFFF');
+    expect(g.indexOf('[vlogo]')).toBeLessThan(g.indexOf('[vpr0]'));
+    // The second clip starts on a title card, so it's drawn larger.
+    expect(g).toMatch(/\[4:v\][^;]*scale=380:380/);
+    // Presenter audio is never mixed in.
+    expect(g).not.toContain('[3:a]');
+    expect(g).not.toContain('[4:a]');
   });
 });
 

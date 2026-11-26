@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AlertTriangle, CalendarClock, Download, FileCheck2, Globe2, Loader2, Rocket, Send, ShieldAlert } from 'lucide-react';
-import { ASPECTS, renderAspects, validateVoiceoverForRender, type VoiceoverAspect, type VoiceoverOutput, type VoiceoverTimeline } from '@vantly-ugc/schema';
+import { ASPECTS, presenterClipFor, renderAspects, validateVoiceoverForRender, type VoiceoverAspect, type VoiceoverOutput, type VoiceoverTimeline } from '@vantly-ugc/schema';
 import { NetworkLogo } from '@/components/brand-icons';
 import { studioApi, StudioApiError, type RenderStatus, type ReviewStatus, type StudioSource, type VoicesResponse } from '../_lib/api';
 import { Btn, C, Field, Input, Seg, Select, Slider } from './ui';
@@ -45,6 +45,8 @@ export function ExportPanel(p: {
   const [starting, setStarting] = useState(false);
   const [notify, setNotify] = useState(true);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Presenter lines that would render without you (switched on, take not made or out of date).
+  const presenterMissing = p.timeline.blocks.filter((b) => b.presenter?.on && !presenterClipFor(b, p.timeline.presenter)).length;
   const problems = validateVoiceoverForRender({ project_id: p.projectId, source: p.source, timeline: p.timeline, provenance: { title: '', voices: [], workspace_id: null, approved_by: null }, storage_region: null, webhook_url: null, notify_email: null });
   const finalBlocked = p.requireApproval && p.reviewStatus !== 'approved' && out.quality !== 'draft';
   const aspects = renderAspects(out);
@@ -110,6 +112,11 @@ export function ExportPanel(p: {
       <Slider label="Original recording audio" hint={p.source.has_audio ? undefined : 'screen captures are usually silent'} min={0} max={1.5} step={0.05} value={out.original_volume}
         fmt={(v) => (v === 0 ? 'muted' : `${Math.round(v * 100)}%`)} onChange={(v) => p.onOutputChange({ original_volume: v })} />
 
+      {presenterMissing ? (
+        <div className="flex gap-1.5 rounded-lg p-2 text-[11px]" style={{ background: 'rgba(252,211,77,0.08)', color: '#FCD34D' }}>
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /> {presenterMissing} presenter {presenterMissing === 1 ? 'line has' : 'lines have'} no take yet and will render without you. Make them in the Script tab.
+        </div>
+      ) : null}
       {problems.length ? (
         <div className="space-y-1 rounded-lg p-2 text-[11px]" style={{ background: 'rgba(252,211,77,0.08)', color: '#FCD34D' }}>
           {problems.map((pr) => <div key={pr} className="flex gap-1.5"><AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /> {pr}</div>)}

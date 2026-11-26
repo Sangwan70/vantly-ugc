@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Download, ExternalLink, Loader2, Music, Pause, Play, Plus, Trash2, Upload } from 'lucide-react';
-import { CardSchema, FREE_MUSIC, FREE_MUSIC_DEFAULTS, type FreeMusicTrack, type VoiceoverTimeline } from '@vantly-ugc/schema';
+import { CardSchema, FREE_MUSIC, FREE_MUSIC_DEFAULTS, PRESENTER_CREDITS_PER_SECOND, type FreeMusicTrack, type VoiceoverPresenter, type VoiceoverTimeline } from '@vantly-ugc/schema';
 import { studioApi, uploadDirect, type Template } from '../_lib/api';
 import { uid } from '../_lib/ops';
 import { BUILTIN_FONTS } from './inspector';
@@ -95,6 +95,54 @@ function FreeMusicPicker({ projectId, onPicked }: { projectId: string; onPicked:
       </div>
       {err ? <p className="text-[11px]" style={{ color: '#FCA5A5' }}>{err}</p> : null}
     </div>
+  );
+}
+
+/** You, lip-synced to your own voice, in a corner circle — the look shared by every presenter take. */
+function PresenterSection({ workspaceId, presenter: pr, update }: { workspaceId: string | null; presenter: VoiceoverPresenter; update: Update }) {
+  const [busy, setBusy] = useState<'photo' | 'style' | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const set = (patch: Partial<VoiceoverPresenter>, coalesce?: string) => update((t) => ({ ...t, presenter: { ...t.presenter, ...patch } }), coalesce ? { coalesce } : undefined);
+  const upload = async (which: 'photo' | 'style', file: File) => {
+    setBusy(which); setErr(null);
+    try {
+      const url = await uploadDirect(file, { workspaceId });
+      set(which === 'photo' ? { photo_url: url } : { style_url: url });
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
+  };
+  const Thumb = ({ url, label }: { url: string | null; label: string }) => (url
+    // eslint-disable-next-line @next/next/no-img-element
+    ? <img src={url} alt={label} className="h-10 w-10 rounded-full object-cover" style={{ border: `2px solid ${pr.ring_color}` }} />
+    : <span className="flex h-10 w-10 items-center justify-center rounded-full text-[9px]" style={{ border: `1px dashed ${C.line2}`, color: C.faint }}>none</span>);
+  return (
+    <Section title="Presenter">
+      <p className="text-[10px]" style={{ color: C.faint }}>You, lip-synced to your own voice, in a corner circle. Turn it on for a line in the Script tab · {PRESENTER_CREDITS_PER_SECOND} cr per second, made once per voice take.</p>
+      <div className="flex items-center gap-2">
+        <Thumb url={pr.photo_url} label="Your photo" />
+        <div className="min-w-0 flex-1 text-[11px]" style={{ color: C.muted }}>Your photo<span className="block text-[10px]" style={{ color: C.faint }}>Front-facing, well lit, head and shoulders</span></div>
+        <FilePick accept="image/png,image/jpeg,image/webp" label={pr.photo_url ? 'Replace' : 'Upload'} busy={busy === 'photo'} onFile={(f) => void upload('photo', f)} />
+        {pr.photo_url ? <button type="button" title="Remove" style={{ color: '#FCA5A5' }} onClick={() => set({ photo_url: null })}><Trash2 className="h-3.5 w-3.5" /></button> : null}
+      </div>
+      <div className="flex items-center gap-2">
+        <Thumb url={pr.style_url} label="Talking frame" />
+        <div className="min-w-0 flex-1 text-[11px]" style={{ color: C.muted }}>Talking frame <span style={{ color: C.faint }}>(optional)</span><span className="block text-[10px]" style={{ color: C.faint }}>A still of you speaking to camera: style and setting</span></div>
+        <FilePick accept="image/png,image/jpeg,image/webp" label={pr.style_url ? 'Replace' : 'Upload'} busy={busy === 'style'} onFile={(f) => void upload('style', f)} />
+        {pr.style_url ? <button type="button" title="Remove" style={{ color: '#FCA5A5' }} onClick={() => set({ style_url: null })}><Trash2 className="h-3.5 w-3.5" /></button> : null}
+      </div>
+      <Field label="Setting" hint="Empty keeps the background of your photos">
+        <Input value={pr.scene} maxLength={200} placeholder="e.g. a bright home office with a bookshelf" onChange={(e) => set({ scene: e.target.value }, 'pscene')} />
+      </Field>
+      <Seg value={pr.corner} onChange={(corner) => set({ corner })} options={[{ value: 'auto', label: 'Auto' }, { value: 'tl', label: '↖' }, { value: 'tr', label: '↗' }, { value: 'bl', label: '↙' }, { value: 'br', label: '↘' }]} />
+      <Slider label="Size" min={0.12} max={0.5} step={0.01} value={pr.size} fmt={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set({ size: v }, 'psize')} />
+      <label className="flex items-center gap-2 text-[11px]" style={{ color: C.muted }}>
+        <input type="color" value={pr.ring_color} onChange={(e) => set({ ring_color: e.target.value.toUpperCase() }, 'pring')} className="h-5 w-7 cursor-pointer rounded border-0 bg-transparent" /> Ring colour
+      </label>
+      <label className="flex items-start gap-2 text-[11px]" style={{ color: pr.consent ? C.muted : '#FCD34D' }}>
+        <input type="checkbox" className="mt-0.5" checked={pr.consent} onChange={(e) => set({ consent: e.target.checked })} />
+        I am the person in these photos, or I have their permission to make an AI-generated, lip-synced video of them.
+      </label>
+      {err ? <p className="text-[11px]" style={{ color: '#FCA5A5' }}>{err}</p> : null}
+    </Section>
   );
 }
 
@@ -204,6 +252,8 @@ export function StylePanel({ projectId, workspaceId, timeline, update, onTimelin
           <input type="checkbox" checked={b.disclosure_badge} onChange={(e) => update((t) => ({ ...t, branding: { ...t.branding, disclosure_badge: e.target.checked } }))} /> Show “AI-generated voice” badge
         </label>
       </Section>
+
+      <PresenterSection workspaceId={workspaceId} presenter={timeline.presenter} update={update} />
 
       <Section title="Intro & outro">
         <div className="flex gap-1.5">

@@ -78,6 +78,7 @@ export const TemplateBodySchema = z.object({
   output: VoiceoverTimelineSchema.shape.output.optional(),
   audio: VoiceoverTimelineSchema.shape.audio.optional(),
   branding: VoiceoverTimelineSchema.shape.branding.optional(),
+  presenter: VoiceoverTimelineSchema.shape.presenter.optional(),
   fonts: VoiceoverTimelineSchema.shape.fonts.optional(),
   pronunciations: VoiceoverTimelineSchema.shape.pronunciations.optional(),
   intro: CardSchema.nullable().optional(),
@@ -101,6 +102,8 @@ export function extractTemplate(tl: VoiceoverTimeline): TemplateBody {
     output: tl.output,
     audio: tl.audio,
     branding: tl.branding,
+    // The look travels with the series; consent is confirmed again in each project.
+    presenter: { ...tl.presenter, consent: false },
     fonts: tl.fonts,
     pronunciations: tl.pronunciations,
     intro: first?.kind === 'card' ? first.card ?? null : null,
@@ -134,6 +137,7 @@ export function applyTemplateToTimeline(tl: VoiceoverTimeline, tpl: TemplateBody
     output: tpl.output ?? tl.output,
     audio: tpl.audio ?? tl.audio,
     branding: tpl.branding ?? tl.branding,
+    presenter: tpl.presenter ? { ...tpl.presenter, consent: tl.presenter.consent && tl.presenter.photo_url === tpl.presenter.photo_url } : tl.presenter,
     fonts: tpl.fonts ?? tl.fonts,
     pronunciations: tpl.pronunciations ?? tl.pronunciations,
   });

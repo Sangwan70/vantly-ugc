@@ -180,10 +180,20 @@ export async function workspaceSpend(workspaceId: string, userId?: string, since
     .filter('input->provenance->>workspace_id', 'eq', workspaceId)
     .gte('created_at', since);
   if (userId) q2 = q2.eq('user_id', userId);
-  const [{ data: t }, { data: r }] = await Promise.all([q1, q2]);
+  // Presenter takes are video generation too: they count with renders.
+  let q3 = supabase
+    .from('primitive_runs')
+    .select('credits_deducted, status')
+    .eq('primitive_id', 'voiceover_presenter')
+    .filter('input->>workspace_id', 'eq', workspaceId)
+    .gte('created_at', since);
+  if (userId) q3 = q3.eq('user_id', userId);
+  const [{ data: t }, { data: r }, { data: pr }] = await Promise.all([q1, q2, q3]);
+  const paid = (rows: Array<{ credits_deducted: unknown; status: unknown }> | null) =>
+    (rows ?? []).filter((x) => x.status !== 'failed').reduce((s, x) => s + Number(x.credits_deducted ?? 0), 0);
   return {
     tts: (t ?? []).reduce((s, x) => s + Number(x.credits_deducted ?? 0), 0),
-    render: (r ?? []).filter((x) => x.status !== 'failed').reduce((s, x) => s + Number(x.credits_deducted ?? 0), 0),
+    render: paid(r) + paid(pr),
   };
 }
 

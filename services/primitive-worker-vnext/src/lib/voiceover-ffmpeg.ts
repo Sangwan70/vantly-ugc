@@ -617,12 +617,54 @@ export interface FinalPlan {
   /** Output-time ranges where the corner logo is hidden (cards carry their own). */
   logo?: { path: string; branding: VoiceoverBranding; hide?: Array<[number, number]> } | null;
   music?: { path: string; settings: NonNullable<VoiceoverAudio['music']> } | null;
+  /** Lip-synced presenter clips (silent), each shown in a ringed circle while its block plays. */
+  presenter?: PresenterPlan | null;
   audio?: Pick<VoiceoverAudio, 'loudness' | 'voice_fades'>;
   /** Segments carry the recording's audio; mix it at this volume. 0 / undefined = none. */
   originalVolume?: number;
   metadata?: Record<string, string>;
   total: number;
   outPath: string;
+}
+
+export interface PresenterPlan {
+  clips: Array<{ path: string; start: number; length: number }>;
+  corner: 'tl' | 'tr' | 'bl' | 'br';
+  /** Circle diameter as a fraction of the shorter side (larger over title cards). */
+  size: number;
+  ring: string;
+  /** Output-time ranges of title cards. */
+  cards?: Array<[number, number]>;
+}
+
+const PRESENTER_FADE = 0.3;
+
+/** Where one presenter circle sits: diameter, ring width and top-left of the ring. */
+export function presenterGeometry(W: number, H: number, plan: Pick<PresenterPlan, 'corner' | 'size'>, onCard: boolean): { d: number; ring: number; x: number; y: number } {
+  const short = Math.min(W, H);
+  const d = even(short * (onCard ? Math.min(0.5, plan.size * 1.35) : plan.size));
+  const ring = Math.max(2, Math.round(d * 0.025));
+  const outer = d + 2 * ring;
+  const m = Math.round(short * 0.03);
+  return {
+    d,
+    ring,
+    x: plan.corner.endsWith('l') ? m : W - outer - m,
+    y: plan.corner.startsWith('t') ? m : H - outer - m,
+  };
+}
+
+/** Filtergraph for one presenter clip: square crop → circle (anti-aliased) on a ring, faded, shifted to its block. */
+function presenterChain(i: number, input: number, clip: { start: number; length: number }, g: { d: number; ring: number }, ringHex: string): string[] {
+  const { d, ring } = g;
+  const outer = d + 2 * ring;
+  const disc = (size: number) => `a='255*clip(${num(size / 2 - 0.5)}-hypot(X-${num((size - 1) / 2)},Y-${num((size - 1) / 2)}),0,1)'`;
+  const fadeOut = Math.max(0, clip.length - PRESENTER_FADE);
+  return [
+    `[${input}:v]trim=0:${num(clip.length)},setpts=PTS-STARTPTS,fps=${RENDER_FPS},crop='min(iw,ih)':'min(iw,ih)',scale=${d}:${d},format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':${disc(d)}[pc${i}]`,
+    `color=c=0x${ringHex.replace('#', '')}:s=${outer}x${outer}:r=${RENDER_FPS}:d=${num(clip.length)},format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':${disc(outer)}[pr${i}]`,
+    `[pr${i}][pc${i}]overlay=${ring}:${ring}:format=auto,fade=t=in:st=0:d=${PRESENTER_FADE}:alpha=1,fade=t=out:st=${num(fadeOut)}:d=${PRESENTER_FADE}:alpha=1,setpts=PTS+${num(clip.start)}/TB[pp${i}]`,
+  ];
 }
 
 const LUFS = { youtube: -14, podcast: -16, broadcast: -23 } as const;
@@ -645,6 +687,8 @@ export function buildFinalArgs(p: FinalPlan): string[] {
   }
   let logoIdx = -1;
   if (p.logo) { args.push('-i', p.logo.path); logoIdx = idx++; }
+  const presenterIdx: number[] = [];
+  for (const c of p.presenter?.clips ?? []) { args.push('-i', c.path); presenterIdx.push(idx++); }
 
   // Video
   let v = '[0:v]';
@@ -677,6 +721,15 @@ export function buildFinalArgs(p: FinalPlan): string[] {
     graph.push(`[${logoIdx}:v]scale=${lw}:-2,format=rgba,colorchannelmixer=aa=${num(b.logo_opacity)}[lg]`, `${v}[lg]overlay=${x}:${y}:format=auto${enable}[vlogo]`);
     v = '[vlogo]';
   }
+  // Presenter circles go on top of everything; their own audio is never mapped.
+  (p.presenter?.clips ?? []).forEach((clip, i) => {
+    const plan = p.presenter!;
+    const onCard = (plan.cards ?? []).some(([a, z]) => clip.start >= a && clip.start < z);
+    const g = presenterGeometry(W, H, plan, onCard);
+    graph.push(...presenterChain(i, presenterIdx[i], clip, g, plan.ring));
+    graph.push(`${v}[pp${i}]overlay=${g.x}:${g.y}:format=auto:eof_action=pass:enable='between(t,${num(clip.start)},${num(clip.start + clip.length)})'[vpr${i}]`);
+    v = `[vpr${i}]`;
+  });
   graph.push(`${v}format=yuv420p[vout]`);
 
   // Audio

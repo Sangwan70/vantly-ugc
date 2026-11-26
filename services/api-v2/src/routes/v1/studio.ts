@@ -21,6 +21,7 @@
  *   POST   /v1/studio/projects/:id/render
  *   POST   /v1/studio/projects/:id/prepare        (re)run proxy + filmstrip + analysis
  *   GET    /v1/studio/renders/:run_id
+ *   (presenter takes: studio-presenter.ts)
  */
 
 import type { Request, Response } from 'express';
@@ -251,6 +252,9 @@ export const patchStudioProjectRoute = studioRoute(async (req, res) => {
       tl.branding.logo_url,
       ...tl.fonts.map((f) => f.url),
       ...tl.clips.map((c) => (c.kind === 'card' ? c.card?.sting_url : null)),
+      tl.presenter.photo_url,
+      tl.presenter.style_url,
+      ...tl.blocks.map((b) => b.presenter?.clip_url),
     ].filter((u): u is string => Boolean(u));
     if (media.some((u) => !isStudioHosted(u))) throw new StudioError(400, 'INVALID_INPUT', 'media must be uploaded through Studio');
     patch.timeline = tl;

@@ -166,6 +166,15 @@ export const VoiceBlockSchema = z.object({
     voice_name: z.string().max(120).optional(),
     created_at: z.string().max(40),
   })).max(10).default([]),
+  /** Presenter (lip-synced talking head) over this block — generated once per voice take, then reused. */
+  presenter: z.object({
+    on: z.boolean().default(false),
+    clip_url: z.string().url().nullable().default(null),
+    /** presenterTakeKey() the clip was made from; any change (new take, trim, photo) marks it stale. */
+    clip_key: z.string().max(1200).nullable().default(null),
+    /** Generation in flight — the editor polls it and fills clip_url. */
+    run_id: z.string().uuid().nullable().default(null),
+  }).optional(),
 });
 export type VoiceBlock = z.infer<typeof VoiceBlockSchema>;
 
@@ -313,6 +322,24 @@ export const VoiceoverBrandingSchema = z.object({
 });
 export type VoiceoverBranding = z.infer<typeof VoiceoverBrandingSchema>;
 
+export const PRESENTER_CORNERS = ['auto', 'tl', 'tr', 'bl', 'br'] as const;
+export const VoiceoverPresenterSchema = z.object({
+  /** Your photo: face, glasses, clothes. Uploaded through Studio. */
+  photo_url: z.string().url().nullable().default(null),
+  /** Optional second reference — a frame of you talking (speaking style, setting). */
+  style_url: z.string().url().nullable().default(null),
+  /** Where you are, for the take ("a bright home office"). Empty = the photo's own setting. */
+  scene: z.string().max(200).default(''),
+  /** The person in the photo agreed to an AI-generated, lip-synced likeness of themselves. */
+  consent: z.boolean().default(false),
+  /** auto = the bottom corner away from the logo. */
+  corner: z.enum(PRESENTER_CORNERS).default('auto'),
+  /** Circle diameter as a fraction of the frame's shorter side. */
+  size: z.number().min(0.12).max(0.5).default(0.26),
+  ring_color: hex.default('#FFFFFF'),
+});
+export type VoiceoverPresenter = z.infer<typeof VoiceoverPresenterSchema>;
+
 export const FontAssetSchema = z.object({ id, url: z.string().url(), name: z.string().max(120) });
 export type FontAsset = z.infer<typeof FontAssetSchema>;
 
@@ -334,6 +361,7 @@ export const VoiceoverTimelineSchema = z.object({
   output: VoiceoverOutputSchema.default({}),
   audio: VoiceoverAudioSchema.default({}),
   branding: VoiceoverBrandingSchema.default({}),
+  presenter: VoiceoverPresenterSchema.default({}),
   fonts: z.array(FontAssetSchema).max(10).default([]),
   pronunciations: z.array(PronunciationSchema).max(300).default([]),
 });
@@ -441,6 +469,22 @@ export function quoteVoiceoverRenderCredits(
     Math.ceil(Math.ceil(outputSeconds / 60) * VOICEOVER_RENDER_CREDITS_PER_MINUTE * VOICEOVER_QUALITY_MULTIPLIER[opts?.quality ?? 'standard']),
   );
   return perFormat * Math.max(1, opts?.formats ?? 1);
+}
+
+// Presenter takes are Seedance 2.0 reference-to-video, billed per second (4–15 s)
+// with the real-person filter relaxed (1.1×): ~$0.22/s at 720p, so 31 credits/s
+// keeps the same ~50% margin as selfie clips.
+export const PRESENTER_CREDITS_PER_SECOND = 31;
+export const PRESENTER_MIN_SECONDS = 4;
+export const PRESENTER_MAX_SECONDS = 15;
+
+/** Seconds a presenter take is generated (and billed) for: the block's played audio, rounded up, 4–15. */
+export function presenterTakeSeconds(audioSeconds: number): number {
+  return Math.min(PRESENTER_MAX_SECONDS, Math.max(PRESENTER_MIN_SECONDS, Math.ceil(audioSeconds - 1e-6)));
+}
+
+export function quotePresenterCredits(audioSeconds: number): number {
+  return presenterTakeSeconds(audioSeconds) * PRESENTER_CREDITS_PER_SECOND;
 }
 
 /** Every shape a render produces (primary first, de-duplicated). */
@@ -591,6 +635,58 @@ export function blockAudioLength(b: Pick<VoiceBlock, 'audio_duration' | 'audio_i
   const end = b.audio_out === null || b.audio_out === undefined ? full : Math.min(b.audio_out, full);
   return Math.max(0, end - (b.audio_in ?? 0));
 }
+
+// ── Presenter (shared by the editor, api-v2 and the render) ─────────────────
+
+type PresenterBlock = Pick<VoiceBlock, 'take_id' | 'audio_url' | 'audio_duration' | 'audio_in' | 'audio_out' | 'presenter'>;
+type PresenterLook = Pick<VoiceoverPresenter, 'photo_url' | 'style_url' | 'scene'>;
+
+/** Cache key of a take: same voice take, trim, photo and setting → the same clip, never paid twice. */
+export function presenterTakeKey(b: Omit<PresenterBlock, 'presenter' | 'audio_url' | 'audio_duration'>, p: PresenterLook): string | null {
+  if (!b.take_id || !p.photo_url) return null;
+  return [b.take_id, b.audio_in.toFixed(2), b.audio_out === null ? '' : b.audio_out.toFixed(2), p.photo_url, p.style_url ?? '', p.scene.trim()].join('|');
+}
+
+/** Why this block can't get a presenter take yet (null = it can). */
+export function presenterBlockProblem(b: PresenterBlock, p: VoiceoverPresenter): string | null {
+  if (!p.photo_url) return 'Add your photo in Style → Presenter';
+  if (!p.consent) return 'Confirm consent in Style → Presenter';
+  if (!b.audio_url || !b.take_id) return 'Generate the voice first';
+  const len = blockAudioLength(b);
+  if (len > PRESENTER_MAX_SECONDS) return `Longer than ${PRESENTER_MAX_SECONDS}s — split the block`;
+  if (len < 1) return 'Too short for a presenter take';
+  return null;
+}
+
+/** The clip to show over a block: only when it's on and was made from the block's current take. */
+export function presenterClipFor(b: PresenterBlock, p: PresenterLook): string | null {
+  if (!b.presenter?.on || !b.presenter.clip_url) return null;
+  return b.presenter.clip_key === presenterTakeKey(b, p) ? b.presenter.clip_url : null;
+}
+
+/** Resolved corner: 'auto' sits bottom-right, or bottom-left when the logo is there. */
+export function presenterCorner(p: Pick<VoiceoverPresenter, 'corner'>, logoPosition: VoiceoverBranding['logo_position']): 'tl' | 'tr' | 'bl' | 'br' {
+  if (p.corner !== 'auto') return p.corner;
+  return logoPosition === 'br' ? 'bl' : 'br';
+}
+
+/** Worker input for one presenter take (api-v2 → voiceoverPresenterWorkflow). */
+export const VoiceoverPresenterTakeInputSchema = z.object({
+  project_id: z.string().uuid(),
+  block_id: id,
+  photo_url: z.string().url(),
+  style_url: z.string().url().nullable().default(null),
+  scene: z.string().max(200).default(''),
+  /** The block's voice take and the part of it that plays. */
+  audio_url: z.string().url(),
+  audio_in: z.number().min(0).default(0),
+  audio_length: z.number().min(0.5).max(PRESENTER_MAX_SECONDS),
+  clip_key: z.string().max(1200),
+  storage_region: z.string().max(20).nullable().default(null),
+  /** Counts toward this workspace's Studio budget. */
+  workspace_id: z.string().uuid().nullable().default(null),
+});
+export type VoiceoverPresenterTakeInput = z.infer<typeof VoiceoverPresenterTakeInputSchema>;
 
 // ── Smart-edit suggestions (shared by the editor and automation) ────────────
 

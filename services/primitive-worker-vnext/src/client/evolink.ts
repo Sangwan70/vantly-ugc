@@ -25,7 +25,8 @@ function sleep(ms: number): Promise<void> {
 export interface EvolinkVideoParams {
   prompt: string;
   imageUrls: string[];
-  duration: 5 | 10 | 15;
+  /** Whole seconds, 4–15 (reference-to-video bills per second). */
+  duration: number;
   aspectRatio: '9:16' | '1:1' | '16:9';
   generateAudio: boolean;
   /** Reference audio tracks (Seedance 2.0). Up to 3; reference as @audio1.. in the prompt. */
@@ -34,6 +35,9 @@ export interface EvolinkVideoParams {
   videoUrls?: string[];
   quality?: '480p' | '720p' | '1080p';
   seed?: number;
+  /** false relaxes Seedance's real-person face filter (EvoLink bills 1.1x). Only for
+   *  footage of someone who consented; illegal content is still blocked. */
+  contentFilter?: boolean;
 }
 
 export async function submitEvolinkVideo(
@@ -52,6 +56,7 @@ export async function submitEvolinkVideo(
     ...(params.audioUrls && params.audioUrls.length > 0 ? { audio_urls: params.audioUrls } : {}),
     ...(params.videoUrls && params.videoUrls.length > 0 ? { video_urls: params.videoUrls } : {}),
     ...(params.seed != null ? { seed: params.seed } : {}),
+    ...(params.contentFilter === false ? { content_filter: false } : {}),
   };
   for (let attempt = 0; ; attempt += 1) {
     const resp = await fetch(`${BASE_URL}/videos/generations`, {
@@ -175,6 +180,51 @@ export async function generateSimpleSelfieEvolink(
  * the provided recording IS the voice. generate_audio is false so the model
  * uses the supplied track rather than inventing one.
  */
+/**
+ * Voiceover Studio presenter: the user, from their own photo (+ an optional frame
+ * of them talking), speaking one narration take. The take runs exactly as long as
+ * the audio (4–15 s), and only stills are sent — a reference VIDEO of someone
+ * talking pulls the mouth toward that clip's speech instead of @audio1.
+ */
+export async function generatePresenterEvolink(
+  params: {
+    photoUrl: string;
+    styleUrl?: string | null;
+    audioUrl: string;
+    duration: number;
+    scene?: string;
+  },
+): Promise<{ videoUrl: string; taskId: string; raw: Record<string, unknown> }> {
+  const model = process.env.EVOLINK_SEEDANCE_MODEL || 'seedance-2.0-reference-to-video';
+  const imageUrls = [params.photoUrl, ...(params.styleUrl ? [params.styleUrl] : [])];
+  const scene = params.scene?.trim();
+  const prompt = [
+    "@image1 is the presenter's face and current look: keep his or her exact identity, hair, glasses, facial hair and clothing in every frame.",
+    params.styleUrl ? '@image2 shows the same person talking to camera: copy that natural speaking style and, unless told otherwise, that setting.' : '',
+    scene ? `Setting: ${scene}.` : params.styleUrl ? '' : 'Keep the setting and light of @image1, softly blurred behind the presenter.',
+    'The presenter speaks directly to the camera like a warm, confident teacher, mouth lip-synced precisely to the speech in @audio1 from the first word to the last, with small natural nods and eyebrow movement; when the speech ends the mouth closes and the presenter holds a gentle smile.',
+    'Head and shoulders, centred, steady camera, soft even light, natural matte skin. No text, no captions, no logos.',
+  ].filter(Boolean).join(' ');
+  return withEvolinkSlot(async (apiKey) => {
+    const submit = await submitEvolinkVideo(apiKey, model, {
+      prompt,
+      imageUrls,
+      audioUrls: [params.audioUrl],
+      duration: params.duration,
+      aspectRatio: '1:1',
+      generateAudio: false,
+      quality: '720p',
+      contentFilter: false,
+    });
+    const completed = await pollEvolinkTask(apiKey, submit.id);
+    const videoUrl = extractEvolinkVideoUrl(completed);
+    if (!videoUrl) {
+      throw new Error(`evolink presenter task ${submit.id} succeeded but no video URL`);
+    }
+    return { videoUrl, taskId: submit.id, raw: completed };
+  });
+}
+
 export async function generateLipSyncEvolink(
   params: {
     imageUrl: string;

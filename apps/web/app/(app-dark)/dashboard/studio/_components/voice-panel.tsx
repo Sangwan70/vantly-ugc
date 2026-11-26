@@ -12,8 +12,11 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, BookA, Check, ChevronDown, ChevronLeft, ChevronRight, FileText, Loader2, Pause as PauseIcon, Play, Plus, Scissors, Settings2, ShieldCheck, Sparkles, Trash2, Volume2, Wand2, X } from 'lucide-react';
-import { VoiceSettingsSchema, quoteVoiceoverTtsCredits, type VoiceBlock, type VoiceSettings, type VoiceoverTimeline } from '@vantly-ugc/schema';
+import { AlertTriangle, BookA, Check, ChevronDown, ChevronLeft, ChevronRight, FileText, Loader2, Pause as PauseIcon, Play, Plus, Scissors, Settings2, ShieldCheck, Sparkles, Trash2, User, Volume2, Wand2, X } from 'lucide-react';
+import {
+  VoiceSettingsSchema, blockAudioLength, presenterBlockProblem, presenterClipFor, presenterTakeSeconds, quotePresenterCredits, quoteVoiceoverTtsCredits,
+  type VoiceBlock, type VoiceSettings, type VoiceoverPresenter, type VoiceoverTimeline,
+} from '@vantly-ugc/schema';
 import { studioApi, StudioApiError, uploadDirect, type VoicesResponse, type Voice, type VoiceSource } from '../_lib/api';
 import {
   autoSpaceBlocks, blockDuration, blockIsStale, blockRoom, blockStaleReason, deleteBlock, fmtTime, newBlock, parseScript, parseTimeInput, placeCues, splitBlockAtChar, stretchVideoUnder, updateBlock, upsertBlock,
@@ -47,6 +50,20 @@ interface Props {
   onVoicesChanged: () => void;
   /** Generate every pending block once the voices load (opened with ?autogen=1 after localizing). */
   autoGenerate?: boolean;
+  /** Save now — presenter takes are made from the saved project. */
+  beforePresenter?: () => Promise<void>;
+}
+
+const PRESENTER_POLL_MS = 6000;
+type PresenterState = 'off' | 'blocked' | 'making' | 'ready' | 'todo';
+
+/** Where a block's presenter take stands (and why not, when it can't be made yet). */
+function presenterState(b: VoiceBlock, look: VoiceoverPresenter): { state: PresenterState; problem: string | null } {
+  if (!b.presenter?.on) return { state: 'off', problem: null };
+  if (b.presenter.run_id) return { state: 'making', problem: null };
+  if (presenterClipFor(b, look)) return { state: 'ready', problem: null };
+  const problem = blockIsStale(b) ? 'Regenerate the voice first' : presenterBlockProblem(b, look);
+  return problem ? { state: 'blocked', problem } : { state: 'todo', problem: null };
 }
 
 export function VoicePanel(p: Props) {
@@ -115,6 +132,61 @@ export function VoicePanel(p: Props) {
     }
   }
 
+  // ── Presenter takes ──
+  const look = timeline.presenter;
+  const [presenterErr, setPresenterErr] = useState<Record<string, string>>({});
+  const [presenterBusy, setPresenterBusy] = useState(false);
+  const presenterTodo = blocks.filter((b) => presenterState(b, look).state === 'todo');
+  const presenterTodoCredits = presenterTodo.reduce((s, b) => s + quotePresenterCredits(blockAudioLength(b)), 0);
+  const making = blocks.filter((b) => b.presenter?.run_id).map((b) => `${b.id}:${b.presenter!.run_id}`).join(',');
+
+  async function makePresenter(ids: string[]) {
+    if (!ids.length) return;
+    setPresenterBusy(true);
+    setPresenterErr((e) => { const n = { ...e }; ids.forEach((i) => delete n[i]); return n; });
+    try {
+      await p.beforePresenter?.();
+      const r = await studioApi.startPresenter(p.projectId, ids);
+      const run = new Map(r.takes.map((t) => [t.block_id, t.run_id]));
+      const done = new Map(r.cached.map((c) => [c.block_id, c]));
+      p.update((t) => ({
+        ...t,
+        blocks: t.blocks.map((b) => {
+          const c = done.get(b.id);
+          if (c) return { ...b, presenter: { on: true, clip_url: c.clip_url, clip_key: c.clip_key, run_id: null } };
+          const id = run.get(b.id);
+          return id ? { ...b, presenter: { on: true, clip_url: b.presenter?.clip_url ?? null, clip_key: b.presenter?.clip_key ?? null, run_id: id } } : b;
+        }),
+      }));
+    } catch (e) {
+      const err = e as StudioApiError;
+      const target = (err.extra?.block_id as string | undefined) ?? ids[0];
+      setPresenterErr((m) => ({ ...m, [target]: err.message }));
+    } finally {
+      setPresenterBusy(false);
+    }
+  }
+
+  // Poll takes in flight; a finished take is written onto its block (and cached there for every later render).
+  useEffect(() => {
+    if (!making) return;
+    const runs = making.split(',').map((x) => { const [blockId, runId] = x.split(':'); return { blockId, runId }; });
+    const iv = setInterval(() => {
+      for (const { blockId, runId } of runs) {
+        studioApi.presenterStatus(runId).then((st) => {
+          if (st.status === 'succeeded' && st.clip_url) {
+            p.update((t) => ({ ...t, blocks: t.blocks.map((b) => (b.id === blockId && b.presenter?.run_id === runId ? { ...b, presenter: { on: true, clip_url: st.clip_url, clip_key: st.clip_key, run_id: null } } : b)) }));
+          } else if (st.status === 'failed') {
+            p.update((t) => ({ ...t, blocks: t.blocks.map((b) => (b.id === blockId && b.presenter?.run_id === runId ? { ...b, presenter: { ...b.presenter, run_id: null } } : b)) }));
+            setPresenterErr((m) => ({ ...m, [blockId]: st.error?.message ?? 'The presenter take failed. Any credits were refunded.' }));
+          }
+        }).catch(() => { /* transient: next tick */ });
+      }
+    }, PRESENTER_POLL_MS);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [making]);
+
   async function generateAll() {
     cancelBulk.current = false;
     const queue = [...pending].sort((a, z) => a.start - z.start);
@@ -170,6 +242,11 @@ export function VoicePanel(p: Props) {
             ) : (
               <Btn small primary disabled={!pending.length} onClick={generateAll}><Sparkles className="h-3.5 w-3.5" /> Generate {pending.length || 'all'}{charges && pendingCredits ? ` · ${pendingCredits} cr` : ''}</Btn>
             )}
+            {presenterTodo.length ? (
+              <Btn small disabled={presenterBusy} title="Make every presenter take that's switched on and not made yet" onClick={() => void makePresenter(presenterTodo.map((b) => b.id))}>
+                {presenterBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <User className="h-3.5 w-3.5" />} Presenter {presenterTodo.length}{charges ? ` · ${presenterTodoCredits} cr` : ''}
+              </Btn>
+            ) : null}
           </div>
         ) : null}
         {dictOpen ? <Pronunciations timeline={timeline} update={p.update} /> : null}
@@ -211,6 +288,11 @@ export function VoicePanel(p: Props) {
             }}
             onStretchVideo={(extra) => p.update((t) => stretchVideoUnder(t, b.start, extra))}
             onApplyVoiceToAll={() => p.update((t) => ({ ...t, blocks: t.blocks.map((x) => ({ ...x, voice_id: b.voice_id, voice_name: b.voice_name, voice_source: b.voice_source, model_id: b.model_id, settings: b.settings })) }))}
+            presenter={presenterState(b, look)}
+            presenterError={presenterErr[b.id] ?? null}
+            presenterBusy={presenterBusy}
+            onPresenterToggle={(on) => p.update((t) => updateBlock(t, b.id, { presenter: { clip_url: null, clip_key: null, run_id: null, ...b.presenter, on } }))}
+            onMakePresenter={() => void makePresenter([b.id])}
           />
         ))}
       </div>
@@ -269,6 +351,8 @@ function BlockCard(p: {
   onSelect: () => void; onChange: (patch: Partial<VoiceBlock>, coalesce?: string) => void; onDelete: () => void;
   onGenerate: (override?: VoiceBlock) => void; onSeek: () => void; onPlay: () => void; onSplit: (at: number) => void;
   onRegenerateSelection: (s: number, e: number) => void; onStretchVideo: (extra: number) => void; onApplyVoiceToAll: () => void;
+  presenter: { state: PresenterState; problem: string | null }; presenterError: string | null; presenterBusy: boolean;
+  onPresenterToggle: (on: boolean) => void; onMakePresenter: () => void;
 }) {
   const { b } = p;
   const [showSettings, setShowSettings] = useState(false);
@@ -370,6 +454,25 @@ function BlockCard(p: {
           <button type="button" className="text-[11px] underline" style={{ color: C.muted }} onClick={p.onApplyVoiceToAll}>Use this voice & settings for every block</button>
         </div>
       ) : null}
+
+      {p.canEdit ? (
+        <div className="mt-1.5 flex min-h-[24px] items-center gap-1.5 text-[11px]" style={{ color: C.muted }}>
+          <label className="inline-flex cursor-pointer items-center gap-1" title="Show you, lip-synced to this line, in a corner circle" onClick={(e) => e.stopPropagation()}>
+            <input type="checkbox" checked={p.presenter.state !== 'off'} onChange={(e) => p.onPresenterToggle(e.target.checked)} /> <User className="h-3 w-3" /> Presenter
+          </label>
+          {p.presenter.state === 'blocked' ? <span style={{ color: '#FCD34D' }}>{p.presenter.problem}</span> : null}
+          {p.presenter.state === 'making' ? <span className="inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> making (2–6 min)</span> : null}
+          {p.presenter.state === 'ready' ? <span style={{ color: '#6EE7B7' }}>ready</span> : null}
+          {p.presenter.state === 'todo' ? (
+            <span className="ml-auto">
+              <Btn small primary disabled={p.presenterBusy} onClick={(e) => { e.stopPropagation(); p.onMakePresenter(); }}>
+                <User className="h-3.5 w-3.5" /> Make · {presenterTakeSeconds(blockAudioLength(b))}s{p.charges ? ` · ${quotePresenterCredits(blockAudioLength(b))} cr` : ''}
+              </Btn>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      {p.presenterError ? <div className="mt-1 text-[11px]" style={{ color: '#FCA5A5' }}>{p.presenterError}</div> : null}
 
       {p.gen.state === 'error' ? (
         <div className="mt-1.5 text-[11px]" style={{ color: '#FCA5A5' }}>

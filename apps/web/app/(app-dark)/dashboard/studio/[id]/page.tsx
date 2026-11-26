@@ -221,7 +221,7 @@ function StudioEditorPageInner() {
               <VoicePanel projectId={id} workspaceId={workspaceId} language={project.language} timeline={tl} time={time} voices={voices}
                 selectedId={selection?.kind === 'block' ? selection.id : null} canEdit={s.canEdit} autoGenerate={search.get('autogen') === '1'}
                 onSelect={(bid) => setSelection({ kind: 'block', id: bid })} update={update} onSeek={seek}
-                onPlayFrom={(t) => { setTime(t); setPlaying(true); }} onOpenSettings={() => setSettingsOpen(true)} onVoicesChanged={loadVoices} />
+                onPlayFrom={(t) => { setTime(t); setPlaying(true); }} onOpenSettings={() => setSettingsOpen(true)} onVoicesChanged={loadVoices} beforePresenter={s.flush} />
             ) : tab === 'edit' ? (
               selClip ? (
                 <ClipInspector clip={selClip} index={selClipIdx} count={tl.clips.length} localTime={clipLocal} picking={Boolean(pick)}

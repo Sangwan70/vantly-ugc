@@ -51,7 +51,8 @@ const FILTERS: { id: GalleryFilter; label: string }[] = [
 const VIDEO_RE = /\.(mp4|webm|mov)(\?|$|#)/i;
 const IMAGE_RE = /\.(png|jpe?g|webp|gif)(\?|$|#)/i;
 
-const HIDDEN_OPS = ['character_create', 'character_sheet', 'character_storyboard'];
+// Building blocks, not finished work (Studio presenter takes live on their project's voice blocks).
+const HIDDEN_OPS = ['character_create', 'character_sheet', 'character_storyboard', 'voiceover_presenter'];
 
 export function GenerationsTab() {
   const [filter, setFilter] = useState<GalleryFilter>('all');

@@ -132,6 +132,11 @@ export const studioApi = {
   quote: (id: string) => call<{ output_seconds: number; credits: number; formats: string[] }>(`projects/${id}/quote`, { method: 'POST', body: {} }),
   render: (id: string, body: { notify_email?: string | null } = {}) => call<{ run_id: string; credits: number }>(`projects/${id}/render`, { method: 'POST', body }),
   renderStatus: (runId: string) => call<RenderStatus>(`renders/${runId}`),
+  /** Start presenter takes for blocks; blocks whose clip is already made come back in `cached`. */
+  startPresenter: (id: string, block_ids: string[]) =>
+    call<{ takes: Array<{ block_id: string; run_id: string; clip_key: string; credits: number }>; cached: Array<{ block_id: string; clip_url: string; clip_key: string }>; credits: number }>(`projects/${id}/presenter`, { method: 'POST', body: { block_ids } }),
+  presenterStatus: (runId: string) =>
+    call<{ run_id: string; status: string; block_id: string | null; clip_key: string | null; clip_url: string | null; error: { code: string; message: string } | null }>(`presenter/${runId}`),
   shorten: (body: { text: string; target_seconds: number; language?: string }) => call<{ text: string }>('assist/shorten', { method: 'POST', body }),
   localize: (id: string, body: { language: string; language_name: string; voice_id?: string; voice_name?: string; voice_source?: VoiceSource; translate_overlays?: boolean }) =>
     call<{ project: { id: string; title: string } }>(`projects/${id}/localize`, { method: 'POST', body }),

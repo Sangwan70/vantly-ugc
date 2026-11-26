@@ -23,6 +23,7 @@ import { makeWatermarkActivity } from './watermark.js';
 import { makeVoiceoverRenderActivity } from './voiceover-render.js';
 import { makeVoiceoverPrepareActivity } from './voiceover-prepare.js';
 import { makeVoiceoverAutomateStepActivity } from './voiceover-automate.js';
+import { makeVoiceoverPresenterActivity } from './voiceover-presenter.js';
 
 export function createActivities(cfg: WorkerConfig) {
   return {
@@ -48,6 +49,7 @@ export function createActivities(cfg: WorkerConfig) {
     voiceoverRender: makeVoiceoverRenderActivity(cfg),
     voiceoverPrepare: makeVoiceoverPrepareActivity(cfg),
     voiceoverAutomateStep: makeVoiceoverAutomateStepActivity(cfg),
+    voiceoverPresenter: makeVoiceoverPresenterActivity(cfg),
   };
 }
 

@@ -21,6 +21,8 @@ import {
   clipCameraAt,
   clipOutputDuration,
   locateOutputTime,
+  presenterClipFor,
+  presenterCorner,
   resolveCaptionStyle,
   timelineDuration,
   timelineWords,
@@ -346,6 +348,19 @@ export function Preview(p: Props) {
     [pos.endsWith('l') ? 'left' : 'right']: m,
   });
 
+  // The presenter over the block that's speaking: its clip once made, your photo until then (free).
+  const presenter = (() => {
+    for (const b of timeline.blocks) {
+      if (!b.presenter?.on || !b.audio_url) continue;
+      const len = blockAudioLength(b);
+      const local = p.time - b.start;
+      if (local < 0 || local >= len) continue;
+      const url = presenterClipFor(b, timeline.presenter);
+      if (url || timeline.presenter.photo_url) return { url, local, length: len };
+    }
+    return null;
+  })();
+
   return (
     <div ref={wrapRef} className="relative flex h-full w-full items-center justify-center">
       <div
@@ -404,6 +419,11 @@ export function Preview(p: Props) {
           // eslint-disable-next-line @next/next/no-img-element
           <img src={branding.logo_url} alt="" className="pointer-events-none absolute" style={{ ...corner(branding.logo_position), width: logoW, opacity: branding.logo_opacity }} />
         ) : null}
+        {presenter ? (
+          <PresenterView url={presenter.url} photo={timeline.presenter.photo_url} local={presenter.local} length={presenter.length} playing={p.playing}
+            size={Math.min(box.w, box.h) * (clip?.kind === 'card' ? Math.min(0.5, timeline.presenter.size * 1.35) : timeline.presenter.size)}
+            ring={timeline.presenter.ring_color} position={corner(presenterCorner(timeline.presenter, branding.logo_position))} />
+        ) : null}
         {branding.disclosure_badge ? (
           <div className="pointer-events-none absolute rounded px-1.5 py-0.5 font-bold" style={{ ...corner(branding.logo_position === 'tr' ? 'tl' : 'tr'), fontSize: Math.max(8, 22 * k), background: 'rgba(0,0,0,0.5)', color: '#fff' }}>
             AI-generated voice
@@ -417,6 +437,26 @@ export function Preview(p: Props) {
       </div>
     </div>
   );
+}
+
+/** Mirrors presenterGeometry/presenterChain in the render: a ringed circle fading in and out with its block. */
+function PresenterView({ url, photo, local, length, playing, size, ring, position }: {
+  url: string | null; photo: string | null; local: number; length: number; playing: boolean; size: number; ring: string; position: Record<string, number>;
+}) {
+  const ref = useRef<HTMLVideoElement | null>(null);
+  useEffect(() => {
+    const v = ref.current;
+    if (!v) return;
+    if (Math.abs(v.currentTime - local) > (playing ? 0.25 : 0.05)) v.currentTime = local;
+    if (playing && v.paused) void v.play().catch(() => {});
+    if (!playing && !v.paused) v.pause();
+  }, [local, playing]);
+  const opacity = Math.max(0, Math.min(1, local / 0.3, (length - local) / 0.3));
+  const style: React.CSSProperties = { ...position, width: size, height: size, opacity, borderRadius: '50%', border: `${Math.max(1, size * 0.025)}px solid ${ring}`, objectFit: 'cover', maxWidth: 'none', background: '#000' };
+  return url
+    ? <video ref={ref} src={url} muted playsInline preload="auto" className="pointer-events-none absolute" style={style} />
+    // eslint-disable-next-line @next/next/no-img-element
+    : <img src={photo ?? ''} alt="" title="Presenter preview — make the take in the Script tab" className="pointer-events-none absolute" style={style} />;
 }
 
 /** Mirrors buildCardSegmentArgs / buildCardAss: solid, gradient or a blurred backdrop still, plus label, shapes and button. */

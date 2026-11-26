@@ -10,7 +10,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ApplicationFailure } from '@temporalio/activity';
-import { VOICEOVER_RENDER_MIN_CREDITS } from '@vantly-ugc/schema';
+import { PRESENTER_MIN_SECONDS, VOICEOVER_RENDER_MIN_CREDITS, quotePresenterCredits } from '@vantly-ugc/schema';
 
 /**
  * Admin allowlist — mirrors apps/web/lib/admin-allowlist.ts and
@@ -65,7 +65,8 @@ export type PrimitiveCreditableId =
   | 'wireframe_gpt2'
   | 'lip_sync'
   | 'storybook_take'
-  | 'voiceover_render';
+  | 'voiceover_render'
+  | 'voiceover_presenter';
 
 // Portraits are not charged (free identity prep). Character sheets are charged
 // ONLY when generated standalone (make_character_sheet); inside a video flow the
@@ -108,6 +109,9 @@ export function quotePrimitiveCredits(
       // Priced by output length — callers pass creditsOverride from
       // quoteVoiceoverRenderCredits(seconds) (@vantly-ugc/schema). This is the floor.
       return VOICEOVER_RENDER_MIN_CREDITS;
+    case 'voiceover_presenter':
+      // Priced per second — callers pass creditsOverride from quotePresenterCredits().
+      return quotePresenterCredits(PRESENTER_MIN_SECONDS);
   }
 }
 

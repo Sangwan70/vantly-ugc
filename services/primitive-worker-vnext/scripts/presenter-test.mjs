@@ -11,9 +11,11 @@
 //     primitive-worker-vnext node --input-type=module - < services/primitive-worker-vnext/scripts/presenter-test.mjs
 //
 // REFS_DIR (default /tmp/presenter-refs) must hold face.jpg (identity, current
-// look), speak.jpg (a frame of them talking to camera) and motion.mp4 (2-15 s of
-// them speaking with natural gestures, no audio). Optional: DURATION (5|10|15,
-// default 10), ASPECT (1:1|9:16, default 1:1), SEED. Prints every URL at the end.
+// look). Seedance's moderation rejects real photos of people, so — like the
+// app's portrait-gpt2 step — gpt-image first redraws the photo as a clean
+// presenter portrait, and only that portrait goes to Seedance. Optional:
+// PORTRAIT_URL (skip the redraw and reuse an approved portrait), DURATION
+// (5|10|15, default 10), ASPECT (1:1|9:16, default 1:1), SEED. Prints every URL.
 
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -23,6 +25,7 @@ import { randomUUID } from 'node:crypto';
 
 const ROOT = '/app/services/primitive-worker-vnext/dist';
 const { getConfig } = await import(`${ROOT}/config.js`);
+const { generateImageWithFallback } = await import(`${ROOT}/client/openai.js`);
 const { r2UploadVnext } = await import(`${ROOT}/client/r2.js`);
 const { submitEvolinkVideo, pollEvolinkTask, extractEvolinkVideoUrl } = await import(`${ROOT}/client/evolink.js`);
 const { withEvolinkSlot } = await import(`${ROOT}/client/evolink-pool.js`);
@@ -42,29 +45,35 @@ const fetchBuf = async (url) => {
   if (!r.ok) throw new Error(`download ${r.status} ${url}`);
   return Buffer.from(await r.arrayBuffer());
 };
-const up = async (name, type) => (await r2UploadVnext(cfg.r2, runId, name, readFileSync(join(REFS, name)), type)).publicUrl;
+// 1. Presenter portrait: the user's photo redrawn by gpt-image (Seedance accepts this, not the raw photo)
+let portrait = process.env.PORTRAIT_URL;
+if (!portrait) {
+  const facePng = join(dir, 'face.png');
+  execFileSync('ffmpeg', ['-y', '-v', 'error', '-i', join(REFS, 'face.jpg'), '-frames:v', '1', facePng], { stdio: 'inherit' });
+  const look = [
+    'Photorealistic head-and-shoulders portrait of the man in the reference photo: keep his exact face, rimless glasses, moustache, hairline and dark green crew-neck t-shirt.',
+    'He sits facing the camera, centred, looking straight into the lens, with a calm, friendly expression, mouth gently closed.',
+    'Behind him, a softly blurred city skyline seen from a high-rise balcony on a bright day; soft, even, natural daylight on his face.',
+    'Natural matte skin, real camera photo, square framing with space above his head. No text, no logos.',
+  ].join(' ');
+  log('redrawing portrait with', cfg.openai.imageModel);
+  const img = await generateImageWithFallback(cfg.openai, { model: cfg.openai.imageModel, prompt: look, referencePng: readFileSync(facePng), size: '1024x1024' });
+  portrait = (await r2UploadVnext(cfg.r2, runId, 'portrait.png', img.bytes, 'image/png')).publicUrl;
+}
+log('portrait', portrait);
 
-// 1. References -> R2 (EvoLink fetches them from the public bucket)
-const face = await up('face.jpg', 'image/jpeg');
-const speak = await up('speak.jpg', 'image/jpeg');
-const motion = await up('motion.mp4', 'video/mp4');
-log('refs uploaded', { face, speak, motion });
-
-// 2. One take: identity from @image1, speaking style from @image2 + @video1, mouth from @audio1
+// 2. One take: the portrait speaks the narration (@audio1), with the gestures seen in his own videos
 const prompt = [
-  '@image1 is the man\'s face and current look: keep his exact identity, his rimless glasses, moustache, hair and dark green t-shirt in every frame.',
-  '@image2 and @video1 show the same man talking to the camera: copy his natural speaking style from them, the way he moves his head, eyebrows and hands while he talks.',
-  'He sits in front of a city skyline seen from a high-rise balcony, as in @image2, in soft even daylight.',
-  'He speaks directly to the camera, his mouth lip-synced precisely to the speech in @audio1 from the first word to the last, then he pauses with a gentle smile.',
-  'His face, glasses and clothing always match @image1, never @video1.',
-  'Medium close-up, head and shoulders, centred, steady camera, natural matte skin, no text, no captions.',
+  'The man in @image1 speaks directly to the camera; keep his exact face, rimless glasses, moustache and dark green t-shirt in every frame.',
+  'His mouth is lip-synced precisely to the speech in @audio1, from the first word to the last, then he pauses with a gentle smile.',
+  'He talks like a warm, confident teacher: small natural nods, eyebrows lifting on key words, and now and then he raises one open hand to chest height to make a point, then lowers it.',
+  'City skyline softly blurred behind him, soft even daylight, steady camera, head and shoulders, natural matte skin, no text, no captions.',
 ].join(' ');
 const model = process.env.EVOLINK_SEEDANCE_MODEL || 'seedance-2.0-reference-to-video';
 const task = await withEvolinkSlot(async (apiKey) => {
   const { id } = await submitEvolinkVideo(apiKey, model, {
     prompt,
-    imageUrls: [face, speak],
-    videoUrls: [motion],
+    imageUrls: [portrait],
     audioUrls: [AUDIO_URL],
     duration: DURATION,
     aspectRatio: ASPECT,
@@ -88,6 +97,7 @@ const final = await r2UploadVnext(cfg.r2, runId, 'presenter.mp4', readFileSync(o
 
 const usage = Object.fromEntries(Object.entries(task.done).filter(([k]) => /usage|cost|credit|price|billing/i.test(k)));
 console.log('\n===== PRESENTER TEST READY =====');
+console.log('Portrait:  ', portrait);
 console.log('Task:      ', task.id);
 console.log('With voice:', final.publicUrl);
 console.log('Silent:    ', silentR2.publicUrl);
